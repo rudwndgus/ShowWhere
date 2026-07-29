@@ -1,0 +1,24 @@
+{
+  "name": "showwhere",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && vite build --mode content --watch",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && node scripts/generate-icons.mjs && vite build --mode content && vite build --mode background"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/chrome": "^0.0.326",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.1.0"
+  }
+}

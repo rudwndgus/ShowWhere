@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ShowWhere 규칙 기반 검색 테스트</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top">SampleDesk</a>
+      <nav aria-label="주요 메뉴">
+        <a href="#account">Account</a>
+        <a href="#actions">Actions</a>
+        <a href="#orders">Orders</a>
+        <button type="button" class="text-button">Settings</button>
+      </nav>
+      <div class="account-actions">
+        <button type="button" class="secondary">Login</button>
+        <button type="button" class="primary">Sign Up</button>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <p class="eyebrow">SHOWWHERE MATCHING LAB</p>
+        <h1>화면 문구를 찾는<br />규칙 기반 도우미.</h1>
+        <p class="hero-copy">
+          정확 문구, 동의어, 접근성 이름, 가시성과 클릭 가능성을 조합해 가장 관련된 요소를
+          찾는 테스트 페이지입니다.
+        </p>
+        <div class="recommendations" aria-label="추천 테스트 질문">
+          <span>추천 질문</span>
+          <code>로그인 버튼 어디 있어?</code>
+          <code>회원가입하고 싶어요</code>
+          <code>비밀번호를 잊어버렸어요</code>
+          <code>설정 메뉴 찾아줘</code>
+          <code>PDF로 저장하고 싶어요</code>
+          <code>주문 내역 보고 싶어요</code>
+          <code>환불하고 싶어요</code>
+          <code>대화 옵션 열어줘</code>
+        </div>
+      </section>
+
+      <section id="conversations" class="test-section conversation-section">
+        <div class="section-heading">
+          <p class="eyebrow">CONVERSATION OPTIONS</p>
+          <h2>대화 행과 옵션 버튼</h2>
+          <p>후보를 고른 뒤 행 전체가 아닌 오른쪽 점 세 개 버튼만 표시되는지 확인합니다.</p>
+        </div>
+        <div class="conversation-list" aria-label="대화 목록">
+          <article class="conversation-row">
+            <span class="conversation-avatar" aria-hidden="true">전</span>
+            <div class="conversation-copy">
+              <strong>전문 콜로그 번역가</strong>
+              <span>새 대화에서 번역을 도와드려요.</span>
+            </div>
+            <button type="button" class="conversation-options" aria-label="전문 콜로그 번역가의 대화 옵션 열기" title="옵션 열기">
+              <span aria-hidden="true">•••</span>
+            </button>
+          </article>
+          <article class="conversation-row">
+            <span class="conversation-avatar conversation-avatar--blue" aria-hidden="true">만</span>
+            <div class="conversation-copy">
+              <strong>만능 테크서포터</strong>
+              <span>웹과 기기 문제 해결을 도와드려요.</span>
+            </div>
+            <button type="button" class="conversation-options" aria-label="만능 테크서포터의 대화 옵션 열기" title="옵션 열기">
+              <span aria-hidden="true">•••</span>
+            </button>
+          </article>
+        </div>
+      </section>
+
+      <section id="account" class="test-section">
+        <div class="section-heading">
+          <p class="eyebrow">ACCOUNT MATCHES</p>
+          <h2>계정 관련 후보</h2>
+          <p>유사한 로그인 후보가 여러 개일 때 선택지가 표시되는지 확인합니다.</p>
+        </div>
+        <div class="control-grid">
+          <button type="button">Log In</button>
+          <button type="button">Sign In</button>
+          <button type="button" class="google-button">Sign in with Google</button>
+          <button type="button">Create Account</button>
+          <a class="control-link" href="#forgot">Forgot Password</a>
+          <button type="button">Reset Password</button>
+          <button type="button" disabled>Login</button>
+          <button type="button" hidden>Login hidden</button>
+        </div>
+      </section>
+
+      <section id="actions" class="test-section alt-section">
+        <div class="section-heading">
+          <p class="eyebrow">ACTIONS & ACCESSIBILITY</p>
+          <h2>동작과 접근성 이름</h2>
+          <p>아이콘 버튼은 눈에 보이는 텍스트 대신 aria-label로 검색됩니다.</p>
+        </div>
+        <div class="action-layout">
+          <div class="search-card">
+            <label for="site-search">Search</label>
+            <input id="site-search" type="search" role="searchbox" placeholder="Search help articles" />
+          </div>
+          <div class="control-grid compact-grid">
+            <button type="button">Print</button>
+            <button type="button">Download PDF</button>
+            <button type="button">Save</button>
+            <button type="button" class="icon-button" aria-label="Settings" title="Open settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8 3.5-2.1-1.2.1-2.4-2.4-1.4-2 1.3L11.5 7 9.4 8.3l-2-1.3L5 8.4l.1 2.4L3 12l2.1 1.2L5 15.6 7.4 17l2-1.3 2.1 1.3 2.1-1.3 2 1.3 2.4-1.4-.1-2.4L20 12Z" /></svg>
+            </button>
+            <details class="dropdown">
+              <summary>Menu</summary>
+              <div role="menu">
+                <button type="button" role="menuitem">Settings</button>
+                <button type="button" role="menuitem">Help Center</button>
+                <button type="button" role="menuitem">Logout</button>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section id="orders" class="test-section">
+        <div class="section-heading">
+          <p class="eyebrow">GENERAL TEXT MATCHING</p>
+          <h2>사전 밖의 일반 문구</h2>
+          <p>화면 문구를 그대로 입력하거나 한국어 의도를 사용해 검색해 보세요.</p>
+        </div>
+        <div class="control-grid">
+          <a class="control-link" href="#profile">My Profile</a>
+          <a class="control-link" href="#order-history">Order History</a>
+          <button type="button">Refund</button>
+          <a class="control-link" href="#help-center">Help Center</a>
+          <button type="button">Logout</button>
+          <button type="button" class="danger">Delete Account</button>
+          <button type="button">Edit Profile</button>
+          <button type="button">Download Invoice</button>
+        </div>
+      </section>
+
+      <section class="navigation-test">
+        <button type="button">Back</button>
+        <button type="button">Next</button>
+        <button type="button" class="primary">Continue</button>
+      </section>
+
+      <section id="forgot" class="spacer-section">
+        <div>
+          <p class="eyebrow">BELOW THE FOLD</p>
+          <h2>화면 아래 요소 테스트</h2>
+          <p>검색 결과가 화면 밖에 있으면 해당 위치까지 부드럽게 스크롤합니다.</p>
+        </div>
+      </section>
+
+      <section class="bottom-panel">
+        <div>
+          <h2>아래쪽 Login</h2>
+          <p>viewport 밖 후보의 스크롤과 overlay 추적을 확인합니다.</p>
+        </div>
+        <div class="bottom-actions">
+          <button type="button">Login</button>
+          <button type="button" id="open-modal">모달 열기</button>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="sample-modal" aria-labelledby="modal-title">
+      <div class="modal-content">
+        <h2 id="modal-title">작업 확인</h2>
+        <p>동적으로 표시된 모달 내부 요소도 검색할 수 있습니다.</p>
+        <button type="button" class="primary">Confirm</button>
+        <button type="button" id="close-modal">Close</button>
+      </div>
+    </dialog>
+
+    <script src="script.js"></script>
+  </body>
+</html>
