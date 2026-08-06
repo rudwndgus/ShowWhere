@@ -1,0 +1,98 @@
+using ShowWhere.Core;
+using ShowWhere.WindowsAutomation;
+
+namespace ShowWhere.Windows.Tests;
+
+public sealed class CandidateNormalizerTests
+{
+    [Fact]
+    public void Normalize_filters_invisible_disabled_and_zero_size_controls()
+    {
+        var source = new[]
+        {
+            Candidate("visible", "visible", true, true, new UiBounds(10, 10, 100, 30)),
+            Candidate("hidden", "hidden", true, false, new UiBounds(10, 10, 100, 30)),
+            Candidate("disabled", "disabled", false, true, new UiBounds(10, 10, 100, 30)),
+            Candidate("zero", "zero", true, true, new UiBounds(10, 10, 0, 30)),
+        };
+
+        var result = CandidateNormalizer.Normalize(source);
+
+        Assert.Single(result);
+        Assert.Equal("Settings", result[0].Candidate.Label);
+    }
+
+    [Fact]
+    public void Normalize_deduplicates_children_resolving_to_the_same_clickable_parent()
+    {
+        var source = new[]
+        {
+            Candidate("text-child", "button-parent", true, true, new UiBounds(10, 10, 100, 30)),
+            Candidate("icon-child", "button-parent", true, true, new UiBounds(10, 10, 100, 30)),
+        };
+
+        Assert.Single(CandidateNormalizer.Normalize(source));
+    }
+
+    [Fact]
+    public void Normalize_generates_a_stable_candidate_id()
+    {
+        var source = new[] { Candidate("button", "button", true, true, new UiBounds(10, 10, 100, 30)) };
+
+        var first = CandidateNormalizer.Normalize(source)[0].Candidate.Id;
+        var second = CandidateNormalizer.Normalize(source)[0].Candidate.Id;
+
+        Assert.Equal(first, second);
+        Assert.StartsWith("win-", first);
+    }
+
+    [Fact]
+    public void Normalize_never_exposes_password_descriptions()
+    {
+        var password = Candidate("password", "password", true, true, new UiBounds(10, 10, 100, 30)) with
+        {
+            Role = "edit",
+            Label = "secret-value",
+            Description = "sensitive help",
+            IsPassword = true,
+        };
+
+        var result = CandidateNormalizer.Normalize([password])[0].Candidate;
+
+        Assert.Equal("Password field", result.Label);
+        Assert.Null(result.Description);
+    }
+
+    [Fact]
+    public void Clickable_parent_resolution_uses_the_first_actionable_ancestor()
+    {
+        var result = ClickableParentResolver.Resolve([
+            new AutomationAncestorDescriptor("text", "other", false),
+            new AutomationAncestorDescriptor("button", "button", true),
+            new AutomationAncestorDescriptor("pane", "pane", false),
+        ]);
+
+        Assert.Equal("button", result);
+    }
+
+    private static RawAutomationCandidate Candidate(
+        string sourceKey,
+        string clickableSourceKey,
+        bool enabled,
+        bool visible,
+        UiBounds bounds) => new(
+            sourceKey,
+            clickableSourceKey,
+            "Settings",
+            null,
+            "button",
+            enabled,
+            visible,
+            true,
+            bounds,
+            false,
+            "SettingsButton",
+            "Button",
+            "ControlType.Button",
+            "notepad");
+}

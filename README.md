@@ -7,19 +7,29 @@
 화면을 설명하지 않아도, 하고 싶은 일만 말하면<br>
 다음에 눌러야 할 위치를 직접 보여주는 인터페이스 내비게이션 도우미
 
-![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-WPF-0078D4?logo=windows&logoColor=white)
+![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)
+![Chrome Adapter](https://img.shields.io/badge/Chrome-Optional_Adapter-4285F4?logo=googlechrome&logoColor=white)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-5F6368)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
-![AI API](https://img.shields.io/badge/AI_API-Not_used-success)
+![AI API](https://img.shields.io/badge/AI_API-Server--side_only-success)
 
 </div>
+
+## Native Windows client
+
+ShowWhere의 기본 클라이언트는 C#/.NET 8 WPF 기반 Windows 데스크톱 앱입니다. 항상 위에 떠 있는 `?` 도우미가 Microsoft UI Automation으로 현재 앱의 의미 있는 컨트롤을 관찰하고, 검증된 `targetId`에 해당하는 실제 위치만 click-through overlay로 안내합니다. 사용자의 버튼을 자동으로 누르지 않습니다.
+
+Chrome 확장 프로그램은 웹 DOM을 더 정확하게 관찰하는 선택적 browser adapter로 계속 제공됩니다. 두 클라이언트 모두 별도 `POST /api/guide` 백엔드를 사용하며 Featherless API 키는 서버 환경에만 존재합니다.
+
+실행과 빌드는 [로컬 개발 문서](docs/development.md), Windows 검증 절차는 [수동 smoke test](docs/windows-smoke-test.md)를 참고하세요.
 
 ---
 
 ## ShowWhere란?
 
-ShowWhere는 사용자가 웹사이트에서 **하고 싶은 일**을 입력하면, 현재 화면을 분석해 가장 관련 있는 버튼이나 메뉴를 찾아 빨간색으로 표시하는 Chrome 확장 프로그램입니다.
+ShowWhere는 사용자가 **하고 싶은 일**을 입력하면 현재 Windows 애플리케이션 또는 웹페이지를 관찰해 다음에 사용할 컨트롤을 화면 위에 표시하는 인터페이스 내비게이션 도우미입니다.
 
 사용자는 화면 구조나 버튼 위치를 설명할 필요가 없습니다.
 
@@ -29,7 +39,7 @@ ShowWhere는 사용자가 웹사이트에서 **하고 싶은 일**을 입력하�
 
 ShowWhere는 사용자의 목적과 화면에 실제로 존재하는 UI 문구를 연결하고, 다음에 눌러야 할 곳을 화면 위에서 안내합니다.
 
-현재 `v0.2.0`은 AI·외부 API·백엔드 없이 동작하는 규칙 기반 프로토타입입니다. 먼저 안내 경험과 접근성을 검증하고, 이후 의미 이해와 다단계 안내 기능을 확장하는 것이 목표입니다.
+현재 구현은 독립 실행 가능한 Windows WPF 클라이언트, 선택적 Manifest V3 브라우저 adapter, deterministic mock과 Featherless provider를 지원하는 보안 백엔드로 구성됩니다. 모든 provider 결정은 런타임 계약과 현재 관찰의 candidate ID를 통과해야 합니다.
 
 ## 왜 만들었나요?
 
@@ -110,6 +120,14 @@ flowchart LR
 - 화면 경계, 최소 크기, 대상의 border-radius를 반영한 fixed overlay
 - 스크롤, 창 크기, 대상 크기 변화에 맞춰 위치 추적
 
+### 검증된 mock 안내 파이프라인
+
+- Zod 기반 `UiCandidate`, `TaskSession`, `GuideRequest`, `GuideDecision` 검증
+- DOM 참조는 브라우저 내부 registry에만 보관
+- mock `/api/guide`가 반환한 candidate ID만 실제 요소로 해석
+- 존재하지 않는 target ID와 낮은 confidence를 안전한 재질문으로 전환
+- 실제 AI API, API key, 자동 클릭 없이 전체 결정 경로 검증
+
 ### 접근성과 안전성
 
 - 키보드 Enter 전송, Shift+Enter 줄바꿈, Escape 닫기
@@ -147,6 +165,9 @@ npm run build
 ```bash
 # TypeScript 검사
 npm run typecheck
+
+# 단위 테스트
+npm test
 
 # 프로덕션 빌드
 npm run build

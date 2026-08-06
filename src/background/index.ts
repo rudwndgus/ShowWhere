@@ -1,4 +1,5 @@
 import { EXTENSION_MESSAGES, type ExtensionMessage } from '../shared/messages';
+import { GuideRequestSchema } from '../contracts';
 
 const UNAVAILABLE_MESSAGE = '이 페이지에서는 ShowWhere를 사용할 수 없습니다.';
 
@@ -47,4 +48,46 @@ chrome.action.onClicked.addListener((tab) => {
       await showUnavailable(tab.id);
     }
   })();
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (
+    !message ||
+    typeof message !== 'object' ||
+    (message as { type?: unknown }).type !== EXTENSION_MESSAGES.guideRequest
+  ) return false;
+
+  void (async () => {
+    try {
+      if (sender.id !== chrome.runtime.id || !sender.tab?.id) {
+        sendResponse({ ok: false });
+        return;
+      }
+      const endpoint = import.meta.env.VITE_SHOWWHERE_GUIDE_API_URL?.trim();
+      const request = GuideRequestSchema.safeParse((message as { request?: unknown }).request);
+      if (!endpoint || !request.success) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 95_000);
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request.data),
+          credentials: 'omit',
+          signal: controller.signal,
+        });
+        const decision: unknown = await response.json();
+        sendResponse({ ok: true, decision });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch {
+      sendResponse({ ok: false });
+    }
+  })();
+  return true;
 });

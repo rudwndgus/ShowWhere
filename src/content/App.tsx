@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { GuideRequestSchema, type GuideDecision, type TaskSession } from '../contracts';
 import { AssistantButton } from './components/AssistantButton';
 import { HighlightOverlay } from './components/HighlightOverlay';
 import { SpeechBubble } from './components/SpeechBubble';
+import { createGuideClient } from './api/GuideClient';
+import { BrowserCandidateRegistry } from './dom/BrowserCandidateRegistry';
+import { observeBrowserInterface, type BrowserObservation } from './dom/observeBrowserInterface';
 import { useAssistantPosition } from './hooks/useAssistantPosition';
 import { useOutsideClick } from './hooks/useOutsideClick';
 import { usePageChanges } from './hooks/usePageChanges';
+import { createTaskSession, transitionTaskSession } from './session/taskSession';
 import type { AssistantMode, ChatMessage } from './types';
-import type { CandidateChoice, SearchOutcome } from './types/search';
-import { createCandidateChoice } from './utils/createCandidateChoice';
+import type { CandidateChoice } from './types/search';
 import { truncateLabel } from './utils/createElementLabel';
-import { rankCandidates } from './utils/rankCandidates';
 
 type LastResultType = 'clear' | 'ambiguous' | 'notFound' | null;
 
@@ -18,6 +21,8 @@ interface LastSearchResult {
   candidateSignature: string;
   resultType: LastResultType;
 }
+
+const guideClient = createGuideClient();
 
 function message(role: ChatMessage['role'], text: string): ChatMessage {
   return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, role, text };
@@ -56,9 +61,12 @@ export function App() {
   const [highlightVisible, setHighlightVisible] = useState(false);
   const [guidanceNote, setGuidanceNote] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
+  const [taskSession, setTaskSession] = useState<TaskSession | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const timers = useRef<number[]>([]);
+  const candidateRegistryRef = useRef(new BrowserCandidateRegistry());
+  const requestSequenceRef = useRef(0);
   const lastResultRef = useRef<LastSearchResult>({
     normalizedQuery: '',
     candidateSignature: '',
@@ -74,7 +82,10 @@ export function App() {
     timers.current = [];
   }, []);
 
-  useEffect(() => clearTimers, [clearTimers]);
+  useEffect(() => () => {
+    requestSequenceRef.current += 1;
+    clearTimers();
+  }, [clearTimers]);
 
   const recordResult = useCallback((
     normalizedQuery: string,
@@ -102,9 +113,14 @@ export function App() {
     setHovered(false);
     setMode('idle');
     if (clearGuide) {
+      requestSequenceRef.current += 1;
       resetGuidance();
       setCandidateChoices([]);
       setAwaitingCandidateSelection(false);
+      candidateRegistryRef.current.clear();
+      setTaskSession((current) => current
+        ? transitionTaskSession(current, { type: 'cancelled' })
+        : null);
     }
   }, [resetGuidance]);
 
@@ -114,16 +130,25 @@ export function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      requestSequenceRef.current += 1;
       resetGuidance();
       setCandidateChoices([]);
       setAwaitingCandidateSelection(false);
+      candidateRegistryRef.current.clear();
+      setTaskSession((current) => current
+        ? transitionTaskSession(current, { type: 'cancelled' })
+        : null);
       if (open) closeDialog(false);
     };
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [closeDialog, open, resetGuidance]);
 
-  const startGuide = useCallback((choice: CandidateChoice, response: string) => {
+  const startGuide = useCallback((
+    choice: CandidateChoice,
+    response: string,
+    expectedChange?: string,
+  ) => {
     const target = choice.resolvedTarget.isConnected ? choice.resolvedTarget : choice.target;
     setCandidateChoices([]);
     setAwaitingCandidateSelection(false);
@@ -134,6 +159,13 @@ export function App() {
     setMode('guiding');
     setOpen(true);
     setMessages((current) => [...current, message('assistant', response)]);
+    setTaskSession((current) => current
+      ? transitionTaskSession(current, {
+          type: 'guidance_ready',
+          message: response,
+          expectedChange,
+        })
+      : null);
     target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     const ownerFrame = target.ownerDocument.defaultView?.frameElement;
     if (ownerFrame instanceof HTMLElement) {
@@ -156,6 +188,12 @@ export function App() {
         ...current,
         message('assistant', '잘했어요! 선택한 곳을 눌렀어요.'),
       ]);
+      setTaskSession((current) => current
+        ? transitionTaskSession(current, {
+            type: 'step_completed',
+            fact: currentTargetLabel ? `${currentTargetLabel} 클릭 완료` : undefined,
+          })
+        : null);
       clickPendingRef.current = { expiresAt: Date.now() + 1400, messageScheduled: false };
       const timer = window.setTimeout(() => {
         clickPendingRef.current = null;
@@ -165,7 +203,7 @@ export function App() {
     };
     clickedTarget.addEventListener('click', handleTargetClick, true);
     return () => clickedTarget.removeEventListener('click', handleTargetClick, true);
-  }, [currentTarget]);
+  }, [currentTarget, currentTargetLabel]);
 
   const handlePageChange = useCallback(() => {
     const pendingClick = clickPendingRef.current;
@@ -192,30 +230,33 @@ export function App() {
   }, [currentTarget, resetGuidance]);
   usePageChanges(handlePageChange);
 
-  const handleSearchOutcome = useCallback((outcome: SearchOutcome) => {
-    const normalized = outcome.query.normalized;
+  const handleGuideDecision = useCallback((
+    decision: GuideDecision,
+    observation: BrowserObservation,
+  ) => {
+    const normalized = observation.outcome.query.normalized;
     const previous = lastResultRef.current;
 
-    if (!outcome.best) {
-      const isDuplicate = previous.normalizedQuery === normalized && previous.resultType === 'notFound';
-      setMode('notFound');
-      setCandidateChoices([]);
-      setAwaitingCandidateSelection(false);
-      if (!isDuplicate) {
-        setMessages((current) => [
-          ...current,
-          message(
-            'assistant',
-            '현재 화면에서 정확히 일치하는 항목을 찾지 못했어요.\n화면에 보이는 버튼이나 메뉴 이름을 조금 더 구체적으로 말해 주세요.',
-          ),
-        ]);
+    if (decision.action === 'highlight' && decision.targetId) {
+      const choice = candidateRegistryRef.current.getChoice(decision.targetId);
+      const target = candidateRegistryRef.current.resolveTarget(decision.targetId);
+      if (!choice || !target) {
+        const staleMessage = '화면이 바뀌어 표시할 대상을 다시 확인해야 해요. 다시 찾아 주세요.';
+        setMode('notFound');
+        setMessages((current) => [...current, message('assistant', staleMessage)]);
+        setTaskSession((current) => current
+          ? transitionTaskSession(current, { type: 'failed', message: staleMessage })
+          : null);
+        recordResult(normalized, [], 'notFound');
+        return;
       }
-      recordResult(normalized, [], 'notFound');
+      recordResult(normalized, [choice], 'clear');
+      startGuide(choice, decision.message, decision.expectedChange);
       return;
     }
 
-    const alternatives = outcome.alternatives.map(createCandidateChoice);
-    if (outcome.ambiguous) {
+    const alternatives = observation.alternativeChoices;
+    if (decision.action === 'ask_user' && alternatives.length > 1) {
       const signature = alternatives.map((choice) => choice.id).join('|');
       const exactDuplicate =
         previous.normalizedQuery === normalized &&
@@ -223,29 +264,49 @@ export function App() {
         previous.resultType === 'ambiguous';
       const sameCandidates =
         previous.candidateSignature === signature && previous.resultType === 'ambiguous';
+      const response = sameCandidates
+        ? '아직 정확한 항목을 고르기 어려워요.\n아래에서 가장 가까운 항목을 선택해 주세요.'
+        : decision.message;
 
       setCandidateChoices(alternatives);
       setAwaitingCandidateSelection(true);
       setMode('showingCandidates');
+      setTaskSession((current) => current
+        ? transitionTaskSession(current, { type: 'waiting_for_user', message: response })
+        : null);
       if (!exactDuplicate) {
-        setMessages((current) => [
-          ...current,
-          message(
-            'assistant',
-            sameCandidates
-              ? '아직 정확한 항목을 고르기 어려워요.\n아래에서 가장 가까운 항목을 선택해 주세요.'
-              : '비슷한 항목이 몇 개 있어요. 하나를 골라 주세요.',
-          ),
-        ]);
+        setMessages((current) => [...current, message('assistant', response)]);
       }
       recordResult(normalized, alternatives, 'ambiguous');
       return;
     }
 
-    const choice = createCandidateChoice(outcome.best);
-    recordResult(normalized, [choice], 'clear');
-    const subject = outcome.intent?.label ?? truncateLabel(outcome.query.normalized || choice.label, 30);
-    startGuide(choice, `찾았어요. ${subject}과 가장 가까운 항목을 표시했어요.`);
+    if (decision.action === 'ask_user' || observation.candidates.length === 0) {
+      const isDuplicate = previous.normalizedQuery === normalized && previous.resultType === 'notFound';
+      setMode('notFound');
+      setCandidateChoices([]);
+      setAwaitingCandidateSelection(false);
+      setTaskSession((current) => current
+        ? transitionTaskSession(current, { type: 'waiting_for_user', message: decision.message })
+        : null);
+      if (!isDuplicate) {
+        setMessages((current) => [...current, message('assistant', decision.message)]);
+      }
+      recordResult(normalized, [], 'notFound');
+      return;
+    }
+
+    setMode(decision.status === 'completed' ? 'success' : 'idle');
+    setMessages((current) => [...current, message('assistant', decision.message)]);
+    setTaskSession((current) => current
+      ? transitionTaskSession(
+          current,
+          decision.status === 'completed'
+            ? { type: 'completed', message: decision.message }
+            : { type: 'waiting_for_user', message: decision.message },
+        )
+      : null);
+    recordResult(normalized, [], decision.status === 'completed' ? 'clear' : 'notFound');
   }, [recordResult, startGuide]);
 
   const handleSubmit = useCallback(() => {
@@ -259,12 +320,39 @@ export function App() {
     setMessages((current) => [...current, message('user', query)]);
     setInput('');
     setMode('thinking');
+    const initialSession = createTaskSession(query);
+    const observingSession = transitionTaskSession(initialSession, { type: 'observation_started' });
+    setTaskSession(observingSession);
+    const requestSequence = ++requestSequenceRef.current;
 
     const timer = window.setTimeout(() => {
-      handleSearchOutcome(rankCandidates(query));
+      void (async () => {
+        try {
+          const observation = observeBrowserInterface(query, candidateRegistryRef.current);
+          const waitingSession = transitionTaskSession(observingSession, { type: 'ai_requested' });
+          const request = GuideRequestSchema.parse({
+            session: waitingSession,
+            context: observation.context,
+            candidates: observation.candidates,
+          });
+          setTaskSession(waitingSession);
+          const decision = await guideClient.decideNextAction(request);
+          if (requestSequenceRef.current !== requestSequence) return;
+          handleGuideDecision(decision, observation);
+        } catch {
+          if (requestSequenceRef.current !== requestSequence) return;
+          const errorMessage = '현재 화면을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';
+          console.error('[ShowWhere] Guide request failed safely.');
+          setMode('notFound');
+          setMessages((current) => [...current, message('assistant', errorMessage)]);
+          setTaskSession((current) => current
+            ? transitionTaskSession(current, { type: 'failed', message: errorMessage })
+            : null);
+        }
+      })();
     }, 550);
     timers.current.push(timer);
-  }, [clearTimers, handleSearchOutcome, input, mode, resetGuidance]);
+  }, [clearTimers, handleGuideDecision, input, mode, resetGuidance]);
 
   const selectCandidate = useCallback((choice: CandidateChoice) => {
     startGuide(choice, createGuidanceMessage(choice));
@@ -284,9 +372,14 @@ export function App() {
   };
 
   const retrySearch = () => {
+    requestSequenceRef.current += 1;
     resetGuidance();
     setCandidateChoices([]);
     setAwaitingCandidateSelection(false);
+    candidateRegistryRef.current.clear();
+    setTaskSession((current) => current
+      ? transitionTaskSession(current, { type: 'cancelled' })
+      : null);
     setMode('idle');
     setFocusRequest((current) => current + 1);
   };
@@ -321,6 +414,9 @@ export function App() {
       data-candidate-signature={lastCandidateSignature}
       data-candidate-count={lastCandidateElementIds.length}
       data-target-label={currentTargetLabel}
+      data-session-id={taskSession?.sessionId ?? ''}
+      data-session-status={taskSession?.status ?? 'idle'}
+      data-session-failures={taskSession?.failureCount ?? 0}
     >
       <AssistantButton
         buttonRef={buttonRef}

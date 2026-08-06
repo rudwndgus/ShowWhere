@@ -1,0 +1,10 @@
+<UserControl x:Class="ShowWhere.Desktop.AssistantGlyph"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             IsHitTestVisible="False">
+  <Grid>
+    <Ellipse Fill="#FF1E6FF2" Stroke="#FFFFFFFF" StrokeThickness="2" />
+    <TextBlock Text="?" Foreground="White" FontSize="30" FontWeight="Bold"
+               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+  </Grid>
+</UserControl>

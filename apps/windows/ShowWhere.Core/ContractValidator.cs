@@ -1,0 +1,91 @@
+namespace ShowWhere.Core;
+
+public sealed class ContractValidationException : Exception
+{
+    public ContractValidationException(string message) : base(message) { }
+}
+
+public static class ContractValidator
+{
+    public const double DefaultConfidenceThreshold = 0.65;
+
+    private static readonly HashSet<string> AllowedActions =
+    [
+        GuideActions.Highlight,
+        GuideActions.AskUser,
+        GuideActions.Explain,
+        GuideActions.RequestNewObservation,
+        GuideActions.RequestVision,
+        GuideActions.RequestSafeTool,
+    ];
+
+    private static readonly HashSet<string> AllowedDecisionStatuses =
+    [
+        GuideStatuses.InProgress,
+        GuideStatuses.Completed,
+        GuideStatuses.NeedsClarification,
+        GuideStatuses.Blocked,
+    ];
+
+    public static void Validate(GuideRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Context.Platform is not (Platforms.Browser or Platforms.Windows or Platforms.Android))
+            throw new ContractValidationException("Unsupported application platform.");
+        if (string.IsNullOrWhiteSpace(request.Context.ApplicationName) || request.Context.ApplicationName.Length > 300)
+            throw new ContractValidationException("Application name is invalid.");
+        if (string.IsNullOrWhiteSpace(request.Session.SessionId) || request.Session.SessionId.Length > 160)
+            throw new ContractValidationException("Session ID is invalid.");
+        if (string.IsNullOrWhiteSpace(request.Session.OriginalUserMessage) || request.Session.OriginalUserMessage.Length > 4_000)
+            throw new ContractValidationException("User message is invalid.");
+        if (request.Candidates.Count > 100)
+            throw new ContractValidationException("Too many UI candidates.");
+        if (request.Screenshot?.Length > 8_000_000)
+            throw new ContractValidationException("Screenshot payload is too large.");
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in request.Candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.Id) || candidate.Id.Length > 160 || !ids.Add(candidate.Id))
+                throw new ContractValidationException("Candidate ID is invalid or duplicated.");
+            if (string.IsNullOrWhiteSpace(candidate.Role) || candidate.Role.Length > 100)
+                throw new ContractValidationException("Candidate role is invalid.");
+            if (!double.IsFinite(candidate.Bounds.X) || !double.IsFinite(candidate.Bounds.Y)
+                || !double.IsFinite(candidate.Bounds.Width) || !double.IsFinite(candidate.Bounds.Height)
+                || candidate.Bounds.Width < 0 || candidate.Bounds.Height < 0)
+                throw new ContractValidationException("Candidate bounds are invalid.");
+        }
+    }
+
+    public static GuideDecision ValidateDecision(
+        GuideDecision decision,
+        GuideRequest request,
+        double confidenceThreshold = DefaultConfidenceThreshold)
+    {
+        ArgumentNullException.ThrowIfNull(decision);
+        Validate(request);
+        if (!AllowedDecisionStatuses.Contains(decision.Status) || !AllowedActions.Contains(decision.Action))
+            throw new ContractValidationException("Guide decision status or action is invalid.");
+        if (string.IsNullOrWhiteSpace(decision.Message) || decision.Message.Length > 500)
+            throw new ContractValidationException("Guide decision message is invalid.");
+        if (!double.IsFinite(decision.Confidence) || decision.Confidence is < 0 or > 1)
+            throw new ContractValidationException("Guide decision confidence is invalid.");
+        if (decision.Action == GuideActions.Highlight)
+        {
+            if (string.IsNullOrWhiteSpace(decision.TargetId)
+                || request.Candidates.All(candidate => candidate.Id != decision.TargetId))
+                throw new ContractValidationException("Guide decision referenced an unknown target ID.");
+            if (decision.Confidence < confidenceThreshold)
+            {
+                return new GuideDecision(
+                    GuideStatuses.NeedsClarification,
+                    GuideActions.AskUser,
+                    "어느 항목인지 확실하지 않아요. 화면에 보이는 이름을 조금 더 알려주세요.",
+                    0);
+            }
+        }
+        if (decision.Action == GuideActions.RequestSafeTool && string.IsNullOrWhiteSpace(decision.SafeToolId))
+            throw new ContractValidationException("Safe tool decision did not include a tool ID.");
+        return decision;
+    }
+}

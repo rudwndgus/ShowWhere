@@ -1,0 +1,55 @@
+<Window x:Class="ShowWhere.Desktop.GuidancePanelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShowWhere" Width="370" Height="430" MinWidth="330" MinHeight="360"
+        WindowStyle="ToolWindow" ResizeMode="CanResizeWithGrip" Topmost="True"
+        ShowInTaskbar="False" Closing="OnClosing">
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <DockPanel Grid.Row="0" LastChildFill="True">
+      <TextBlock Text="ShowWhere" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" />
+      <Button DockPanel.Dock="Right" Content="—" Width="30" Height="26" Click="OnMinimize" ToolTip="최소화" />
+    </DockPanel>
+
+    <StackPanel Grid.Row="1" Margin="0,10,0,10">
+      <TextBlock Text="{Binding CurrentApplication, StringFormat=현재 앱: {0}}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+      <TextBlock Text="{Binding StatusText}" Foreground="#FF536072" Margin="0,3,0,0" />
+      <ProgressBar IsIndeterminate="True" Height="3" Margin="0,6,0,0"
+                   Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
+    </StackPanel>
+
+    <Border Grid.Row="2" Background="#FFF2F5FA" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <TextBlock Text="{Binding GuidanceMessage}" TextWrapping="Wrap" FontSize="14" />
+          <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="#FFC52B32" Margin="0,8,0,0" />
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <TextBox x:Name="GoalInput" Grid.Row="3" Text="{Binding GoalText, UpdateSourceTrigger=PropertyChanged}"
+             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="66" MaxHeight="110"
+             VerticalScrollBarVisibility="Auto" Padding="8"
+             ToolTip="하고 싶은 일을 입력하세요" />
+
+    <Grid Grid.Row="4" Margin="0,10,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <WrapPanel>
+        <Button Content="찾을 수 없어요" Command="{Binding RecoveryCommand}" Margin="0,0,6,6" Padding="9,5" />
+        <Button Content="작업 취소" Command="{Binding CancelCommand}" Margin="0,0,6,6" Padding="9,5" />
+      </WrapPanel>
+      <Button Grid.Column="1" Content="안내 시작" Command="{Binding SubmitCommand}"
+              Padding="14,7" Margin="6,0,0,6" Background="#FF1E6FF2" Foreground="White" />
+    </Grid>
+  </Grid>
+</Window>
