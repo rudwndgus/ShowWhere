@@ -5,7 +5,7 @@ import { getElementViewportRect, isElementClickable } from '../utils/elementVisi
 import { MINIMUM_MATCH_SCORE } from '../utils/rankCandidates';
 import type { BrowserCandidateRecord } from './BrowserCandidateRegistry';
 
-export const MAX_GUIDE_CANDIDATES = 25;
+export const MAX_GUIDE_CANDIDATES = 60;
 
 export function isMeaningfulRankedCandidate(candidate: ScoredCandidate): boolean {
   return (
@@ -97,18 +97,22 @@ export function normalizeBrowserCandidates(
 ): BrowserCandidateRecord[] {
   const records: BrowserCandidateRecord[] = [];
   const seenTargets = new Set<HTMLElement>();
-  for (const candidate of ranked) {
-    if (records.length >= maximum) break;
-    if (!isMeaningfulRankedCandidate(candidate)) continue;
+  const addCandidate = (candidate: ScoredCandidate) => {
+    if (records.length >= maximum) return;
     const choice = createCandidateChoice(candidate, records.length);
     const target = choice.resolvedTarget.isConnected ? choice.resolvedTarget : choice.target;
-    if (seenTargets.has(target)) continue;
+    if (seenTargets.has(target)) return;
     seenTargets.add(target);
-    records.push({
-      candidate: toUiCandidate(candidate, choice, records.length),
-      choice,
-      target,
-    });
+    records.push({ candidate: toUiCandidate(candidate, choice, records.length), choice, target });
+  };
+
+  for (const candidate of ranked.filter(isMeaningfulRankedCandidate)) addCandidate(candidate);
+  for (const candidate of ranked) {
+    if (records.length >= maximum) break;
+    if (!candidate.isVisible || candidate.isDisabled) continue;
+    if (!candidate.isClickable && !['input', 'textarea', 'select', 'label'].includes(candidate.tagName)) continue;
+    if (!candidate.searchableText.trim()) continue;
+    addCandidate(candidate);
   }
   return records;
 }

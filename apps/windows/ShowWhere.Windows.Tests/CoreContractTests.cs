@@ -36,6 +36,20 @@ public sealed class CoreContractTests
     }
 
     [Fact]
+    public void Unknown_alternative_target_id_is_rejected()
+    {
+        var request = CreateRequest();
+        var decision = new GuideDecision(
+            GuideStatuses.NeedsClarification,
+            GuideActions.AskUser,
+            "Which item?",
+            0.4,
+            AlternativeTargetIds: ["candidate-1", "invented-target"]);
+
+        Assert.Throws<ContractValidationException>(() => ContractValidator.ValidateDecision(decision, request));
+    }
+
+    [Fact]
     public void Task_session_transitions_preserve_completed_steps()
     {
         var session = TaskSessionStateMachine.Create("Open settings", () => "session-1");

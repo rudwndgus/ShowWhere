@@ -7,6 +7,7 @@ public interface IWindowsChangeMonitor
 {
     Task<WindowsObservation?> WaitForTargetInteractionAsync(
         UiBounds targetBounds,
+        string? goal,
         TimeSpan maximumWait,
         CancellationToken cancellationToken);
 }
@@ -19,6 +20,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 
     public async Task<WindowsObservation?> WaitForTargetInteractionAsync(
         UiBounds targetBounds,
+        string? goal,
         TimeSpan maximumWait,
         CancellationToken cancellationToken)
     {
@@ -40,7 +42,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                 if (wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor))
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
-                    return await ObserveAfterInteractionAsync(timeout.Token).ConfigureAwait(false);
+                    return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
                 }
 
                 await Task.Delay(TimeSpan.FromMilliseconds(35), timeout.Token).ConfigureAwait(false);
@@ -55,13 +57,15 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         return null;
     }
 
-    private async Task<WindowsObservation> ObserveAfterInteractionAsync(CancellationToken cancellationToken)
+    private async Task<WindowsObservation> ObserveAfterInteractionAsync(
+        string? goal,
+        CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 6; attempt++)
         {
             try
             {
-                return await _observer.ObserveAsync(cancellationToken).ConfigureAwait(false);
+                return await _observer.ObserveAsync(goal, cancellationToken).ConfigureAwait(false);
             }
             catch (WindowsObservationException) when (attempt < 5)
             {

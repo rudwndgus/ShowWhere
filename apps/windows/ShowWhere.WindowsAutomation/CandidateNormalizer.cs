@@ -19,7 +19,8 @@ public sealed record RawAutomationCandidate(
     string? AutomationId,
     string? ClassName,
     string? ControlType,
-    string? ProcessName);
+    string? ProcessName,
+    bool IsOffscreen = false);
 
 public sealed record NormalizedAutomationCandidate(UiCandidate Candidate, string SourceKey);
 
@@ -28,7 +29,7 @@ public static class CandidateNormalizer
     private static readonly HashSet<string> UsefulRoles =
     [
         "button", "link", "edit", "checkbox", "radio", "combobox", "menuitem",
-        "tab", "listitem", "treeitem", "dataitem", "document", "pane",
+        "tab", "listitem", "treeitem", "dataitem", "slider", "window", "document", "pane",
     ];
 
     public static IReadOnlyList<NormalizedAutomationCandidate> Normalize(
@@ -68,6 +69,7 @@ public static class CandidateNormalizer
             AddAttribute(attributes, "className", raw.ClassName);
             AddAttribute(attributes, "controlType", raw.ControlType);
             AddAttribute(attributes, "processName", raw.ProcessName);
+            attributes["inViewport"] = !raw.IsOffscreen;
             if (raw.IsPassword) attributes["isPassword"] = true;
 
             var id = $"win-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)))[..20].ToLowerInvariant()}";
@@ -129,7 +131,7 @@ public static class ClickableParentResolver
         foreach (var descriptor in elementAndAncestors.Take(maximumDepth))
         {
             if (descriptor.SupportsAction || descriptor.Role is "button" or "link" or "checkbox" or "radio"
-                or "combobox" or "menuitem" or "tab" or "listitem" or "treeitem" or "dataitem" or "edit")
+                or "combobox" or "menuitem" or "tab" or "listitem" or "treeitem" or "dataitem" or "edit" or "slider")
                 return descriptor.Key;
         }
         return null;

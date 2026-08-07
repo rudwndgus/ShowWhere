@@ -10,6 +10,7 @@ namespace ShowWhere.Overlay;
 public interface IHighlightOverlay
 {
     void ShowTarget(UiBounds target, string message);
+    void ShowScrollHint(UiBounds target, string message);
     void Clear();
 }
 
@@ -74,16 +75,53 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
 
     public void ShowTarget(UiBounds target, string message)
     {
-        var workingArea = MonitorUtilities.GetWorkingArea(target);
-        var placement = OverlayPlacementCalculator.Calculate(target, workingArea);
+        var monitorArea = MonitorUtilities.GetMonitorArea(target);
+        if (OverlayPlacementCalculator.IsOutside(target, monitorArea))
+        {
+            ShowScrollHint(target, message);
+            return;
+        }
         var scale = MonitorUtilities.GetScale(target);
+        _message.Text = message;
+        var tooltipSize = MeasureTooltip(monitorArea, scale);
+        var placement = OverlayPlacementCalculator.Calculate(
+            target,
+            monitorArea,
+            tooltipSize.Width,
+            tooltipSize.Height);
         Left = placement.Window.X / scale;
         Top = placement.Window.Y / scale;
         Width = placement.Window.Width / scale;
         Height = placement.Window.Height / scale;
         SetElementBounds(_highlightBorder, placement.Highlight, scale);
         SetElementBounds(_tooltip, placement.Tooltip, scale);
-        _message.Text = message;
+        _highlightBorder.Visibility = Visibility.Visible;
+        if (!IsVisible) Show();
+        Topmost = false;
+        Topmost = true;
+    }
+
+    public void ShowScrollHint(UiBounds target, string message)
+    {
+        var workingArea = MonitorUtilities.GetWorkingArea(target);
+        var monitorArea = MonitorUtilities.GetMonitorArea(target);
+        var down = target.Y + target.Height / 2 >= monitorArea.Y + monitorArea.Height / 2;
+        var scale = MonitorUtilities.GetScale(target);
+        _message.Text = $"{(down ? "↓" : "↑")}  {(down ? "아래" : "위")}로 스크롤하세요\n{message}";
+        var tooltipSize = MeasureTooltip(workingArea, scale);
+        var left = workingArea.X + (workingArea.Width - tooltipSize.Width) / 2;
+        var top = down
+            ? workingArea.Bottom - tooltipSize.Height - 24 * scale
+            : workingArea.Y + 24 * scale;
+        Left = left / scale;
+        Top = top / scale;
+        Width = tooltipSize.Width / scale;
+        Height = tooltipSize.Height / scale;
+        _highlightBorder.Visibility = Visibility.Collapsed;
+        Canvas.SetLeft(_tooltip, 0);
+        Canvas.SetTop(_tooltip, 0);
+        _tooltip.Width = tooltipSize.Width / scale;
+        _tooltip.Height = tooltipSize.Height / scale;
         if (!IsVisible) Show();
         Topmost = false;
         Topmost = true;
@@ -103,27 +141,55 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         element.Height = rectangle.Height / scale;
     }
 
+    private (double Width, double Height) MeasureTooltip(PhysicalRectangle availableArea, double scale)
+    {
+        var width = Math.Min(320 * scale, Math.Max(180 * scale, availableArea.Width - 16 * scale));
+        var contentWidth = Math.Max(120, width / scale - 28);
+        _message.Width = contentWidth;
+        _message.Measure(new Size(contentWidth, double.PositiveInfinity));
+        var heightInDips = Math.Clamp(_message.DesiredSize.Height + 20, 72, 180);
+        return (width, heightInDips * scale);
+    }
+
     private static class MonitorUtilities
     {
         public static PhysicalRectangle GetWorkingArea(UiBounds target)
+        {
+            var information = GetMonitorInformation(target);
+            if (information is not null)
+                return ToPhysicalRectangle(information.Value.Work);
+            return VirtualScreenArea();
+        }
+
+        public static PhysicalRectangle GetMonitorArea(UiBounds target)
+        {
+            var information = GetMonitorInformation(target);
+            if (information is not null)
+                return ToPhysicalRectangle(information.Value.Monitor);
+            return VirtualScreenArea();
+        }
+
+        private static MonitorInfo? GetMonitorInformation(UiBounds target)
         {
             var rectangle = ToNativeRectangle(target);
             var monitor = MonitorFromRect(ref rectangle, MonitorDefaultToNearest);
             var information = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
             if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref information))
-            {
-                return new PhysicalRectangle(
-                    information.Work.Left,
-                    information.Work.Top,
-                    information.Work.Right - information.Work.Left,
-                    information.Work.Bottom - information.Work.Top);
-            }
-            return new PhysicalRectangle(
+                return information;
+            return null;
+        }
+
+        private static PhysicalRectangle ToPhysicalRectangle(NativeRectangle rectangle) => new(
+            rectangle.Left,
+            rectangle.Top,
+            rectangle.Right - rectangle.Left,
+            rectangle.Bottom - rectangle.Top);
+
+        private static PhysicalRectangle VirtualScreenArea() => new(
                 SystemParameters.VirtualScreenLeft,
                 SystemParameters.VirtualScreenTop,
                 SystemParameters.VirtualScreenWidth,
                 SystemParameters.VirtualScreenHeight);
-        }
 
         public static double GetScale(UiBounds target)
         {

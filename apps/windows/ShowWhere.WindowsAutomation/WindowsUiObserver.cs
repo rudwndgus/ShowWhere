@@ -12,6 +12,15 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
     private const int MaximumTreeNodes = 1_500;
     private const int MaximumForegroundCandidates = 100;
     private const int ReservedTaskbarCandidates = 30;
+    private const int ReservedWindowOverviewCandidates = 10;
+    private const int ReservedGlobalCandidates = ReservedTaskbarCandidates + ReservedWindowOverviewCandidates;
+    private static readonly HashSet<string> TransientShellProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "StartMenuExperienceHost",
+        "SearchHost",
+        "SearchApp",
+        "ShellExperienceHost",
+    };
     private readonly int _ownProcessId = Environment.ProcessId;
     private readonly object _windowGate = new();
     private IntPtr _lastExternalForegroundWindow;
@@ -23,12 +32,15 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         lock (_windowGate) _lastExternalForegroundWindow = handle;
     }
 
-    public Task<WindowsObservation> ObserveAsync(CancellationToken cancellationToken) =>
-        Task.Run(() => Observe(cancellationToken), cancellationToken);
+    public Task<WindowsObservation> ObserveAsync(string? goal, CancellationToken cancellationToken) =>
+        Task.Run(() => Observe(goal, cancellationToken), cancellationToken);
 
-    private WindowsObservation Observe(CancellationToken cancellationToken)
+    private WindowsObservation Observe(string? goal, CancellationToken cancellationToken)
     {
-        var windowHandle = FindExternalForegroundWindow();
+        var windowHandle = WindowsFastPathResolver.IsKnownSystemGoal(goal)
+            ? FindVisibleTransientShellSurface()
+            : IntPtr.Zero;
+        if (windowHandle == IntPtr.Zero) windowHandle = FindExternalForegroundWindow();
         if (windowHandle == IntPtr.Zero) throw new WindowsObservationException();
 
         AutomationElement root;
@@ -49,10 +61,21 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             string.IsNullOrWhiteSpace(windowTitle) ? null : windowTitle,
             Locale: CultureInfo.CurrentUICulture.Name);
 
+        var deferForegroundScan = WindowsFastPathResolver.IsKnownSystemGoal(goal)
+            && !WindowsFastPathResolver.IsTrustedWindowsProcess(processName);
         var elementsBySource = new Dictionary<string, AutomationElement>(StringComparer.Ordinal);
-        var foregroundRaw = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
-        var foregroundCandidates = CandidateNormalizer.Normalize(foregroundRaw, MaximumForegroundCandidates);
+        IReadOnlyList<NormalizedAutomationCandidate> foregroundCandidates = [];
+        if (!deferForegroundScan)
+        {
+            var foregroundRaw = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
+            foregroundCandidates = CandidateNormalizer.Normalize(foregroundRaw, MaximumForegroundCandidates);
+        }
         var roots = new List<AutomationElement> { root };
+        var overviewSourceKeys = new HashSet<string>(StringComparer.Ordinal);
+        var overviewRaw = CollectWindowOverview(elementsBySource, overviewSourceKeys, cancellationToken);
+        var overviewCandidates = CandidateNormalizer.Normalize(overviewRaw, ReservedWindowOverviewCandidates)
+            .Select(MarkAsWindowOverviewCandidate)
+            .ToArray();
         IReadOnlyList<NormalizedAutomationCandidate> taskbarCandidates = [];
 
         var taskbarHandle = FindWindow("Shell_TrayWnd", null);
@@ -74,18 +97,28 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             }
             catch (ElementNotAvailableException) { }
             catch (InvalidOperationException) { }
+            catch (ArgumentException) { }
+            catch (COMException) { }
         }
 
+        var globalCandidates = overviewCandidates.Concat(taskbarCandidates).ToArray();
         var normalized = CandidateNormalizer.MergeWithReservedSecondaryScope(
             foregroundCandidates,
-            taskbarCandidates,
+            globalCandidates,
             MaximumForegroundCandidates,
-            ReservedTaskbarCandidates);
+            ReservedGlobalCandidates);
         var candidates = normalized.Select(item => item.Candidate).ToArray();
-        var registryElements = normalized
-            .Where(item => elementsBySource.ContainsKey(item.SourceKey))
-            .ToDictionary(item => item.Candidate.Id, item => elementsBySource[item.SourceKey], StringComparer.Ordinal);
-        var registry = new CandidateRegistry(registryElements);
+        var registryElements = new Dictionary<string, AutomationElement>(StringComparer.Ordinal);
+        foreach (var item in normalized)
+        {
+            if (elementsBySource.TryGetValue(item.SourceKey, out var element))
+                registryElements[item.Candidate.Id] = element;
+        }
+        var titleBarIds = normalized
+            .Where(item => overviewSourceKeys.Contains(item.SourceKey))
+            .Select(item => item.Candidate.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var registry = new CandidateRegistry(registryElements, titleBarIds);
         var focusedElementKey = GetFocusedElementKey();
         return new WindowsObservation(
             context,
@@ -93,7 +126,56 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             registry,
             WindowsObservation.ComputeHash(context, candidates, focusedElementKey),
             roots,
-            focusedElementKey);
+            focusedElementKey,
+            deferForegroundScan);
+    }
+
+    private List<RawAutomationCandidate> CollectWindowOverview(
+        IDictionary<string, AutomationElement> elementsBySource,
+        ISet<string> overviewSourceKeys,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<RawAutomationCandidate>();
+        _ = EnumWindows((handle, _) =>
+        {
+            if (result.Count >= 40) return false;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsExternalWindow(handle) || GetWindow(handle, 4) != IntPtr.Zero) return true;
+            try
+            {
+                var element = AutomationElement.FromHandle(handle);
+                var title = Read(() => element.Current.Name);
+                var rectangle = Read(() => element.Current.BoundingRectangle);
+                if (string.IsNullOrWhiteSpace(title) || rectangle.IsEmpty
+                    || rectangle.Width < 120 || rectangle.Height < 80) return true;
+                var sourceKey = GetSourceKey(element);
+                if (string.IsNullOrEmpty(sourceKey)) return true;
+                var processName = GetProcessName(element);
+                elementsBySource[sourceKey] = element;
+                overviewSourceKeys.Add(sourceKey);
+                result.Add(new RawAutomationCandidate(
+                    sourceKey,
+                    sourceKey,
+                    title,
+                    $"Open window in {processName}",
+                    "window",
+                    true,
+                    true,
+                    true,
+                    new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, Math.Min(48, rectangle.Height)),
+                    false,
+                    null,
+                    null,
+                    "ControlType.Window",
+                    processName));
+            }
+            catch (ElementNotAvailableException) { }
+            catch (InvalidOperationException) { }
+            catch (ArgumentException) { }
+            catch (COMException) { }
+            return true;
+        }, IntPtr.Zero);
+        return result;
     }
 
     private List<RawAutomationCandidate> CollectRawCandidates(
@@ -121,7 +203,8 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                 if (string.IsNullOrEmpty(sourceKey)) continue;
                 var role = MapRole(target.Current.ControlType);
                 var rectangle = target.Current.BoundingRectangle;
-                var visible = !target.Current.IsOffscreen && !rectangle.IsEmpty;
+                var isOffscreen = target.Current.IsOffscreen;
+                var visible = !rectangle.IsEmpty;
                 var clickable = IsActionable(target, role);
                 elementsBySource[sourceKey] = target;
                 result.Add(new RawAutomationCandidate(
@@ -137,11 +220,14 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                     Read(() => target.Current.IsPassword),
                     Read(() => target.Current.AutomationId),
                     Read(() => target.Current.ClassName),
-                    Read(() => target.Current.ControlType.ProgrammaticName),
-                    processName));
+                    Read(() => target.Current.ControlType?.ProgrammaticName),
+                    processName,
+                    isOffscreen));
             }
             catch (ElementNotAvailableException) { }
             catch (InvalidOperationException) { }
+            catch (ArgumentException) { }
+            catch (COMException) { }
         }
 
         return result;
@@ -156,6 +242,8 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             if (IsActionable(current, role)) return current;
             try { current = walker.GetParent(current); }
             catch (ElementNotAvailableException) { return null; }
+            catch (InvalidOperationException) { return null; }
+            catch (COMException) { return null; }
         }
         return null;
     }
@@ -163,11 +251,12 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
     private static bool IsActionable(AutomationElement element, string role)
     {
         if (role is "button" or "link" or "edit" or "checkbox" or "radio" or "combobox"
-            or "menuitem" or "tab" or "listitem" or "treeitem" or "dataitem") return true;
+            or "menuitem" or "tab" or "listitem" or "treeitem" or "dataitem" or "slider") return true;
         return element.TryGetCurrentPattern(InvokePattern.Pattern, out _)
             || element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out _)
             || element.TryGetCurrentPattern(TogglePattern.Pattern, out _)
-            || element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out _);
+            || element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out _)
+            || element.TryGetCurrentPattern(RangeValuePattern.Pattern, out _);
     }
 
     private static string MapRole(ControlType? controlType)
@@ -183,6 +272,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         if (controlType == ControlType.ListItem) return "listitem";
         if (controlType == ControlType.TreeItem) return "treeitem";
         if (controlType == ControlType.DataItem) return "dataitem";
+        if (controlType == ControlType.Slider) return "slider";
         if (controlType == ControlType.Document) return "document";
         if (controlType == ControlType.Pane) return "pane";
         if (controlType == ControlType.Window) return "window";
@@ -201,22 +291,38 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             }
         }
         catch (ElementNotAvailableException) { }
+        catch (InvalidOperationException) { }
+        catch (COMException) { }
     }
 
     private static string GetSourceKey(AutomationElement element)
     {
         try
         {
+            var processId = element.Current.ProcessId;
             var runtimeId = element.GetRuntimeId();
-            return runtimeId is { Length: > 0 }
-                ? string.Join('.', runtimeId)
-                : $"{element.Current.ProcessId}:{element.Current.AutomationId}:{element.Current.NativeWindowHandle}";
+            return ComposeSourceKey(
+                processId,
+                runtimeId,
+                element.Current.AutomationId,
+                element.Current.NativeWindowHandle);
         }
         catch (ElementNotAvailableException)
         {
             return string.Empty;
         }
+        catch (InvalidOperationException) { return string.Empty; }
+        catch (COMException) { return string.Empty; }
     }
+
+    internal static string ComposeSourceKey(
+        int processId,
+        IReadOnlyList<int>? runtimeId,
+        string? automationId,
+        int nativeWindowHandle) =>
+        runtimeId is { Count: > 0 }
+            ? $"{processId}:{string.Join('.', runtimeId)}"
+            : $"{processId}:{automationId}:{nativeWindowHandle}";
 
     private static string GetProcessName(AutomationElement root)
     {
@@ -233,6 +339,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         }
         catch (ElementNotAvailableException) { return null; }
         catch (InvalidOperationException) { return null; }
+        catch (COMException) { return null; }
     }
 
     private IntPtr FindExternalForegroundWindow()
@@ -256,6 +363,47 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         return IntPtr.Zero;
     }
 
+    private IntPtr FindVisibleTransientShellSurface()
+    {
+        var bestHandle = IntPtr.Zero;
+        var bestArea = 0d;
+        _ = EnumWindows((handle, parameter) =>
+        {
+            if (!IsExternalWindow(handle) || IsCloaked(handle)) return true;
+            _ = GetWindowThreadProcessId(handle, out var processId);
+            string processName;
+            try { processName = Process.GetProcessById(processId).ProcessName; }
+            catch { return true; }
+            if (!TransientShellProcesses.Contains(processName)) return true;
+            try
+            {
+                var element = AutomationElement.FromHandle(handle);
+                var rectangle = element.Current.BoundingRectangle;
+                if (element.Current.IsOffscreen || rectangle.IsEmpty
+                    || rectangle.Width < 240 || rectangle.Height < 180) return true;
+                var area = rectangle.Width * rectangle.Height;
+                if (area <= bestArea) return true;
+                bestArea = area;
+                bestHandle = handle;
+            }
+            catch (ElementNotAvailableException) { }
+            catch (InvalidOperationException) { }
+            catch (ArgumentException) { }
+            catch (COMException) { }
+            return true;
+        }, IntPtr.Zero);
+        return bestHandle;
+    }
+
+    private static bool IsCloaked(IntPtr handle)
+    {
+        try
+        {
+            return DwmGetWindowAttribute(handle, 14, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
+        }
+        catch (DllNotFoundException) { return false; }
+    }
+
     private bool IsExternalWindow(IntPtr handle)
     {
         if (handle == IntPtr.Zero || !IsWindow(handle) || !IsWindowVisible(handle)) return false;
@@ -268,6 +416,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         try { return reader(); }
         catch (ElementNotAvailableException) { return default; }
         catch (InvalidOperationException) { return default; }
+        catch (COMException) { return default; }
     }
 
     private static NormalizedAutomationCandidate MarkAsTaskbarCandidate(NormalizedAutomationCandidate item)
@@ -278,6 +427,21 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         attributes["sourceScope"] = "windows_taskbar";
         return item with { Candidate = item.Candidate with { Attributes = attributes } };
     }
+
+    private static NormalizedAutomationCandidate MarkAsWindowOverviewCandidate(NormalizedAutomationCandidate item)
+    {
+        var attributes = item.Candidate.Attributes is null
+            ? new Dictionary<string, object?>(StringComparer.Ordinal)
+            : new Dictionary<string, object?>(item.Candidate.Attributes, StringComparer.Ordinal);
+        attributes["sourceScope"] = "windows_window_overview";
+        return item with { Candidate = item.Candidate with { Attributes = attributes } };
+    }
+
+    private delegate bool EnumWindowsCallback(IntPtr windowHandle, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
@@ -298,4 +462,11 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr windowHandle, out int processId);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(
+        IntPtr windowHandle,
+        int attribute,
+        out int value,
+        int valueSize);
 }

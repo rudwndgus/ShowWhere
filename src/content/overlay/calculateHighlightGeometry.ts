@@ -10,6 +10,17 @@ export interface HighlightGeometry {
   borderRadius: number;
 }
 
+export type ViewportScrollDirection = 'up' | 'down' | null;
+
+export function getViewportScrollDirection(
+  rect: Pick<DOMRect, 'top' | 'bottom'>,
+  viewportHeight = window.innerHeight,
+): ViewportScrollDirection {
+  if (rect.top >= viewportHeight) return 'down';
+  if (rect.bottom <= 0) return 'up';
+  return null;
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 }

@@ -86,6 +86,14 @@ public static class ContractValidator
         }
         if (decision.Action == GuideActions.RequestSafeTool && string.IsNullOrWhiteSpace(decision.SafeToolId))
             throw new ContractValidationException("Safe tool decision did not include a tool ID.");
+        if (decision.AlternativeTargetIds is not null)
+        {
+            if (decision.Action != GuideActions.AskUser
+                || decision.AlternativeTargetIds.Count is < 2 or > 4
+                || decision.AlternativeTargetIds.Distinct(StringComparer.Ordinal).Count() != decision.AlternativeTargetIds.Count
+                || decision.AlternativeTargetIds.Any(id => request.Candidates.All(candidate => candidate.Id != id)))
+                throw new ContractValidationException("Guide decision alternatives are invalid.");
+        }
         return decision;
     }
 }

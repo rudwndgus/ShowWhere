@@ -166,11 +166,6 @@ export function App() {
           expectedChange,
         })
       : null);
-    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-    const ownerFrame = target.ownerDocument.defaultView?.frameElement;
-    if (ownerFrame instanceof HTMLElement) {
-      ownerFrame.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-    }
   }, []);
 
   useEffect(() => {
@@ -255,7 +250,12 @@ export function App() {
       return;
     }
 
-    const alternatives = observation.alternativeChoices;
+    const modelAlternatives = decision.alternativeTargetIds
+      ? candidateRegistryRef.current.getChoices(decision.alternativeTargetIds)
+      : [];
+    const alternatives = modelAlternatives.length > 1
+      ? modelAlternatives
+      : observation.alternativeChoices;
     if (decision.action === 'ask_user' && alternatives.length > 1) {
       const signature = alternatives.map((choice) => choice.id).join('|');
       const exactDuplicate =
@@ -350,7 +350,7 @@ export function App() {
             : null);
         }
       })();
-    }, 550);
+    }, 100);
     timers.current.push(timer);
   }, [clearTimers, handleGuideDecision, input, mode, resetGuidance]);
 

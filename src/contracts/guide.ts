@@ -78,6 +78,7 @@ export const GuideDecisionSchema = z.object({
   expectedChange: z.string().trim().min(1).max(1_000).optional(),
   confidence: z.number().finite().min(0).max(1),
   safeToolId: z.string().trim().min(1).max(160).optional(),
+  alternativeTargetIds: z.array(z.string().trim().min(1).max(160)).min(2).max(4).optional(),
 }).strict().superRefine((decision, context) => {
   if (decision.action === 'highlight' && !decision.targetId) {
     context.addIssue({
@@ -93,6 +94,21 @@ export const GuideDecisionSchema = z.object({
       message: 'safeToolId is required when action requests a safe tool.',
     });
   }
+  if (decision.alternativeTargetIds && decision.action !== 'ask_user') {
+    context.addIssue({
+      code: 'custom',
+      path: ['alternativeTargetIds'],
+      message: 'alternativeTargetIds are allowed only when action is ask_user.',
+    });
+  }
+  if (decision.alternativeTargetIds
+      && new Set(decision.alternativeTargetIds).size !== decision.alternativeTargetIds.length) {
+    context.addIssue({
+      code: 'custom',
+      path: ['alternativeTargetIds'],
+      message: 'alternativeTargetIds must be unique.',
+    });
+  }
 });
 
 export type Bounds = z.infer<typeof BoundsSchema>;
@@ -105,6 +121,7 @@ export type GuideDecision = z.infer<typeof GuideDecisionSchema>;
 export const DEFAULT_GUIDE_CONFIDENCE_THRESHOLD = 0.65;
 
 export function targetExistsInRequest(decision: GuideDecision, request: GuideRequest): boolean {
-  if (decision.action !== 'highlight') return true;
-  return request.candidates.some((candidate) => candidate.id === decision.targetId);
+  const candidateIds = new Set(request.candidates.map((candidate) => candidate.id));
+  if (decision.action === 'highlight' && !candidateIds.has(decision.targetId ?? '')) return false;
+  return decision.alternativeTargetIds?.every((id) => candidateIds.has(id)) ?? true;
 }

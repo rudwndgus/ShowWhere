@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Runtime.InteropServices;
 using System.Windows.Automation;
 using ShowWhere.Core;
 
@@ -8,25 +9,64 @@ namespace ShowWhere.WindowsAutomation;
 public sealed class CandidateRegistry
 {
     private readonly IReadOnlyDictionary<string, AutomationElement> _elements;
+    private readonly IReadOnlySet<string> _windowTitleBarIds;
 
-    internal CandidateRegistry(IReadOnlyDictionary<string, AutomationElement> elements) => _elements = elements;
+    internal CandidateRegistry(
+        IReadOnlyDictionary<string, AutomationElement> elements,
+        IReadOnlySet<string>? windowTitleBarIds = null)
+    {
+        _elements = elements;
+        _windowTitleBarIds = windowTitleBarIds ?? new HashSet<string>();
+    }
 
     public bool TryResolveBounds(string candidateId, out UiBounds bounds)
     {
+        return TryResolveState(candidateId, out bounds, out _);
+    }
+
+    public bool TryResolveState(string candidateId, out UiBounds bounds, out bool isOffscreen)
+    {
         bounds = new UiBounds(0, 0, 0, 0);
+        isOffscreen = false;
         if (!_elements.TryGetValue(candidateId, out var element)) return false;
         try
         {
             var rectangle = element.Current.BoundingRectangle;
-            if (rectangle.IsEmpty || rectangle.Width <= 1 || rectangle.Height <= 1 || element.Current.IsOffscreen)
+            if (rectangle.IsEmpty || rectangle.Width <= 1 || rectangle.Height <= 1)
                 return false;
-            bounds = new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
+            isOffscreen = element.Current.IsOffscreen;
+            bounds = _windowTitleBarIds.Contains(candidateId)
+                ? new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, Math.Min(48, rectangle.Height))
+                : new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
             return true;
         }
         catch (ElementNotAvailableException)
         {
             return false;
         }
+        catch (InvalidOperationException) { return false; }
+        catch (COMException) { return false; }
+    }
+
+    public async Task<UiBounds?> WaitForVisibleBoundsAsync(
+        string candidateId,
+        TimeSpan maximumWait,
+        CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(maximumWait);
+        try
+        {
+            while (!timeout.IsCancellationRequested)
+            {
+                if (TryResolveState(candidateId, out var bounds, out var isOffscreen) && !isOffscreen)
+                    return bounds;
+                await Task.Delay(120, timeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
+        cancellationToken.ThrowIfCancellationRequested();
+        return null;
     }
 }
 
@@ -38,7 +78,8 @@ public sealed class WindowsObservation
         CandidateRegistry registry,
         string snapshotHash,
         IReadOnlyList<AutomationElement> roots,
-        string? focusedElementKey)
+        string? focusedElementKey,
+        bool foregroundScanDeferred)
     {
         Context = context;
         Candidates = candidates;
@@ -46,6 +87,7 @@ public sealed class WindowsObservation
         SnapshotHash = snapshotHash;
         Roots = roots;
         FocusedElementKey = focusedElementKey;
+        ForegroundScanDeferred = foregroundScanDeferred;
     }
 
     public ApplicationContext Context { get; }
@@ -54,6 +96,7 @@ public sealed class WindowsObservation
     public string SnapshotHash { get; }
     internal IReadOnlyList<AutomationElement> Roots { get; }
     internal string? FocusedElementKey { get; }
+    public bool ForegroundScanDeferred { get; }
 
     internal static string ComputeHash(
         ApplicationContext context,
@@ -83,5 +126,5 @@ public sealed class WindowsObservationException : Exception
 public interface IWindowsUiObserver
 {
     void RememberCurrentForegroundWindow();
-    Task<WindowsObservation> ObserveAsync(CancellationToken cancellationToken);
+    Task<WindowsObservation> ObserveAsync(string? goal, CancellationToken cancellationToken);
 }

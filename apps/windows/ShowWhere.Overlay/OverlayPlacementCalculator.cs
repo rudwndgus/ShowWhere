@@ -24,11 +24,15 @@ public static class OverlayPlacementCalculator
     {
         const double padding = 8;
         const double gap = 14;
+        var highlightX = Math.Max(workingArea.X, target.X - padding);
+        var highlightY = Math.Max(workingArea.Y, target.Y - padding);
+        var highlightRight = Math.Min(workingArea.Right, target.X + target.Width + padding);
+        var highlightBottom = Math.Min(workingArea.Bottom, target.Y + target.Height + padding);
         var highlight = new PhysicalRectangle(
-            target.X - padding,
-            target.Y - padding,
-            target.Width + padding * 2,
-            target.Height + padding * 2);
+            highlightX,
+            highlightY,
+            Math.Max(1, highlightRight - highlightX),
+            Math.Max(1, highlightBottom - highlightY));
         var placeAbove = highlight.Bottom + gap + tooltipHeight > workingArea.Bottom
             && highlight.Y - gap - tooltipHeight >= workingArea.Y;
         var tooltipY = placeAbove
@@ -52,4 +56,8 @@ public static class OverlayPlacementCalculator
             tooltip with { X = tooltip.X - windowX, Y = tooltip.Y - windowY },
             placeAbove);
     }
+
+    public static bool IsOutside(UiBounds target, PhysicalRectangle area) =>
+        target.X >= area.Right || target.X + target.Width <= area.X
+        || target.Y >= area.Bottom || target.Y + target.Height <= area.Y;
 }

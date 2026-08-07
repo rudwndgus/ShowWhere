@@ -80,6 +80,26 @@ describe('mock /api/guide', () => {
     expect(response.decision.targetId).toBeUndefined();
   });
 
+  it('rejects clarification alternatives that were not supplied by the platform', async () => {
+    const provider: AiProvider = {
+      async decideNextAction() {
+        return {
+          status: 'needs_clarification',
+          action: 'ask_user',
+          alternativeTargetIds: ['candidate-1', 'invented-target'],
+          message: '어느 항목인가요?',
+          confidence: 0.4,
+        };
+      },
+    };
+
+    const response = await handleGuideApiRequest(GUIDE_API_PATH, request, provider);
+
+    expect(response.status).toBe(422);
+    expect(response.errorCode).toBe('unknown_target_id');
+    expect(response.decision.alternativeTargetIds).toBeUndefined();
+  });
+
   it('converts low-confidence highlights into clarification', async () => {
     const provider: AiProvider = {
       async decideNextAction() {

@@ -27,6 +27,7 @@
 
     <Border Grid.Row="2" Background="#FFF4F6FA" CornerRadius="12" Padding="8" Margin="0,0,0,10">
       <ScrollViewer x:Name="ChatScroll" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
         <ItemsControl ItemsSource="{Binding Messages}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
@@ -53,6 +54,23 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+        <ItemsControl ItemsSource="{Binding ClarificationChoices}" Margin="3,6,3,2">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Content="{Binding Label}"
+                      Command="{Binding DataContext.SelectClarificationCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}"
+                      Background="White" BorderBrush="#FF1E6FF2" Foreground="#FF155BC4"
+                      Padding="10,7" Margin="0,0,6,6" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        </StackPanel>
       </ScrollViewer>
     </Border>
 

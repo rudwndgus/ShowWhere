@@ -6,6 +6,22 @@ namespace ShowWhere.Windows.Tests;
 public sealed class CandidateNormalizerTests
 {
     [Fact]
+    public void Keeps_actionable_windows_setting_sliders()
+    {
+        var normalized = CandidateNormalizer.Normalize([
+            Candidate("brightness", "brightness", true, true, new UiBounds(10, 10, 220, 30)) with
+            {
+                Label = "Brightness",
+                Role = "slider",
+                ControlType = "ControlType.Slider",
+            },
+        ]);
+
+        Assert.Single(normalized);
+        Assert.Equal("slider", normalized[0].Candidate.Role);
+    }
+
+    [Fact]
     public void Normalize_filters_invisible_disabled_and_zero_size_controls()
     {
         var source = new[]

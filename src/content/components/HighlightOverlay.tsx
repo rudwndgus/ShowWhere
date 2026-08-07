@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   calculateHighlightGeometry,
+  getViewportScrollDirection,
   type HighlightGeometry,
 } from '../overlay/calculateHighlightGeometry';
+import { getElementViewportRect } from '../utils/elementVisibility';
 
 interface HighlightOverlayProps {
   target: HTMLElement | null;
@@ -10,10 +12,12 @@ interface HighlightOverlayProps {
 
 export function HighlightOverlay({ target }: HighlightOverlayProps) {
   const [geometry, setGeometry] = useState<HighlightGeometry | null>(null);
+  const [scrollDirection, setScrollDirection] = useState<'up' | 'down' | null>(null);
 
   useEffect(() => {
     if (!target || !target.isConnected) {
       setGeometry(null);
+      setScrollDirection(null);
       return;
     }
 
@@ -21,7 +25,19 @@ export function HighlightOverlay({ target }: HighlightOverlayProps) {
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        if (target.isConnected) setGeometry(calculateHighlightGeometry(target));
+        if (!target.isConnected) return;
+        const rect = getElementViewportRect(target);
+        const direction = getViewportScrollDirection(rect);
+        if (direction === 'down') {
+          setGeometry(null);
+          setScrollDirection('down');
+        } else if (direction === 'up') {
+          setGeometry(null);
+          setScrollDirection('up');
+        } else {
+          setScrollDirection(null);
+          setGeometry(calculateHighlightGeometry(target));
+        }
       });
     };
     update();
@@ -46,6 +62,16 @@ export function HighlightOverlay({ target }: HighlightOverlayProps) {
     };
   }, [target]);
 
+  if (scrollDirection) {
+    return (
+      <div className="sw-guide-layer" aria-hidden="true">
+        <div className={`sw-scroll-indicator sw-scroll-indicator--${scrollDirection}`}>
+          <span>{scrollDirection === 'down' ? '↓' : '↑'}</span>
+          {scrollDirection === 'down' ? '아래로 스크롤하세요' : '위로 스크롤하세요'}
+        </div>
+      </div>
+    );
+  }
   if (!geometry) return null;
   return (
     <div className="sw-guide-layer" aria-hidden="true">

@@ -47,7 +47,8 @@ public sealed record GuideDecision(
     double Confidence,
     string? TargetId = null,
     string? ExpectedChange = null,
-    string? SafeToolId = null);
+    string? SafeToolId = null,
+    IReadOnlyList<string>? AlternativeTargetIds = null);
 
 public static class Platforms
 {

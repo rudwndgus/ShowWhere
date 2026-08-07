@@ -9,7 +9,8 @@ Floating assistant / compact panel
   -> foreground non-ShowWhere window
   -> bounded Microsoft UI Automation observation
   -> normalized Windows UiCandidate list + local element registry
-  -> GuideRequest { platform: "windows" }
+  -> known Windows goal? taskbar/settings fast-path decision
+  -> otherwise GuideRequest { platform: "windows" }
   -> ShowWhere backend POST /api/guide
   -> MockAiProvider or server-only FeatherlessProvider
   -> runtime-validated GuideDecision
@@ -21,6 +22,16 @@ Floating assistant / compact panel
 ```
 
 The model never receives an `AutomationElement`, selector, window handle, or authority to click. It can select only a candidate ID supplied by the current observation.
+
+Known Windows goals such as Network, Volume, Bluetooth, Display/Brightness, Clock, Battery, Notifications, Windows Update, Accessibility, and Settings use a deterministic fast path before any provider request. When the foreground application is unrelated, the observer initially scans only the small Windows taskbar tree. It expands to the complete foreground tree and Featherless only when the fast path cannot resolve a real visible candidate. The fast path never uses fixed coordinates; it still highlights only a validated candidate ID from the current machine.
+
+The Windows observer also contributes a bounded overview of other open top-level windows. These overview candidates contain only application/title-bar context, not every descendant control. This lets the decision layer switch from an unrelated foreground app to an already open Photos, File Explorer, browser, or other relevant window before performing a deep scan. Photo, screenshot, Downloads, and Documents goals have deterministic shell routes; unknown goals can still use the validated window overview through the AI decision layer.
+
+Camera-photo and screenshot routes are intentionally separate, and conflicting window titles are excluded from each route. UI Automation source keys include the owning process ID so a runtime ID reused by Chrome and File Explorer cannot resolve to the wrong application. Generic photo requests are clarified with source choices before observation. AI decisions may also return two to four validated `alternativeTargetIds`; both clients render these as buttons and guide only the option explicitly selected by the user.
+
+Printer goals use a deterministic Windows route through Start, Settings, Bluetooth & devices, and Printers & scanners. The resolver emits only the deepest currently visible next target, excludes unrelated Network/Wi-Fi controls, and consults session facts so a control already selected during the task is not highlighted again.
+
+The initial product scope is deliberately Windows-first. Built-in applications and standard Settings destinations are represented by an offline navigation catalog of multilingual intent aliases and visible UI labels. Known Windows goals do not fall through to the remote provider when a transient shell surface is still loading. The client detects visible Start/Search shell windows independently of ShowWhere's own foreground panel, retries local observation briefly, and either resolves a validated UIA target or reports a local observation problem without exposing a provider failure.
 
 ## Windows projects
 

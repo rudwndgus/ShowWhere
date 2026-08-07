@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="public/icons/icon128.png" alt="ShowWhere logo" width="96" height="96">
+
 # ShowWhere
 
 ### Don't explain your screen. Just tell us your goal.
@@ -14,16 +16,48 @@
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![AI API](https://img.shields.io/badge/AI_API-Server--side_only-success)
+[![Latest release](https://img.shields.io/github/v/release/rudwndgus/ShowWhere?label=release&color=7c3aed)](https://github.com/rudwndgus/ShowWhere/releases/latest)
+
+<br><br>
+
+<a href="https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere-Windows-x64.exe">
+  <img src="https://img.shields.io/badge/Windows%20실행%20파일-바로%20다운로드-2563EB?style=for-the-badge&logo=windows11&logoColor=white" alt="Download ShowWhere for Windows">
+</a>
+
+<br>
+
+[최신 릴리스 보기](https://github.com/rudwndgus/ShowWhere/releases/latest) · [개발 문서](docs/development.md) · [아키텍처](docs/architecture.md) · [테스트 절차](docs/windows-smoke-test.md)
 
 </div>
 
-## Native Windows client
+> [!IMPORTANT]
+> 현재는 Windows 프로토타입입니다. ShowWhere는 위치를 안내하지만 버튼을 자동으로 누르지 않습니다. AI 의미 분석은 별도의 보안 백엔드가 실행 중일 때 사용할 수 있으며 API 키는 실행 파일에 포함되지 않습니다.
+
+## 30초 만에 시작하기
+
+1. 위의 **Windows 실행 파일 바로 다운로드** 버튼을 누릅니다.
+2. 내려받은 `ShowWhere-Windows-x64.exe`를 실행합니다. 설치와 별도 .NET 설치가 필요하지 않습니다.
+3. 주 모니터 오른쪽에 나타난 `?` 도우미를 눌러 하고 싶은 일을 입력합니다.
+4. ShowWhere가 강조한 위치를 사용자가 직접 누르면 다음 단계를 이어서 안내합니다.
+
+Windows SmartScreen이 표시되면 **추가 정보 → 실행**을 선택할 수 있습니다. 현재 배포 파일은 코드 서명되지 않은 개발 버전입니다.
+
+### 한눈에 보기
+
+| 사용자가 하는 일 | ShowWhere가 하는 일 |
+| --- | --- |
+| “프린터 설정을 확인하고 싶어”처럼 목표를 입력 | 한글 의도를 Windows 메뉴 및 영문 UI와 연결 |
+| 화면에 표시된 곳을 직접 클릭 | 화면 변화를 감지하고 다음 한 단계 안내 |
+| 모호한 요청에 선택지 응답 | 선택된 실제 UI 후보만 강조 |
+| 창이나 모니터 구성을 변경 | 현재 화면 안에서 도우미와 강조 위치를 다시 계산 |
+
+## Windows 데스크톱 앱
 
 ShowWhere의 기본 클라이언트는 C#/.NET 8 WPF 기반 Windows 데스크톱 앱입니다. 항상 위에 떠 있는 `?` 도우미가 Microsoft UI Automation으로 현재 앱의 의미 있는 컨트롤을 관찰하고, 검증된 `targetId`에 해당하는 실제 위치만 click-through overlay로 안내합니다. 사용자의 버튼을 자동으로 누르지 않습니다.
 
 Chrome 확장 프로그램은 웹 DOM을 더 정확하게 관찰하는 선택적 browser adapter로 계속 제공됩니다. 두 클라이언트 모두 별도 `POST /api/guide` 백엔드를 사용하며 Featherless API 키는 서버 환경에만 존재합니다.
 
-실행과 빌드는 [로컬 개발 문서](docs/development.md), Windows 검증 절차는 [수동 smoke test](docs/windows-smoke-test.md)를 참고하세요.
+소스 빌드와 백엔드 연결은 [로컬 개발 문서](docs/development.md), Windows 검증 절차는 [수동 smoke test](docs/windows-smoke-test.md)를 참고하세요.
 
 ---
 
@@ -99,6 +133,13 @@ AI는 의미가 다른 언어로 표현된 목표와 화면 문구를 연결하�
 ### 목표 기반 UI 검색
 
 - 한글·영문 문구와 기본 동의어 지원
+- 네트워크, 볼륨, 블루투스, 밝기, 날짜, 배터리 등 표준 Windows 기능은 AI 호출 전 빠른 경로로 처리
+- 현재 창이 질문과 무관하면 열려 있는 다른 앱의 제목표시줄·작업표시줄 개요에서 담당 앱을 먼저 선택
+- 빠른 경로도 고정 좌표가 아닌 현재 PC의 실제 접근성 후보 ID만 사용
+- 카메라 사진과 스크린샷처럼 뜻이 갈리는 요청은 서로 다른 경로로 처리하며, 출처가 불분명하면 선택 버튼으로 먼저 확인
+- AI가 여러 실제 후보 사이에서 확신하지 못하면 후보 이름을 선택지로 표시하고, 사용자가 고른 대상만 즉시 강조
+- 프린터 같은 Windows 작업은 `시작 → 설정 → Bluetooth 및 장치 → 프린터 및 스캐너`를 한꺼번에 설명하지 않고, 사용자가 누를 때마다 다음 한 곳만 이어서 강조
+- 계산기·메모장·그림판·캡처 도구와 주요 Windows 설정은 로컬 Windows 내비게이션 카탈로그로 처리하며, 단계 중 Featherless 장애가 발생해도 서버 경로로 전환하지 않음
 - 정확 일치, 부분 일치, compact 문자열, 토큰 유사도 계산
 - 로그인, 회원가입, 비밀번호 재설정, 설정, 검색, 저장, 인쇄, PDF, 메뉴, 프로필, 주문 내역 등 기본 의도 지원
 - 사전에 없는 문구도 현재 화면의 실제 텍스트와 일치하면 검색 가능
@@ -119,11 +160,11 @@ AI는 의미가 다른 언어로 표현된 목표와 화면 문구를 연결하�
 - 화면 경계, 최소 크기, 대상의 border-radius를 반영한 fixed overlay
 - 스크롤, 창 크기, 대상 크기 변화에 맞춰 위치 추적
 
-### 검증된 mock 안내 파이프라인
+### 검증된 AI 안내 파이프라인
 
 - Zod 기반 `UiCandidate`, `TaskSession`, `GuideRequest`, `GuideDecision` 검증
 - DOM 참조는 브라우저 내부 registry에만 보관
-- mock `/api/guide`가 반환한 candidate ID만 실제 요소로 해석
+- mock 또는 Featherless `/api/guide`가 반환한 candidate ID만 실제 요소로 해석
 - 존재하지 않는 target ID와 낮은 confidence를 안전한 재질문으로 전환
 - 실제 AI API, API key, 자동 클릭 없이 전체 결정 경로 검증
 
@@ -135,7 +176,7 @@ AI는 의미가 다른 언어로 표현된 목표와 화면 문구를 연결하�
 - Shadow DOM을 이용한 웹사이트 스타일 격리
 - ShowWhere가 버튼을 자동 클릭하지 않고 사용자가 직접 확인 후 클릭
 
-## 설치하기
+## 소스에서 실행하기
 
 ### 1. 프로젝트 준비
 
@@ -146,6 +187,13 @@ git clone https://github.com/rudwndgus/ShowWhere.git
 cd ShowWhere
 npm install
 npm run build
+```
+
+Windows 앱을 소스에서 실행하려면 .NET 8 SDK를 설치하고 다음 명령을 사용합니다.
+
+```powershell
+npm run dev:api
+npm run run:windows
 ```
 
 ### 2. Chrome에 확장 프로그램 로드
@@ -197,6 +245,9 @@ npx vite test-site
 
 ```text
 ShowWhere/
+├─ apps/windows/               # WPF 앱, UI Automation, overlay, Windows 테스트
+├─ services/api/               # API key를 보호하는 /api/guide 백엔드
+├─ docs/                       # 아키텍처, 개발, 안전, smoke test 문서
 ├─ public/
 │  ├─ icons/                    # 확장 프로그램 아이콘
 │  └─ manifest.json             # Chrome Extension Manifest V3
@@ -216,6 +267,7 @@ ShowWhere/
 │  │  └─ styles.css             # 격리된 UI 스타일
 │  └─ shared/messages.ts        # background/content 메시지
 ├─ test-site/                   # 수동 검증용 정적 페이지
+├─ .github/workflows/           # Windows 실행 파일 자동 릴리스
 ├─ package.json
 ├─ tsconfig.json
 └─ vite.config.ts

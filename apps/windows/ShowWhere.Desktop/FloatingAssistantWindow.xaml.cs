@@ -10,6 +10,11 @@ public partial class FloatingAssistantWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
+    private const uint MonitorDefaultToNearest = 0x00000002;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
+    private const int ScreenMargin = 8;
     private readonly GuidancePanelWindow _panel;
     private readonly AssistantPositionStore _positionStore;
     private readonly Action _rememberForegroundWindow;
@@ -36,6 +41,8 @@ public partial class FloatingAssistantWindow : Window
         var handle = new WindowInteropHelper(this).Handle;
         var style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
         _ = SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExToolWindow | WsExNoActivate));
+        ConstrainToNearestMonitor(handle);
+        Dispatcher.BeginInvoke(() => _positionStore.Save(Left, Top));
     }
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs eventArgs)
@@ -95,6 +102,46 @@ public partial class FloatingAssistantWindow : Window
         Top = Math.Clamp(Top, topEdge, bottomEdge);
         if (Math.Abs(Left - leftEdge) < 22) Left = leftEdge + 8;
         if (Math.Abs(Left - rightEdge) < 22) Left = rightEdge - 8;
+        ConstrainToNearestMonitor(new WindowInteropHelper(this).Handle);
+    }
+
+    private static void ConstrainToNearestMonitor(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var windowRect)) return;
+
+        var monitor = MonitorFromWindow(handle, MonitorDefaultToNearest);
+        var monitorInfo = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref monitorInfo)) return;
+
+        var width = windowRect.Right - windowRect.Left;
+        var height = windowRect.Bottom - windowRect.Top;
+        var minimumLeft = monitorInfo.WorkArea.Left + ScreenMargin;
+        var maximumLeft = Math.Max(minimumLeft, monitorInfo.WorkArea.Right - width - ScreenMargin);
+        var minimumTop = monitorInfo.WorkArea.Top + ScreenMargin;
+        var maximumTop = Math.Max(minimumTop, monitorInfo.WorkArea.Bottom - height - ScreenMargin);
+        var left = Math.Clamp(windowRect.Left, minimumLeft, maximumLeft);
+        var top = Math.Clamp(windowRect.Top, minimumTop, maximumTop);
+
+        if (left == windowRect.Left && top == windowRect.Top) return;
+        _ = SetWindowPos(handle, IntPtr.Zero, left, top, 0, 0, SwpNoSize | SwpNoZOrder | SwpNoActivate);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public NativeRect MonitorArea;
+        public NativeRect WorkArea;
+        public uint Flags;
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
@@ -105,6 +152,24 @@ public partial class FloatingAssistantWindow : Window
     private static extern IntPtr SetWindowLongPtr64(IntPtr windowHandle, int index, IntPtr value);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
     private static extern IntPtr SetWindowLong32(IntPtr windowHandle, int index, IntPtr value);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr windowHandle, out NativeRect rectangle);
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr windowHandle, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo monitorInfo);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr windowHandle,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
     private static IntPtr GetWindowLongPtr(IntPtr handle, int index) =>
         IntPtr.Size == 8 ? GetWindowLongPtr64(handle, index) : GetWindowLong32(handle, index);
     private static IntPtr SetWindowLongPtr(IntPtr handle, int index, IntPtr value) =>

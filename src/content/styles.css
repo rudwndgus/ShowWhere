@@ -439,6 +439,34 @@ button {
   font-weight: 700;
 }
 
+.sw-scroll-indicator {
+  position: fixed;
+  left: 50%;
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 150px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--sw-accent);
+  box-shadow: 0 8px 24px rgba(25, 25, 30, 0.28);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  transform: translateX(-50%);
+  animation: sw-scroll-float 1.2s ease-in-out infinite;
+}
+
+.sw-scroll-indicator span {
+  font-size: 26px;
+  line-height: 22px;
+}
+
+.sw-scroll-indicator--down { bottom: 24px; }
+.sw-scroll-indicator--up { top: 24px; }
+
 .sw-sr-only {
   position: absolute !important;
   width: 1px !important;
@@ -483,12 +511,19 @@ button {
   50% { box-shadow: 0 0 0 7px rgba(202, 44, 52, 0.08), 0 4px 20px rgba(202, 44, 52, 0.22); }
 }
 
+@keyframes sw-scroll-float {
+  0%, 100% { transform: translate(-50%, 0); }
+  50% { transform: translate(-50%, 8px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sw-assistant,
   .sw-thinking span,
   .sw-highlight {
     animation: none !important;
   }
+
+  .sw-scroll-indicator { animation: none !important; }
 
   .sw-tooltip,
   .sw-dialog {

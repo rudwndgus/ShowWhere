@@ -20,14 +20,13 @@ export function rankCandidates(originalQuery: string): SearchOutcome {
       ['textbox', 'checkbox', 'radio', 'switch', 'tab'].includes(candidate.role ?? '')
     )
     .map((candidate) => scoreCandidate(candidate, query, intent))
-    .filter((candidate) =>
-      candidate.isVisible && !candidate.isDisabled && candidate.score >= MINIMUM_MATCH_SCORE
-    )
+    .filter((candidate) => candidate.isVisible && !candidate.isDisabled)
     .sort((a, b) => b.score - a.score);
 
-  const best = ranked[0] ?? null;
+  const locallyMatched = ranked.filter((candidate) => candidate.score >= MINIMUM_MATCH_SCORE);
+  const best = locallyMatched[0] ?? null;
   const alternatives = best
-    ? ranked.filter((candidate) => best.score - candidate.score <= AMBIGUITY_GAP).slice(0, 3)
+    ? locallyMatched.filter((candidate) => best.score - candidate.score <= AMBIGUITY_GAP).slice(0, 3)
     : [];
   const ambiguous = alternatives.length > 1;
 

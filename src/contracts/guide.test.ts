@@ -69,4 +69,22 @@ describe('guide contracts', () => {
     }).success).toBe(false);
     expect(TaskSessionSchema.safeParse({ ...session, failureCount: -1 }).success).toBe(false);
   });
+
+  it('validates unique ask-user alternatives and rejects alternatives for other actions', () => {
+    expect(GuideDecisionSchema.safeParse({
+      status: 'needs_clarification',
+      action: 'ask_user',
+      message: '어느 항목인가요?',
+      confidence: 0.4,
+      alternativeTargetIds: ['candidate-1', 'candidate-2'],
+    }).success).toBe(true);
+    expect(GuideDecisionSchema.safeParse({
+      status: 'in_progress',
+      action: 'highlight',
+      targetId: 'candidate-1',
+      message: '여기를 누르세요.',
+      confidence: 0.9,
+      alternativeTargetIds: ['candidate-1', 'candidate-2'],
+    }).success).toBe(false);
+  });
 });

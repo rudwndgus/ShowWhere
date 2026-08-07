@@ -25,3 +25,21 @@ public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute
     }
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
+
+public sealed class AsyncParameterRelayCommand(
+    Func<object?, Task> execute,
+    Func<object?, bool>? canExecute = null) : ICommand
+{
+    private bool _executing;
+    public event EventHandler? CanExecuteChanged;
+    public bool CanExecute(object? parameter) => !_executing && (canExecute?.Invoke(parameter) ?? true);
+    public async void Execute(object? parameter)
+    {
+        if (!CanExecute(parameter)) return;
+        _executing = true;
+        RaiseCanExecuteChanged();
+        try { await execute(parameter); }
+        finally { _executing = false; RaiseCanExecuteChanged(); }
+    }
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}

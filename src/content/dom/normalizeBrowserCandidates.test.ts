@@ -61,4 +61,24 @@ describe('browser candidate normalization', () => {
     expect(records[0].target).toBe(button);
     expect(records[0].candidate.bounds.width).toBe(100);
   });
+
+  it('keeps visible semantic fallback elements for AI even when local text matching is weak', () => {
+    const element = document.createElement('button');
+    element.textContent = 'My Tickets';
+    document.body.append(element);
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 1200, 120, 40));
+
+    const records = normalizeBrowserCandidates([
+      makeCandidate(element, {
+        searchableText: 'my tickets',
+        visibleText: 'My Tickets',
+        isInViewport: false,
+        score: -1000,
+      }),
+    ]);
+
+    expect(records).toHaveLength(1);
+    expect(records[0].candidate.label).toContain('My Tickets');
+    expect(records[0].candidate.attributes?.inViewport).toBe(false);
+  });
 });
