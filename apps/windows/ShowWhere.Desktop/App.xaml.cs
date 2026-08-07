@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Windows;
+using System.Windows.Threading;
 using ShowWhere.ApiClient;
 using ShowWhere.Overlay;
 using ShowWhere.WindowsAutomation;
@@ -23,7 +24,13 @@ public partial class App : Application
         var apiClient = new GuideApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
         var viewModel = new GuidanceViewModel(observer, monitor, apiClient, _overlay, Shutdown);
         _panel = new GuidancePanelWindow { DataContext = viewModel };
-        _assistant = new FloatingAssistantWindow(_panel, new AssistantPositionStore())
+        _panel.Deactivated += (_, _) => _panel.Dispatcher.BeginInvoke(
+            observer.RememberCurrentForegroundWindow,
+            DispatcherPriority.Background);
+        _assistant = new FloatingAssistantWindow(
+            _panel,
+            new AssistantPositionStore(),
+            observer.RememberCurrentForegroundWindow)
         {
             DataContext = viewModel,
         };

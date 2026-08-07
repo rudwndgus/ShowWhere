@@ -1,7 +1,7 @@
 <Window x:Class="ShowWhere.Desktop.GuidancePanelWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ShowWhere" Width="370" Height="430" MinWidth="330" MinHeight="360"
+        Title="ShowWhere" Width="390" Height="560" MinWidth="350" MinHeight="440"
         WindowStyle="ToolWindow" ResizeMode="CanResizeWithGrip" Topmost="True"
         ShowInTaskbar="False" Closing="OnClosing">
   <Grid Margin="14">
@@ -25,18 +25,41 @@
                    Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
     </StackPanel>
 
-    <Border Grid.Row="2" Background="#FFF2F5FA" CornerRadius="10" Padding="12" Margin="0,0,0,10">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
-          <TextBlock Text="{Binding GuidanceMessage}" TextWrapping="Wrap" FontSize="14" />
-          <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="#FFC52B32" Margin="0,8,0,0" />
-        </StackPanel>
+    <Border Grid.Row="2" Background="#FFF4F6FA" CornerRadius="12" Padding="8" Margin="0,0,0,10">
+      <ScrollViewer x:Name="ChatScroll" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding Messages}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="3,4">
+                <Border x:Name="Bubble" HorizontalAlignment="Left" MaxWidth="292"
+                        Background="White" BorderBrush="#FFE0E5ED" BorderThickness="1"
+                        CornerRadius="12" Padding="11,8">
+                  <TextBlock x:Name="BubbleText" Text="{Binding Text}" TextWrapping="Wrap"
+                             FontSize="14" Foreground="#FF182033" />
+                </Border>
+              </Grid>
+              <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Role}" Value="user">
+                  <Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right" />
+                  <Setter TargetName="Bubble" Property="Background" Value="#FF1E6FF2" />
+                  <Setter TargetName="Bubble" Property="BorderBrush" Value="#FF1E6FF2" />
+                  <Setter TargetName="BubbleText" Property="Foreground" Value="White" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsPending}" Value="True">
+                  <Setter TargetName="Bubble" Property="Opacity" Value="0.72" />
+                  <Setter TargetName="BubbleText" Property="FontStyle" Value="Italic" />
+                </DataTrigger>
+              </DataTemplate.Triggers>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </ScrollViewer>
     </Border>
 
     <TextBox x:Name="GoalInput" Grid.Row="3" Text="{Binding GoalText, UpdateSourceTrigger=PropertyChanged}"
-             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="66" MaxHeight="110"
+             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52" MaxHeight="100"
              VerticalScrollBarVisibility="Auto" Padding="8"
+             PreviewKeyDown="OnGoalInputPreviewKeyDown"
              ToolTip="하고 싶은 일을 입력하세요" />
 
     <Grid Grid.Row="4" Margin="0,10,0,0">
@@ -48,7 +71,7 @@
         <Button Content="찾을 수 없어요" Command="{Binding RecoveryCommand}" Margin="0,0,6,6" Padding="9,5" />
         <Button Content="작업 취소" Command="{Binding CancelCommand}" Margin="0,0,6,6" Padding="9,5" />
       </WrapPanel>
-      <Button Grid.Column="1" Content="안내 시작" Command="{Binding SubmitCommand}"
+      <Button Grid.Column="1" Content="보내기" Command="{Binding SubmitCommand}"
               Padding="14,7" Margin="6,0,0,6" Background="#FF1E6FF2" Foreground="White" />
     </Grid>
   </Grid>

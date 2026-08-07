@@ -45,7 +45,7 @@ With the backend running:
 npm run run:windows
 ```
 
-The `?` assistant appears above normal applications. Drag it to move it, left-click to open the panel, and right-click for Pause/Exit. The last position is stored under the current user's Local Application Data, outside the repository.
+The `?` assistant appears above normal applications. Drag it to move it, left-click to open the panel, and right-click for Pause/Exit. Type a goal and press Enter to send it; use Shift+Enter for a new line. The panel keeps the user and assistant messages as chat bubbles. ShowWhere observes both the current app and global Windows taskbar controls, highlights one safe next target, and analyzes the next screen only after the user clicks inside that highlighted target. The last assistant position is stored under the current user's Local Application Data, outside the repository.
 
 Create a normal framework-dependent executable output:
 
@@ -54,6 +54,8 @@ npm run publish:windows
 ```
 
 Output: `build/windows/ShowWhere.exe`. A production installer is intentionally not part of this phase.
+
+For local provider timing and decision metadata, run `scripts/start-showwhere-dev.ps1` or open the **ShowWhere Dev** desktop shortcut. It tails `%LOCALAPPDATA%\ShowWhere\api-debug.log`; the log contains model, duration, candidate count, decision action, and selected label, but never the API key or raw provider error.
 
 Optional non-secret Windows environment settings:
 

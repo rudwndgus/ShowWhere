@@ -45,6 +45,7 @@ function setCorsHeaders(
 
 export function createApiServer(config: ApiConfig, provider: AiProvider) {
   return createServer(async (request, response) => {
+    const requestStartedAt = performance.now();
     if (!setCorsHeaders(request, response, config.allowedOrigins)) {
       sendJson(response, 403, { message: '요청이 허용되지 않았어요.' });
       return;
@@ -72,6 +73,22 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
     }
 
     const result = await handleGuideApiRequest(url.pathname, body, provider);
+    if (config.debug) {
+      const candidates = typeof body === 'object' && body !== null && 'candidates' in body
+        && Array.isArray(body.candidates) ? body.candidates : [];
+      const selected = candidates.find((candidate) =>
+        typeof candidate === 'object' && candidate !== null && 'id' in candidate
+        && candidate.id === result.decision.targetId);
+      const selectedLabel = typeof selected === 'object' && selected !== null && 'label' in selected
+        && typeof selected.label === 'string'
+        ? selected.label.replace(/\s+/gu, ' ').slice(0, 100)
+        : 'none';
+      console.log(
+        `[showwhere:api] candidates=${candidates.length} action=${result.decision.action}`
+        + ` target=${result.decision.targetId ?? 'none'} label=${JSON.stringify(selectedLabel)}`
+        + ` duration_ms=${Math.round(performance.now() - requestStartedAt)}`,
+      );
+    }
     sendJson(response, result.status, result.decision);
   });
 }

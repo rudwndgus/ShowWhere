@@ -19,6 +19,8 @@ export interface FeatherlessProviderOptions {
   maxRetries: number;
   retryBaseDelayMs: number;
   maxTokens: number;
+  enableThinking: boolean;
+  debug: boolean;
   fetchImplementation?: typeof fetch;
   delay?: (milliseconds: number) => Promise<void>;
 }
@@ -94,6 +96,7 @@ export class FeatherlessProvider implements AiProvider {
     const endpoint = `${this.#options.baseUrl.replace(/\/$/u, '')}/chat/completions`;
 
     for (let attempt = 0; attempt <= this.#options.maxRetries; attempt += 1) {
+      const startedAt = performance.now();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.#options.requestTimeoutMs);
 
@@ -111,6 +114,10 @@ export class FeatherlessProvider implements AiProvider {
             messages: createGuideMessages(request, repairMalformedResponse),
             temperature: 0,
             max_tokens: this.#options.maxTokens,
+            chat_template_kwargs: {
+              enable_thinking: this.#options.enableThinking,
+            },
+            response_format: { type: 'json_object' },
           }),
           signal: controller.signal,
         });
@@ -121,9 +128,11 @@ export class FeatherlessProvider implements AiProvider {
 
         const body = completionResponseSchema.safeParse(await response.json());
         if (!body.success) throw new ProviderRequestError(false);
+        this.#log(`completed attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)}`);
         return body.data.choices[0].message.content;
       } catch (error) {
         const retryable = error instanceof ProviderRequestError ? error.retryable : true;
+        this.#log(`failed attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)} retryable=${retryable}`);
         if (!retryable || attempt >= this.#options.maxRetries) {
           throw new ProviderRequestError(false);
         }
@@ -134,5 +143,10 @@ export class FeatherlessProvider implements AiProvider {
     }
 
     throw new ProviderRequestError(false);
+  }
+
+  #log(message: string): void {
+    if (!this.#options.debug) return;
+    console.log(`[showwhere:ai] model=${this.#options.model} ${message}`);
   }
 }

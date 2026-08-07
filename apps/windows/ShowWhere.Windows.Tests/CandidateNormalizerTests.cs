@@ -75,6 +75,31 @@ public sealed class CandidateNormalizerTests
         Assert.Equal("button", result);
     }
 
+    [Fact]
+    public void Merge_reserves_space_for_global_taskbar_candidates()
+    {
+        var primary = Enumerable.Range(0, 100)
+            .Select(index => Candidate($"primary-{index}", $"primary-{index}", true, true, new UiBounds(index, 10, 20, 20)))
+            .ToArray();
+        var taskbar = new[]
+        {
+            Candidate("network", "network", true, true, new UiBounds(1800, 1040, 40, 40)) with
+            {
+                Label = "Network ebluu.com",
+                ProcessName = "explorer",
+            },
+        };
+
+        var merged = CandidateNormalizer.MergeWithReservedSecondaryScope(
+            CandidateNormalizer.Normalize(primary),
+            CandidateNormalizer.Normalize(taskbar),
+            maximumCandidates: 100,
+            reservedSecondaryCandidates: 30);
+
+        Assert.Equal(100, merged.Count);
+        Assert.Contains(merged, item => item.Candidate.Label == "Network ebluu.com");
+    }
+
     private static RawAutomationCandidate Candidate(
         string sourceKey,
         string clickableSourceKey,

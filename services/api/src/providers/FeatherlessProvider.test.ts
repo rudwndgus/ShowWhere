@@ -27,6 +27,8 @@ function options(overrides: Partial<FeatherlessProviderOptions> = {}): Featherle
     maxRetries: 1,
     retryBaseDelayMs: 0,
     maxTokens: 800,
+    enableThinking: false,
+    debug: false,
     ...overrides,
   };
 }
@@ -42,6 +44,8 @@ describe('FeatherlessProvider', () => {
     expect(url).toBe('https://provider.example/v1/chat/completions');
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer test-key');
     expect(JSON.parse(String(init?.body)).model).toBe('configured-guide-model');
+    expect(JSON.parse(String(init?.body)).chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(JSON.parse(String(init?.body)).response_format).toEqual({ type: 'json_object' });
   });
 
   it('retries a bounded transient provider failure', async () => {

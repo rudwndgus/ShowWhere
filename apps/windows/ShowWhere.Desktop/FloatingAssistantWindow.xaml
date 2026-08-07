@@ -5,7 +5,9 @@
         Width="58" Height="58" WindowStyle="None" ResizeMode="NoResize"
         AllowsTransparency="True" Background="Transparent" Topmost="True"
         ShowInTaskbar="False" ShowActivated="False" Focusable="False"
-        MouseLeftButtonDown="OnMouseLeftButtonDown">
+        MouseLeftButtonDown="OnMouseLeftButtonDown"
+        MouseLeftButtonUp="OnMouseLeftButtonUp"
+        MouseMove="OnMouseMove">
   <Grid ToolTip="ShowWhere — 하고 싶은 일을 말해보세요">
     <Border CornerRadius="29" Background="#22000000" Padding="3">
       <local:AssistantGlyph />

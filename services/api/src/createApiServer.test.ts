@@ -11,6 +11,7 @@ const config: ApiConfig = {
   port: 0,
   allowedOrigins: new Set(['chrome-extension://allowed-id']),
   maxRequestBytes: 100_000,
+  debug: false,
 };
 
 const servers: ReturnType<typeof createApiServer>[] = [];

@@ -10,7 +10,18 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
 {
     private const uint GwHwndNext = 2;
     private const int MaximumTreeNodes = 1_500;
+    private const int MaximumForegroundCandidates = 100;
+    private const int ReservedTaskbarCandidates = 30;
     private readonly int _ownProcessId = Environment.ProcessId;
+    private readonly object _windowGate = new();
+    private IntPtr _lastExternalForegroundWindow;
+
+    public void RememberCurrentForegroundWindow()
+    {
+        var handle = GetForegroundWindow();
+        if (!IsExternalWindow(handle)) return;
+        lock (_windowGate) _lastExternalForegroundWindow = handle;
+    }
 
     public Task<WindowsObservation> ObserveAsync(CancellationToken cancellationToken) =>
         Task.Run(() => Observe(cancellationToken), cancellationToken);
@@ -39,20 +50,49 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             Locale: CultureInfo.CurrentUICulture.Name);
 
         var elementsBySource = new Dictionary<string, AutomationElement>(StringComparer.Ordinal);
-        var rawCandidates = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
-        var normalized = CandidateNormalizer.Normalize(rawCandidates);
+        var foregroundRaw = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
+        var foregroundCandidates = CandidateNormalizer.Normalize(foregroundRaw, MaximumForegroundCandidates);
+        var roots = new List<AutomationElement> { root };
+        IReadOnlyList<NormalizedAutomationCandidate> taskbarCandidates = [];
+
+        var taskbarHandle = FindWindow("Shell_TrayWnd", null);
+        if (taskbarHandle != IntPtr.Zero && taskbarHandle != windowHandle && IsExternalWindow(taskbarHandle))
+        {
+            try
+            {
+                var taskbarRoot = AutomationElement.FromHandle(taskbarHandle);
+                roots.Add(taskbarRoot);
+                var taskbarProcessName = GetProcessName(taskbarRoot);
+                var taskbarRaw = CollectRawCandidates(
+                    taskbarRoot,
+                    taskbarProcessName,
+                    elementsBySource,
+                    cancellationToken);
+                taskbarCandidates = CandidateNormalizer.Normalize(taskbarRaw, ReservedTaskbarCandidates)
+                    .Select(MarkAsTaskbarCandidate)
+                    .ToArray();
+            }
+            catch (ElementNotAvailableException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        var normalized = CandidateNormalizer.MergeWithReservedSecondaryScope(
+            foregroundCandidates,
+            taskbarCandidates,
+            MaximumForegroundCandidates,
+            ReservedTaskbarCandidates);
         var candidates = normalized.Select(item => item.Candidate).ToArray();
         var registryElements = normalized
             .Where(item => elementsBySource.ContainsKey(item.SourceKey))
             .ToDictionary(item => item.Candidate.Id, item => elementsBySource[item.SourceKey], StringComparer.Ordinal);
         var registry = new CandidateRegistry(registryElements);
-        var focusedElementKey = GetFocusedElementKey(root.Current.ProcessId);
+        var focusedElementKey = GetFocusedElementKey();
         return new WindowsObservation(
             context,
             candidates,
             registry,
             WindowsObservation.ComputeHash(context, candidates, focusedElementKey),
-            root,
+            roots,
             focusedElementKey);
     }
 
@@ -184,12 +224,12 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         catch { return "Windows application"; }
     }
 
-    private static string? GetFocusedElementKey(int observedProcessId)
+    private string? GetFocusedElementKey()
     {
         try
         {
             var focused = AutomationElement.FocusedElement;
-            return focused.Current.ProcessId == observedProcessId ? GetSourceKey(focused) : null;
+            return focused.Current.ProcessId != _ownProcessId ? GetSourceKey(focused) : null;
         }
         catch (ElementNotAvailableException) { return null; }
         catch (InvalidOperationException) { return null; }
@@ -198,13 +238,29 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
     private IntPtr FindExternalForegroundWindow()
     {
         var handle = GetForegroundWindow();
+        if (IsExternalWindow(handle))
+        {
+            lock (_windowGate) _lastExternalForegroundWindow = handle;
+            return handle;
+        }
+
+        IntPtr remembered;
+        lock (_windowGate) remembered = _lastExternalForegroundWindow;
+        if (IsExternalWindow(remembered)) return remembered;
+
         for (var index = 0; index < 64 && handle != IntPtr.Zero; index++)
         {
-            _ = GetWindowThreadProcessId(handle, out var processId);
-            if (processId != _ownProcessId && IsWindowVisible(handle)) return handle;
+            if (IsExternalWindow(handle)) return handle;
             handle = GetWindow(handle, GwHwndNext);
         }
         return IntPtr.Zero;
+    }
+
+    private bool IsExternalWindow(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero || !IsWindow(handle) || !IsWindowVisible(handle)) return false;
+        _ = GetWindowThreadProcessId(handle, out var processId);
+        return processId != 0 && processId != _ownProcessId;
     }
 
     private static T? Read<T>(Func<T> reader)
@@ -214,15 +270,31 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         catch (InvalidOperationException) { return default; }
     }
 
+    private static NormalizedAutomationCandidate MarkAsTaskbarCandidate(NormalizedAutomationCandidate item)
+    {
+        var attributes = item.Candidate.Attributes is null
+            ? new Dictionary<string, object?>(StringComparer.Ordinal)
+            : new Dictionary<string, object?>(item.Candidate.Attributes, StringComparer.Ordinal);
+        attributes["sourceScope"] = "windows_taskbar";
+        return item with { Candidate = item.Candidate with { Attributes = attributes } };
+    }
+
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string? className, string? windowName);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr windowHandle);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr windowHandle, out int processId);

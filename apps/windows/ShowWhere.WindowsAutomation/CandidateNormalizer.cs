@@ -87,6 +87,26 @@ public static class CandidateNormalizer
         return result;
     }
 
+    public static IReadOnlyList<NormalizedAutomationCandidate> MergeWithReservedSecondaryScope(
+        IEnumerable<NormalizedAutomationCandidate> primary,
+        IEnumerable<NormalizedAutomationCandidate> secondary,
+        int maximumCandidates = 100,
+        int reservedSecondaryCandidates = 30)
+    {
+        if (maximumCandidates <= 0) return [];
+        var secondaryLimit = Math.Clamp(reservedSecondaryCandidates, 0, maximumCandidates);
+        var secondaryItems = secondary
+            .DistinctBy(item => item.Candidate.Id, StringComparer.Ordinal)
+            .Take(secondaryLimit)
+            .ToList();
+        var seen = secondaryItems.Select(item => item.Candidate.Id).ToHashSet(StringComparer.Ordinal);
+        var primaryItems = primary
+            .Where(item => seen.Add(item.Candidate.Id))
+            .Take(maximumCandidates - secondaryItems.Count)
+            .ToList();
+        return [.. primaryItems, .. secondaryItems];
+    }
+
     private static string? NormalizeText(string? value, int maximumLength)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;

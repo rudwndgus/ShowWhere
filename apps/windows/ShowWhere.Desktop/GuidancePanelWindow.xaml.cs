@@ -1,5 +1,8 @@
 using System.ComponentModel;
+using System.Collections.Specialized;
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
 using ShowWhere.Core;
 
 namespace ShowWhere.Desktop;
@@ -7,8 +10,13 @@ namespace ShowWhere.Desktop;
 public partial class GuidancePanelWindow : Window
 {
     private bool _shutdown;
+    private INotifyCollectionChanged? _observedMessages;
 
-    public GuidancePanelWindow() => InitializeComponent();
+    public GuidancePanelWindow()
+    {
+        InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
 
     public void PositionNear(double assistantLeft, double assistantTop, double assistantWidth, double assistantHeight)
     {
@@ -49,4 +57,26 @@ public partial class GuidancePanelWindow : Window
     }
 
     private void OnMinimize(object sender, RoutedEventArgs eventArgs) => WindowState = WindowState.Minimized;
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs eventArgs)
+    {
+        if (_observedMessages is not null) _observedMessages.CollectionChanged -= OnMessagesChanged;
+        _observedMessages = (eventArgs.NewValue as GuidanceViewModel)?.Messages;
+        if (_observedMessages is not null) _observedMessages.CollectionChanged += OnMessagesChanged;
+        ScrollChatToEnd();
+    }
+
+    private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs eventArgs) => ScrollChatToEnd();
+
+    private void ScrollChatToEnd() => Dispatcher.BeginInvoke(
+        () => ChatScroll.ScrollToEnd(),
+        DispatcherPriority.Background);
+
+    private void OnGoalInputPreviewKeyDown(object sender, KeyEventArgs eventArgs)
+    {
+        if (eventArgs.Key != Key.Enter || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+        eventArgs.Handled = true;
+        if (DataContext is not GuidanceViewModel viewModel) return;
+        if (viewModel.SubmitCommand.CanExecute(null)) viewModel.SubmitCommand.Execute(null);
+    }
 }

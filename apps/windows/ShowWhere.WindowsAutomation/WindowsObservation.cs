@@ -37,14 +37,14 @@ public sealed class WindowsObservation
         IReadOnlyList<UiCandidate> candidates,
         CandidateRegistry registry,
         string snapshotHash,
-        AutomationElement root,
+        IReadOnlyList<AutomationElement> roots,
         string? focusedElementKey)
     {
         Context = context;
         Candidates = candidates;
         Registry = registry;
         SnapshotHash = snapshotHash;
-        Root = root;
+        Roots = roots;
         FocusedElementKey = focusedElementKey;
     }
 
@@ -52,7 +52,7 @@ public sealed class WindowsObservation
     public IReadOnlyList<UiCandidate> Candidates { get; }
     public CandidateRegistry Registry { get; }
     public string SnapshotHash { get; }
-    internal AutomationElement Root { get; }
+    internal IReadOnlyList<AutomationElement> Roots { get; }
     internal string? FocusedElementKey { get; }
 
     internal static string ComputeHash(
@@ -64,6 +64,9 @@ public sealed class WindowsObservation
             .Append("|focus:").Append(focusedElementKey);
         foreach (var candidate in candidates)
         {
+            if (candidate.Attributes?.TryGetValue("sourceScope", out var sourceScope) == true
+                && string.Equals(Convert.ToString(sourceScope), "windows_taskbar", StringComparison.Ordinal))
+                continue;
             content.Append('|').Append(candidate.Id).Append(':').Append(candidate.Label)
                 .Append(':').Append(Math.Round(candidate.Bounds.X)).Append(',').Append(Math.Round(candidate.Bounds.Y))
                 .Append(',').Append(Math.Round(candidate.Bounds.Width)).Append(',').Append(Math.Round(candidate.Bounds.Height));
@@ -79,5 +82,6 @@ public sealed class WindowsObservationException : Exception
 
 public interface IWindowsUiObserver
 {
+    void RememberCurrentForegroundWindow();
     Task<WindowsObservation> ObserveAsync(CancellationToken cancellationToken);
 }
