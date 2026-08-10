@@ -10,6 +10,7 @@ Floating WPF assistant
   -> WindowsUiObserver
   -> normalized UiCandidate list + local CandidateRegistry
   -> Windows Settings catalog and WindowsFastPathResolver when possible
+  -> verified developer correction memory before normal resolution
   -> otherwise POST /api/guide
   -> DeepSeek candidate decision
   -> full-screen capture when semantic candidates fail
@@ -36,6 +37,10 @@ Chrome and Edge are handled as ordinary Windows applications. Native UI Automati
 `WindowsSettingsCatalog` maps common Windows 10/11 goals to the official Settings category hierarchy and documented `ms-settings:` page identifiers. It contains Korean and English UI aliases, but never highlights a catalog coordinate directly: every step must match a visible UI Automation candidate collected from the current computer. `WindowsCandidatePrioritizer` removes title-bar caption controls such as minimize, maximize, restore, and close before either the deterministic resolver or AI sees a Settings request.
 
 The catalog provides stable navigation knowledge while the live-candidate requirement accounts for Windows version, edition, device, language, and policy differences. When no unique visible target exists, ShowWhere asks the user or falls back to full-screen visual grounding instead of fabricating a location.
+
+## Developer correction memory
+
+`JsonlDeveloperCorrectionStore` appends every explicit answer O/X rating and persists separately confirmed intent and target corrections under the user's local application-data directory. An X rating and its correction are linked but saved as separate records: selection remains an in-memory preview until the developer presses Save. The runtime applies an exact intent correction before observation and then attempts to match a verified target against the new observation. A match requires compatible process and source scope plus a stable label or Automation ID; recorded coordinates are never replayed directly. `DeveloperRegionSelectionService` provides the full-virtual-desktop drag surface used to generate visual grounding labels. See [developer corrections](developer-corrections.md) for the dataset schema and privacy rules.
 
 ## Backend
 

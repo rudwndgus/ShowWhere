@@ -16,6 +16,7 @@
     "test:windows": "dotnet test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release",
     "run:windows": "dotnet run --project apps/windows/ShowWhere.Desktop/ShowWhere.Desktop.csproj",
     "publish:windows": "dotnet publish apps/windows/ShowWhere.Desktop/ShowWhere.Desktop.csproj -c Release -r win-x64 --self-contained false -o build/windows",
+    "export:corrections": "node scripts/export-developer-corrections.mjs",
     "build": "npm run typecheck && npm run build:api",
     "build:all": "npm run build && npm run build:windows"
   },

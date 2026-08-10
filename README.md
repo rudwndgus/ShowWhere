@@ -41,6 +41,10 @@ Chrome과 Edge도 Windows 프로그램이 UI Automation 및 화면 비전으로 
 
 Windows 설정 안내는 표시 언어가 한국어 또는 영어인 Windows 10/11의 실제 UI Automation 후보를 확인한 뒤 한 단계씩 표시합니다. 최소화·최대화·복원·닫기 같은 창 제목 표시줄 버튼은 설정 후보에서 제외하며, 해당 Windows 버전이나 장치에 존재하지 않는 항목을 임의의 좌표로 표시하지 않습니다.
 
+`ai-learning` 개발 모드에서는 모든 assistant 답변에 O/X 평가가 표시됩니다. O와 X 평가는 즉시 영구 저장되고, X를 선택하면 의미·코멘트·정답 영역을 수정할 수 있습니다. 드래그는 미리보기만 만들며 명시적으로 `저장`을 눌러야 교정 스크린샷과 좌표가 기록됩니다. 저장된 의미와 UI Automation 서명은 다음 같은 질문에 즉시 재사용하며, 학습용 JSONL로도 내보낼 수 있습니다. 자세한 형식은 [개발자 교정 모드](docs/developer-corrections.md)를 참고하세요.
+
+배포용 `window-back-kyung`과 학습용 `ai-learning` 사이의 개선 승격 절차는 [학습 브랜치 운영 방식](docs/learning-branch-workflow.md)에 정리돼 있습니다.
+
 ## 개발 환경
 
 필수 항목:

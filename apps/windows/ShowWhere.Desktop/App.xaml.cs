@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
 using ShowWhere.ApiClient;
+using ShowWhere.Core;
 using ShowWhere.Overlay;
 using ShowWhere.WindowsAutomation;
 
@@ -23,7 +24,17 @@ public partial class App : Application
         var screenCapture = new WindowsScreenCaptureService();
         _overlay = new HighlightOverlayWindow();
         var apiClient = new GuideApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
-        var viewModel = new GuidanceViewModel(observer, monitor, screenCapture, apiClient, _overlay, Shutdown);
+        var correctionSelection = new DeveloperRegionSelectionService();
+        var correctionStore = new JsonlDeveloperCorrectionStore();
+        var viewModel = new GuidanceViewModel(
+            observer,
+            monitor,
+            screenCapture,
+            apiClient,
+            _overlay,
+            correctionSelection,
+            correctionStore,
+            Shutdown);
         _panel = new GuidancePanelWindow { DataContext = viewModel };
         _panel.Deactivated += (_, _) => _panel.Dispatcher.BeginInvoke(
             observer.RememberCurrentForegroundWindow,
@@ -36,6 +47,18 @@ public partial class App : Application
             DataContext = viewModel,
         };
         viewModel.TargetHighlighted += _panel.MoveAwayFrom;
+        viewModel.CorrectionSelectionStarted += () =>
+        {
+            observer.RememberCurrentForegroundWindow();
+            _panel.Hide();
+            _assistant.Hide();
+        };
+        viewModel.CorrectionSelectionCompleted += () =>
+        {
+            _assistant.Show();
+            _panel.Show();
+            _panel.Activate();
+        };
         MainWindow = _assistant;
         _assistant.Show();
     }
