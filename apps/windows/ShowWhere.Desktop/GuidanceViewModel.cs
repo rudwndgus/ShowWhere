@@ -401,6 +401,21 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     {
                         selectedCandidate = currentObservation.Candidates.FirstOrDefault(candidate =>
                             string.Equals(candidate.Id, decision.TargetId, StringComparison.Ordinal));
+                        object? selectedAutomationId = null;
+                        object? selectedProcessName = null;
+                        object? selectedContainerLabel = null;
+                        selectedCandidate?.Attributes?.TryGetValue("automationId", out selectedAutomationId);
+                        selectedCandidate?.Attributes?.TryGetValue("processName", out selectedProcessName);
+                        selectedCandidate?.Attributes?.TryGetValue("containerLabel", out selectedContainerLabel);
+                        DesktopDiagnostics.WriteEvent(
+                            "selected_candidate",
+                            ("id", decision.TargetId),
+                            ("label", selectedCandidate?.Label),
+                            ("description", selectedCandidate?.Description),
+                            ("role", selectedCandidate?.Role),
+                            ("automationId", selectedAutomationId),
+                            ("processName", selectedProcessName),
+                            ("containerLabel", selectedContainerLabel));
                         if (!currentObservation.Registry.TryResolveState(
                                 decision.TargetId!,
                                 out bounds,

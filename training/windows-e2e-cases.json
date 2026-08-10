@@ -1,0 +1,22 @@
+[
+  {"id":"system-display","category":"system","question":"화면 밝기와 디스플레이 설정은 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|디스플레이#ControlType.ListItem"},
+  {"id":"system-sound","category":"system","question":"스피커와 소리 설정은 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|소리#ControlType.ListItem"},
+  {"id":"system-notifications","category":"system","question":"윈도우 알림 설정은 어디서 바꿔?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|알림#ControlType.ListItem"},
+  {"id":"system-power","category":"system","question":"절전과 배터리 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|전원 및 배터리#ControlType.ListItem"},
+  {"id":"system-storage","category":"system","question":"저장 공간 정리 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|저장소#ControlType.ListItem"},
+  {"id":"system-multitasking","category":"system","question":"창 맞춤 멀티태스킹 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|멀티태스킹#ControlType.ListItem"},
+  {"id":"system-recovery","category":"system","question":"PC 복구 옵션은 어디서 확인해?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|복구#ControlType.ListItem"},
+  {"id":"system-about","category":"system","question":"내 컴퓨터 사양과 장치 정보 어디서 봐?","settingsUri":"ms-settings:bluetooth","expectedLabels":"시스템#ControlType.ListItem|정보#ControlType.ListItem"},
+  {"id":"devices-pair","category":"devices","question":"블루투스 이어폰 연결하고 싶어","settingsUri":"ms-settings:bluetooth","expectedLabels":"장치 추가#ControlType.Button"},
+  {"id":"devices-printer","category":"devices","question":"프린터 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"Bluetooth 및 장치#ControlType.Button|프린터 및 스캐너#ControlType.ListItem"},
+  {"id":"devices-mouse","category":"devices","question":"마우스 속도 설정은 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"Bluetooth 및 장치#ControlType.Button|마우스#ControlType.ListItem"},
+  {"id":"devices-camera","category":"devices","question":"웹캠 장치 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"Bluetooth 및 장치#ControlType.Button|카메라#ControlType.ListItem"},
+  {"id":"network-wifi","category":"network","question":"와이파이 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"네트워크 및 인터넷#ControlType.ListItem|Wi-Fi#ControlType.ListItem"},
+  {"id":"network-vpn","category":"network","question":"VPN 설정은 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"네트워크 및 인터넷#ControlType.ListItem|VPN#ControlType.ListItem"},
+  {"id":"network-hotspot","category":"network","question":"모바일 핫스팟 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"네트워크 및 인터넷#ControlType.ListItem|모바일 핫스팟#ControlType.ListItem"},
+  {"id":"network-proxy","category":"network","question":"프록시 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"네트워크 및 인터넷#ControlType.ListItem|프록시#ControlType.ListItem"},
+  {"id":"apps-installed","category":"apps","question":"설치된 프로그램 삭제하는 곳 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"앱#ControlType.ListItem|설치된 앱#ControlType.ListItem"},
+  {"id":"apps-default","category":"apps","question":"기본 앱 바꾸는 곳 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"앱#ControlType.ListItem|기본 앱#ControlType.ListItem"},
+  {"id":"privacy-camera","category":"privacy","question":"카메라 사용 권한 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"개인 정보 및 보안#ControlType.ListItem|카메라#ControlType.ListItem"},
+  {"id":"privacy-microphone","category":"privacy","question":"마이크 사용 권한 설정 어디야?","settingsUri":"ms-settings:bluetooth","expectedLabels":"개인 정보 및 보안#ControlType.ListItem|마이크#ControlType.ListItem"}
+]

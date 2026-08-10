@@ -294,6 +294,62 @@ public sealed class WindowsFastPathResolverTests
     }
 
     [Fact]
+    public void Wifi_settings_goal_selects_the_page_row_instead_of_the_toggle()
+    {
+        var request = Request("와이파이 설정 어디야", [
+            Candidate("row", "Wi-Fi", "SystemSettings"),
+            Candidate("toggle", "Wi-Fi", "SystemSettings", "SystemSettings_Network_WiFi_ToggleSwitch"),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("row", decision.TargetId);
+    }
+
+    [Fact]
+    public void Notification_settings_ignores_unrelated_taskbar_app_notifications()
+    {
+        var request = Request("윈도우 알림 설정은 어디서 바꿔", [
+            Candidate("discord", "Discord", "explorer", "windows_taskbar"),
+            Candidate("system", "시스템", "ApplicationFrameHost"),
+        ]);
+        request = request with
+        {
+            Candidates =
+            [
+                request.Candidates[0] with { Description = "9 notifications" },
+                request.Candidates[1],
+            ],
+        };
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("system", decision.TargetId);
+    }
+
+    [Fact]
+    public void About_settings_does_not_match_the_info_substring_in_privacy_category()
+    {
+        var request = Request("내 컴퓨터 사양과 장치 정보 어디서 봐", [
+            Candidate("privacy", "개인 정보 및 보안", "ApplicationFrameHost"),
+            Candidate("system", "시스템", "ApplicationFrameHost"),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("system", decision.TargetId);
+    }
+
+    [Fact]
+    public void Settings_route_keeps_an_offscreen_destination_for_scroll_guidance()
+    {
+        var request = Request("프린터 설정 어디야", [
+            Candidate("breadcrumb", "Bluetooth 및 장치", "ApplicationFrameHost"),
+            Candidate("printers", "프린터 및 스캐너", "ApplicationFrameHost", inViewport: false),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("printers", decision.TargetId);
+    }
+
+    [Fact]
     public void Unknown_windows_goal_falls_back_to_ai()
     {
         var request = Request("내 티켓을 확인하고 싶어", [

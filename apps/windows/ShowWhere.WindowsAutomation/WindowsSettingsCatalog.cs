@@ -46,6 +46,8 @@ public static class WindowsSettingsCatalog
         Route("about", ["장치 정보", "pc 정보", "내 컴퓨터 사양", "시스템 정보", "about pc", "device specifications", "system information"],
             ["설정", "시스템", "정보"], [["system", "시스템"], ["about", "정보"]], "ms-settings:about"),
 
+        Route("bluetooth-pair", ["블루투스 이어폰", "블루투스 헤드폰", "장치 연결", "기기 연결", "페어링", "pair bluetooth", "connect bluetooth"],
+            ["설정", "Bluetooth 및 장치", "장치 추가"], [["bluetooth & devices", "bluetooth and devices", "bluetooth 및 장치", "블루투스 및 장치"], ["devices", "장치", "bluetooth"], ["add device", "장치 추가", "디바이스 추가"]], "ms-settings:bluetooth"),
         Route("bluetooth", ["블루투스", "bluetooth", "장치 추가", "add device"],
             ["설정", "Bluetooth 및 장치", "장치"], [["bluetooth & devices", "bluetooth and devices", "bluetooth 및 장치", "블루투스 및 장치"], ["devices", "장치", "bluetooth"]], "ms-settings:bluetooth"),
         Route("printers", ["프린터", "프린트", "스캐너", "printer", "printers", "printing", "scanner"],
@@ -91,7 +93,7 @@ public static class WindowsSettingsCatalog
         Route("fonts", ["글꼴", "폰트 설정", "font settings", "fonts"],
             ["설정", "개인 설정", "글꼴"], [["personalization", "개인 설정"], ["fonts", "글꼴"]], "ms-settings:fonts"),
 
-        Route("installed-apps", ["설치된 앱", "앱 제거", "프로그램 제거", "installed apps", "uninstall app", "uninstall program"],
+        Route("installed-apps", ["설치된 앱", "설치된 프로그램", "앱 제거", "앱 삭제", "프로그램 제거", "프로그램 삭제", "installed apps", "uninstall app", "uninstall program"],
             ["설정", "앱", "설치된 앱"], [["apps", "앱"], ["installed apps", "설치된 앱", "apps & features", "앱 및 기능"]], "ms-settings:appsfeatures"),
         Route("default-apps", ["기본 앱", "기본 프로그램", "파일 연결", "default apps", "default program", "file association"],
             ["설정", "앱", "기본 앱"], [["apps", "앱"], ["default apps", "기본 앱"]], "ms-settings:defaultapps"),
@@ -188,19 +190,27 @@ public static class WindowsWindowChromeFilter
     {
         "minimize", "최소화", "maximize", "최대화", "restore", "복원", "restore down", "이전 크기로 복원",
         "close", "닫기", "system menu", "시스템 메뉴",
+        "system menu bar", "시스템 메뉴 모음",
     };
 
     public static bool IsCaptionControl(ShowWhere.Core.UiCandidate candidate)
     {
         var label = candidate.Label?.Trim();
         if (label is not null && CaptionLabels.Contains(label)) return true;
+        if (string.Equals(candidate.Role, "menubar", StringComparison.OrdinalIgnoreCase)
+            && label?.StartsWith("system menu", StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        if (string.Equals(candidate.Role, "menuitem", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(label, "system", StringComparison.OrdinalIgnoreCase))
+            return true;
         var automationId = StringAttribute(candidate, "automationId");
         if (automationId is null) return false;
         return automationId.Contains("minimize", StringComparison.OrdinalIgnoreCase)
             || automationId.Contains("maximize", StringComparison.OrdinalIgnoreCase)
             || automationId.Contains("restore", StringComparison.OrdinalIgnoreCase)
             || automationId.Contains("close", StringComparison.OrdinalIgnoreCase)
-            || automationId.Contains("caption", StringComparison.OrdinalIgnoreCase);
+            || automationId.Contains("caption", StringComparison.OrdinalIgnoreCase)
+            || automationId.Contains("NavigationViewBackButton", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? StringAttribute(ShowWhere.Core.UiCandidate candidate, string name) =>

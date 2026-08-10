@@ -19,8 +19,14 @@ const readJsonl = async (fileName) => {
 
 const records = (await readJsonl('corrections.jsonl'))
   .filter((record) => record.schemaVersion === 1 && record.developerVerified === true);
+const exclusions = await readJsonl('feedback-exclusions.jsonl');
+const excludedFeedbackIds = new Set(exclusions
+  .filter((record) => record.schemaVersion === 1 && typeof record.answerFeedbackId === 'string')
+  .map((record) => record.answerFeedbackId));
 const feedback = (await readJsonl('answer-feedback.jsonl'))
-  .filter((record) => record.schemaVersion === 1 && ['correct', 'incorrect'].includes(record.rating));
+  .filter((record) => record.schemaVersion === 1
+    && ['correct', 'incorrect'].includes(record.rating)
+    && !excludedFeedbackIds.has(record.id));
 if (records.length === 0 && feedback.length === 0) {
   console.log(`No developer learning data found at ${trainingDirectory}`);
   process.exit(0);
@@ -87,6 +93,7 @@ await Promise.all([
       incorrectAnswers: answerExamples.filter((example) => example.label === 'incorrect').length,
       intentExamples: intentExamples.length,
       groundingExamples: groundingExamples.length,
+      excludedFeedback: excludedFeedbackIds.size,
     }, null, 2)}\n`,
     'utf8',
   ),

@@ -351,15 +351,22 @@ public static partial class WindowsFastPathResolver
                 Breadcrumb: string.Join(" > ", settingsRoute.Breadcrumb))
             : Routes.FirstOrDefault(candidate => candidate.GoalTerms.Any(goal.Contains));
         if (route is null) return false;
+        var settingsWindowVisible = hasSettingsRoute && request.Candidates.Any(candidate =>
+            IsEligibleTrustedCandidate(candidate)
+            && StringAttribute(candidate, "processName") is "ApplicationFrameHost" or "SystemSettings");
 
         foreach (var stepTerms in route.CandidateSteps)
         {
             var target = request.Candidates
-                .Where(IsEligibleTrustedCandidate)
+                .Where(candidate => IsEligibleTrustedCandidate(
+                    candidate,
+                    allowOffscreen: hasSettingsRoute && IsSettingsPageCandidate(candidate)))
                 .Where(candidate => !hasSettingsRoute || !WindowsWindowChromeFilter.IsCaptionControl(candidate))
+                .Where(candidate => !settingsWindowVisible
+                    || !string.Equals(StringAttribute(candidate, "sourceScope"), "windows_taskbar", StringComparison.Ordinal))
                 .Where(candidate => !WasAlreadySelected(request.Session, candidate))
                 .Where(candidate => !ContainsExcludedTerm(candidate, route.ExcludedCandidateTerms))
-                .Select(candidate => new { Candidate = candidate, Score = Score(candidate, stepTerms) })
+                .Select(candidate => new { Candidate = candidate, Score = Score(candidate, stepTerms, goal) })
                 .Where(item => item.Score > 0)
                 .OrderByDescending(item => item.Score)
                 .ThenBy(item => item.Candidate.Bounds.Y)
@@ -406,12 +413,13 @@ public static partial class WindowsFastPathResolver
     internal static bool IsTrustedWindowsProcess(string processName) =>
         TrustedWindowsProcesses.Contains(processName);
 
-    private static bool IsEligibleTrustedCandidate(UiCandidate candidate)
+    private static bool IsEligibleTrustedCandidate(UiCandidate candidate, bool allowOffscreen = false)
     {
         if (!candidate.Visible || !candidate.Enabled || !candidate.Clickable) return false;
         if (candidate.Attributes?.TryGetValue("inViewport", out var inViewport) == true
             && inViewport is bool isInViewport
-            && !isInViewport) return false;
+            && !isInViewport
+            && !allowOffscreen) return false;
         var processName = StringAttribute(candidate, "processName");
         var scope = StringAttribute(candidate, "sourceScope");
         if (scope == "windows_taskbar") return true;
@@ -420,17 +428,34 @@ public static partial class WindowsFastPathResolver
         return processName is not null && IsTrustedWindowsProcess(processName);
     }
 
-    private static int Score(UiCandidate candidate, IReadOnlyList<string> terms)
+    private static bool IsSettingsProcess(UiCandidate candidate) =>
+        StringAttribute(candidate, "processName") is "ApplicationFrameHost" or "SystemSettings";
+
+    private static bool IsSettingsPageCandidate(UiCandidate candidate) =>
+        IsSettingsProcess(candidate)
+        && StringAttribute(candidate, "sourceScope") is not ("windows_taskbar" or "windows_window_overview");
+
+    private static int Score(UiCandidate candidate, IReadOnlyList<string> terms, string goal)
     {
         var searchable = $"{candidate.Label} {candidate.Description}".ToLowerInvariant();
-        var matchedTerms = terms.Where(searchable.Contains).ToArray();
+        var label = candidate.Label?.Trim().ToLowerInvariant();
+        var matchedTerms = terms.Where(term =>
+            term.Length <= 2 && KoreanText().IsMatch(term)
+                ? string.Equals(label, term, StringComparison.Ordinal)
+                : searchable.Contains(term)).ToArray();
         if (matchedTerms.Length == 0) return 0;
 
         var score = matchedTerms.Max(term => term.Length) * 10 + matchedTerms.Length;
-        var label = candidate.Label?.Trim().ToLowerInvariant();
         if (label is not null && terms.Any(term => string.Equals(label, term, StringComparison.Ordinal))) score += 100;
         if (StringAttribute(candidate, "sourceScope") == "windows_taskbar") score += 20;
         if (candidate.Role is "button" or "menuitem" or "link") score += 5;
+        var automationId = StringAttribute(candidate, "automationId") ?? string.Empty;
+        var explicitToggleIntent = ContainsAny(goal,
+            ["켜", "끄", "활성화", "비활성화", "enable", "disable", "turn on", "turn off"]);
+        if (!explicitToggleIntent
+            && (automationId.Contains("toggle", StringComparison.OrdinalIgnoreCase)
+                || candidate.Description?.Contains("toggle", StringComparison.OrdinalIgnoreCase) == true))
+            score -= 200;
         return score;
     }
 
@@ -492,6 +517,10 @@ public static partial class WindowsFastPathResolver
 
     private static string DescribeKoreanIntent(string normalizedGoal)
     {
+        if (ContainsAny(normalizedGoal, ["카메라 권한", "카메라 액세스", "camera permission", "camera access"]))
+            return "카메라 사용 권한을 확인하고 싶으시군요!";
+        if (ContainsAny(normalizedGoal, ["마이크 권한", "마이크 액세스", "microphone permission", "microphone access"]))
+            return "마이크 사용 권한을 확인하고 싶으시군요!";
         if (ContainsAny(normalizedGoal, ["계산기", "calculator", "calc"]))
             return "계산기를 찾고 계시는군요!";
         if (ContainsAny(normalizedGoal, ["메모장", "notepad"]))
