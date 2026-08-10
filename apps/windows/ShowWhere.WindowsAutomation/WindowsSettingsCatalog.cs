@@ -107,7 +107,7 @@ public static class WindowsSettingsCatalog
         Route("your-info", ["내 정보", "계정 사진", "your info", "account picture"],
             ["설정", "계정", "사용자 정보"], [["accounts", "계정"], ["your info", "사용자 정보", "내 정보"]], "ms-settings:yourinfo"),
         Route("email-accounts", ["이메일 계정", "앱 계정", "email accounts", "email & accounts"],
-            ["설정", "계정", "이메일 및 계정"], [["accounts", "계정"], ["email & accounts", "email and accounts", "이메일 및 계정"]], "ms-settings:emailandaccounts"),
+            ["설정", "계정", "내 계정"], [["accounts", "계정"], ["my account", "내 계정", "email & accounts", "email and accounts", "이메일 및 계정"]], "ms-settings:emailandaccounts"),
         Route("family", ["가족 계정", "다른 사용자", "family", "other users"],
             ["설정", "계정", "가족 및 다른 사용자"], [["accounts", "계정"], ["family", "other users", "가족", "다른 사용자"]], "ms-settings:otherusers"),
         Route("backup", ["윈도우 백업", "설정 동기화", "windows backup", "sync settings", "remember my preferences"],
@@ -131,8 +131,10 @@ public static class WindowsSettingsCatalog
 
         Route("accessibility-vision", ["텍스트 크기", "마우스 포인터 크기", "색 필터", "고대비", "내레이터", "돋보기", "text size", "mouse pointer size", "color filters", "contrast themes", "narrator", "magnifier"],
             ["설정", "접근성", "시각"], [["accessibility", "접근성"], ["vision", "시각", "text size", "텍스트 크기", "magnifier", "돋보기", "narrator", "내레이터"]], "ms-settings:easeofaccess-display"),
-        Route("accessibility-hearing", ["자막", "청각", "오디오 접근성", "captions", "hearing", "audio accessibility"],
-            ["설정", "접근성", "청각"], [["accessibility", "접근성"], ["hearing", "청각", "captions", "자막", "audio", "오디오"]], "ms-settings:easeofaccess-audio"),
+        Route("accessibility-captions", ["자막", "캡션", "captions"],
+            ["설정", "접근성", "캡션"], [["accessibility", "접근성"], ["captions", "캡션", "자막"]], "ms-settings:easeofaccess-closedcaptioning"),
+        Route("accessibility-hearing", ["청각 장치", "오디오 접근성", "hearing devices", "audio accessibility"],
+            ["설정", "접근성", "오디오"], [["accessibility", "접근성"], ["hearing", "청각", "audio", "오디오"]], "ms-settings:easeofaccess-audio"),
         Route("accessibility-input", ["고정 키", "화상 키보드", "음성 액세스", "눈 제어", "sticky keys", "on-screen keyboard", "voice access", "eye control"],
             ["설정", "접근성", "상호 작용"], [["accessibility", "접근성"], ["interaction", "상호 작용", "keyboard", "키보드", "speech", "음성", "eye control", "눈 제어"]], "ms-settings:easeofaccess-keyboard"),
 
@@ -167,8 +169,10 @@ public static class WindowsSettingsCatalog
                 {
                     Route = candidate,
                     Score = candidate.PageAliases.Length * 100 + term.Length,
+                    GoalIndex = normalized.IndexOf(term, StringComparison.Ordinal),
                 }))
             .OrderByDescending(match => match.Score)
+            .ThenBy(match => match.GoalIndex)
             .Select(match => match.Route)
             .FirstOrDefault()!;
         return route is not null;

@@ -5,3 +5,4 @@
 {"schemaVersion":1,"answerFeedbackId":"8bfa945c-5906-47fc-acb4-00e02e08414d","reason":"Evaluator omitted the valid Bluetooth and devices category step before Printers and scanners.","createdAtUtc":"2026-08-10T04:18:00Z"}
 {"schemaVersion":1,"answerFeedbackId":"23a20dbc-4b3a-4d2c-822b-823688d6ea75","reason":"Evaluator omitted the valid Bluetooth and devices category step before Mouse.","createdAtUtc":"2026-08-10T04:18:00Z"}
 {"schemaVersion":1,"answerFeedbackId":"1ee9fd0c-2300-4143-b9ee-72bdc3c610fe","reason":"Evaluator omitted the valid Bluetooth and devices category step before Cameras.","createdAtUtc":"2026-08-10T04:18:00Z"}
+{"schemaVersion":1,"answerFeedbackId":"69616718-f86a-4e61-8f63-d46284c1b714","reason":"Target name and location were correct; evaluator expected ListItem but this Windows build exposes Update history as a Button.","createdAtUtc":"2026-08-10T04:37:00Z"}

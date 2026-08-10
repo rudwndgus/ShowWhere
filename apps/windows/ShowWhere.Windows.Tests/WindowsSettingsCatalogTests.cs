@@ -13,6 +13,8 @@ public sealed class WindowsSettingsCatalogTests
     [InlineData("작업 표시줄 설정 어디야", "taskbar", "ms-settings:taskbar")]
     [InlineData("블루투스 이어폰 연결하고 싶어", "bluetooth-pair", "ms-settings:bluetooth")]
     [InlineData("설치된 프로그램 삭제하는 곳 어디야", "installed-apps", "ms-settings:appsfeatures")]
+    [InlineData("음성 언어 설정은 어디야", "speech", "ms-settings:speech")]
+    [InlineData("청각 자막 설정 어디야", "accessibility-captions", "ms-settings:easeofaccess-closedcaptioning")]
     public void Resolves_official_windows_settings_routes(string goal, string id, string uri)
     {
         Assert.True(WindowsSettingsCatalog.TryFind(goal, out var route));

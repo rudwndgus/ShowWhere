@@ -251,6 +251,8 @@ public sealed class WindowsFastPathResolverTests
     [InlineData("게임 모드를 켜고 싶어", "Game Mode")]
     [InlineData("작업 표시줄 설정을 열고 싶어", "Taskbar")]
     [InlineData("웹캠 설정을 확인하고 싶어", "Cameras")]
+    [InlineData("윈도우 이메일 계정 설정 어디야", "내 계정")]
+    [InlineData("청각 자막 설정 어디야", "캡션")]
     public void Windows_settings_catalog_selects_the_specific_visible_destination(
         string goal,
         string destination)
