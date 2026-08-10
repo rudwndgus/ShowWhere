@@ -47,6 +47,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     {
         "correct" => "O · 좋은 답변으로 저장됨",
         "incorrect" => "X · 수정 필요로 저장됨",
+        "completed" => "✓ · 이 화면을 목표 완료 지점으로 저장함",
         _ => string.Empty,
     };
     public string? OriginalGoal { get; private set; }

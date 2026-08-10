@@ -28,14 +28,16 @@ const feedback = [
   ...(await readJsonl(path.join('raw', 'feedback-events.jsonl'))),
 ]
   .filter((record) => record.schemaVersion === 1
-    && ['correct', 'incorrect'].includes(record.rating)
+    && ['correct', 'incorrect', 'completed'].includes(record.rating)
     && !excludedFeedbackIds.has(record.id));
-if (records.length === 0 && feedback.length === 0) {
+const completions = (await readJsonl(path.join('raw', 'completion-events.jsonl')))
+  .filter((record) => record.schemaVersion === 1 && record.developerVerified === true);
+if (records.length === 0 && feedback.length === 0 && completions.length === 0) {
   console.log(`No developer learning data found at ${trainingDirectory}`);
   process.exit(0);
 }
 
-const answerExamples = feedback.map((record) => ({
+const answerExamples = feedback.filter((record) => record.rating !== 'completed').map((record) => ({
   id: record.id,
   prompt: record.originalGoal || record.effectiveGoal,
   answer: record.answerText,
@@ -45,6 +47,16 @@ const answerExamples = feedback.map((record) => ({
   targetId: record.targetId,
   targetLabel: record.targetLabel,
   targetBounds: record.targetBounds,
+}));
+const completionExamples = completions.map((record) => ({
+  id: record.id,
+  originalGoal: record.originalGoal,
+  effectiveGoal: record.effectiveGoal,
+  context: record.context,
+  completedSteps: record.completedSteps,
+  visibleSemantics: record.visibleSemantics,
+  completionMessage: record.completionMessage,
+  developerVerified: true,
 }));
 
 const intentExamples = records
@@ -85,6 +97,7 @@ await Promise.all([
   writeJsonl('answer-preferences.jsonl', answerExamples),
   writeJsonl('intent-corrections.jsonl', intentExamples),
   writeJsonl('visual-grounding.jsonl', groundingExamples),
+  writeJsonl('semantic-completions.jsonl', completionExamples),
   writeFile(
     path.join(outputDirectory, 'summary.json'),
     `${JSON.stringify({
@@ -96,10 +109,11 @@ await Promise.all([
       incorrectAnswers: answerExamples.filter((example) => example.label === 'incorrect').length,
       intentExamples: intentExamples.length,
       groundingExamples: groundingExamples.length,
+      completionExamples: completionExamples.length,
       excludedFeedback: excludedFeedbackIds.size,
     }, null, 2)}\n`,
     'utf8',
   ),
 ]);
 
-console.log(`Exported ${feedback.length} answer ratings and ${records.length} verified corrections to ${outputDirectory}`);
+console.log(`Exported ${feedback.length} answer ratings, ${records.length} verified corrections, and ${completions.length} completion states to ${outputDirectory}`);

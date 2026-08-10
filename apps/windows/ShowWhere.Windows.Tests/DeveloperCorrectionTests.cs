@@ -65,19 +65,86 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
-    public async Task Every_O_or_X_feedback_is_appended_to_the_permanent_dataset()
+    public async Task Every_O_X_or_completion_feedback_is_appended_to_the_permanent_dataset()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
         var correct = Feedback("correct", "좋은 답변");
         var incorrect = Feedback("incorrect", "잘못된 위치");
+        var completed = Feedback("completed", "이 화면에서 목표 달성");
 
         await store.SaveFeedbackAsync(correct);
         await store.SaveFeedbackAsync(incorrect);
+        await store.SaveFeedbackAsync(completed);
 
         var lines = await File.ReadAllLinesAsync(Path.Combine(_directory, "raw", "feedback-events.jsonl"));
-        Assert.Equal(2, lines.Length);
+        Assert.Equal(3, lines.Length);
         Assert.Contains("\"rating\":\"correct\"", lines[0]);
         Assert.Contains("\"rating\":\"incorrect\"", lines[1]);
+        Assert.Contains("\"rating\":\"completed\"", lines[2]);
+    }
+
+    [Fact]
+    public async Task Developer_completion_stops_on_the_same_semantic_screen_after_reload()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var candidates = new[]
+        {
+            Candidate("printers", "Printers & scanners", "PrintersScanners", "settings"),
+            Candidate("add", "Add device", "AddDevice", "settings"),
+            Candidate("queue", "Open print queue", "PrintQueue", "settings"),
+        };
+        await store.SaveCompletionAsync(Completion(candidates));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        var found = reloaded.TryResolveCompletion(
+            "프린터 상태 어디서 봐?",
+            new ApplicationContext(Platforms.Windows, "SystemSettings", "Settings"),
+            "changed-snapshot",
+            candidates,
+            out var completion);
+
+        Assert.True(found);
+        Assert.Equal("windows.printer.done", completion.Id);
+    }
+
+    [Fact]
+    public async Task Completion_does_not_match_a_similar_but_incomplete_screen()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var completedScreen = new[]
+        {
+            Candidate("printers", "Printers & scanners", "PrintersScanners", "settings"),
+            Candidate("add", "Add device", "AddDevice", "settings"),
+            Candidate("queue", "Open print queue", "PrintQueue", "settings"),
+            Candidate("status", "Printer status", "PrinterStatus", "settings"),
+        };
+        await store.SaveCompletionAsync(Completion(completedScreen));
+        var settingsHome = new[]
+        {
+            Candidate("system", "System", "System", "settings"),
+            Candidate("devices", "Bluetooth & devices", "Devices", "settings"),
+        };
+
+        Assert.False(store.TryResolveCompletion(
+            "프린터 상태 어디서 봐?",
+            new ApplicationContext(Platforms.Windows, "SystemSettings", "Settings"),
+            "other-snapshot",
+            settingsHome,
+            out _));
+    }
+
+    [Fact]
+    public async Task Completion_memory_contains_semantics_but_no_screen_coordinates()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        await store.SaveCompletionAsync(Completion([
+            Candidate("printers", "Printers & scanners", "PrintersScanners", "settings"),
+        ]));
+
+        var json = await File.ReadAllTextAsync(Path.Combine(_directory, "raw", "completion-events.jsonl"));
+        Assert.Contains("PrintersScanners", json);
+        Assert.DoesNotContain("targetBounds", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("selectedBounds", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -217,4 +284,16 @@ public sealed class DeveloperCorrectionTests : IDisposable
         "target",
         "검색",
         new UiBounds(10, 10, 100, 30));
+
+    private static DeveloperCompletionRecord Completion(IReadOnlyList<UiCandidate> candidates) => new(
+        1,
+        "windows.printer.done",
+        DateTimeOffset.UtcNow,
+        "프린터 상태 어디서 봐?",
+        "프린터 상태 어디서 봐?",
+        new ApplicationContext(Platforms.Windows, "SystemSettings", "Settings"),
+        "completed-snapshot",
+        ["설정 열기", "프린터 및 스캐너 열기"],
+        DeveloperCompletionMatcher.CaptureEvidence(candidates),
+        "프린터 상태 화면에 도달했어요.");
 }

@@ -53,6 +53,25 @@ public sealed record AnswerFeedbackRecord(
     string? TargetLabel,
     UiBounds? TargetBounds);
 
+public sealed record CompletionSemanticEvidence(
+    string Label,
+    string Role,
+    string? AutomationId,
+    string? SourceScope);
+
+public sealed record DeveloperCompletionRecord(
+    int SchemaVersion,
+    string Id,
+    DateTimeOffset CreatedAtUtc,
+    string OriginalGoal,
+    string EffectiveGoal,
+    ApplicationContext Context,
+    string? SnapshotHash,
+    IReadOnlyList<string> CompletedSteps,
+    IReadOnlyList<CompletionSemanticEvidence> VisibleSemantics,
+    string? CompletionMessage,
+    bool DeveloperVerified = true);
+
 public sealed record RefinedDeveloperComment(
     string Raw,
     string Normalized,
@@ -102,12 +121,21 @@ public interface IDeveloperCorrectionStore
         IReadOnlyList<UiCandidate> candidates,
         out UiCandidate target,
         out DeveloperCorrectionRecord correction);
+    bool TryResolveCompletion(
+        string goal,
+        ApplicationContext context,
+        string? snapshotHash,
+        IReadOnlyList<UiCandidate> candidates,
+        out DeveloperCompletionRecord completion);
     Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
         string? screenshotDataUrl,
         CancellationToken cancellationToken = default);
     Task<AnswerFeedbackRecord> SaveFeedbackAsync(
         AnswerFeedbackRecord feedback,
+        CancellationToken cancellationToken = default);
+    Task<DeveloperCompletionRecord> SaveCompletionAsync(
+        DeveloperCompletionRecord completion,
         CancellationToken cancellationToken = default);
 }
 
@@ -121,7 +149,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     private readonly object _gate = new();
     private readonly string _recordsPath;
     private readonly string _feedbackPath;
+    private readonly string _completionPath;
     private List<DeveloperCorrectionRecord> _records;
+    private List<DeveloperCompletionRecord> _completionRecords;
 
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
@@ -129,9 +159,11 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         if (dataDirectory is null) MigrateLegacyTrainingData(DataDirectory);
         _recordsPath = Path.Combine(DataDirectory, "corrections.jsonl");
         _feedbackPath = Path.Combine(DataDirectory, "raw", "feedback-events.jsonl");
+        _completionPath = Path.Combine(DataDirectory, "raw", "completion-events.jsonl");
         Directory.CreateDirectory(DataDirectory);
         Directory.CreateDirectory(Path.GetDirectoryName(_feedbackPath)!);
         _records = LoadRecords(_recordsPath);
+        _completionRecords = LoadCompletionRecords(_completionPath);
     }
 
     public string DataDirectory { get; }
@@ -191,6 +223,35 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return false;
     }
 
+    public bool TryResolveCompletion(
+        string goal,
+        ApplicationContext context,
+        string? snapshotHash,
+        IReadOnlyList<UiCandidate> candidates,
+        out DeveloperCompletionRecord completion)
+    {
+        completion = null!;
+        List<DeveloperCompletionRecord> matchingRecords;
+        lock (_gate)
+        {
+            matchingRecords = _completionRecords
+                .Where(record => record.DeveloperVerified)
+                .Where(record => Normalize(record.OriginalGoal) == Normalize(goal)
+                    || Normalize(record.EffectiveGoal) == Normalize(goal))
+                .Where(record => EqualsText(record.Context.ApplicationName, context.ApplicationName))
+                .OrderByDescending(record => record.CreatedAtUtc)
+                .ToList();
+        }
+
+        foreach (var record in matchingRecords)
+        {
+            if (!DeveloperCompletionMatcher.IsMatch(record, context, snapshotHash, candidates)) continue;
+            completion = record;
+            return true;
+        }
+        return false;
+    }
+
     public async Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
         string? screenshotDataUrl,
@@ -235,6 +296,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return Task.FromResult(feedback);
     }
 
+    public Task<DeveloperCompletionRecord> SaveCompletionAsync(
+        DeveloperCompletionRecord completion,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!completion.DeveloperVerified)
+            throw new ArgumentException("Completion records must be developer verified.", nameof(completion));
+        Directory.CreateDirectory(Path.GetDirectoryName(_completionPath)!);
+        var line = JsonSerializer.Serialize(completion, JsonOptions) + Environment.NewLine;
+        lock (_gate)
+        {
+            File.AppendAllText(_completionPath, line);
+            _completionRecords.Add(completion);
+        }
+        return Task.FromResult(completion);
+    }
+
     private static List<DeveloperCorrectionRecord> LoadRecords(string path)
     {
         if (!File.Exists(path)) return [];
@@ -245,6 +323,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             try
             {
                 var record = JsonSerializer.Deserialize<DeveloperCorrectionRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<DeveloperCompletionRecord> LoadCompletionRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<DeveloperCompletionRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<DeveloperCompletionRecord>(line, JsonOptions);
                 if (record is not null && record.SchemaVersion == 1) records.Add(record);
             }
             catch (JsonException) { }
@@ -332,6 +427,57 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         !string.IsNullOrWhiteSpace(left)
         && !string.IsNullOrWhiteSpace(right)
         && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string Normalize(string? value) => string.Concat(
+        (value ?? string.Empty).Trim().ToLowerInvariant().Where(character => !char.IsWhiteSpace(character)));
+}
+
+public static class DeveloperCompletionMatcher
+{
+    public static IReadOnlyList<CompletionSemanticEvidence> CaptureEvidence(
+        IReadOnlyList<UiCandidate> candidates) => candidates
+        .Where(candidate => candidate.Visible)
+        .Select(candidate => new CompletionSemanticEvidence(
+            (candidate.Label ?? candidate.Description ?? string.Empty).Trim(),
+            candidate.Role.Trim(),
+            Attribute(candidate, "automationId"),
+            Attribute(candidate, "sourceScope")))
+        .Where(evidence => evidence.Label.Length > 0)
+        .DistinctBy(EvidenceKey)
+        .Take(100)
+        .ToArray();
+
+    public static bool IsMatch(
+        DeveloperCompletionRecord record,
+        ApplicationContext context,
+        string? snapshotHash,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        if (!EqualsText(record.Context.ApplicationName, context.ApplicationName)) return false;
+        if (!string.IsNullOrWhiteSpace(record.SnapshotHash)
+            && string.Equals(record.SnapshotHash, snapshotHash, StringComparison.Ordinal)) return true;
+
+        var expected = record.VisibleSemantics.Select(EvidenceKey).ToHashSet(StringComparer.Ordinal);
+        if (expected.Count == 0) return false;
+        var observed = CaptureEvidence(candidates).Select(EvidenceKey).ToHashSet(StringComparer.Ordinal);
+        var matched = expected.Count(observed.Contains);
+        var overlap = matched / (double)Math.Max(1, expected.Count);
+        var titleMatches = EqualsText(record.Context.WindowTitle, context.WindowTitle);
+        return (titleMatches && matched >= 2 && overlap >= 0.55)
+            || (matched >= 3 && overlap >= 0.75);
+    }
+
+    private static string EvidenceKey(CompletionSemanticEvidence evidence) => string.Join('|',
+        Normalize(evidence.Label),
+        Normalize(evidence.Role),
+        Normalize(evidence.AutomationId),
+        Normalize(evidence.SourceScope));
+
+    private static string? Attribute(UiCandidate candidate, string key) =>
+        candidate.Attributes?.TryGetValue(key, out var value) == true ? Convert.ToString(value) : null;
+
+    private static bool EqualsText(string? left, string? right) =>
+        Normalize(left).Length > 0 && Normalize(left) == Normalize(right);
 
     private static string Normalize(string? value) => string.Concat(
         (value ?? string.Empty).Trim().ToLowerInvariant().Where(character => !char.IsWhiteSpace(character)));
