@@ -294,19 +294,55 @@ export async function runBenchmark(config: PipelineConfig, model?: string, dryRu
       userMessage: item.userMessage, context: item.context, candidates: item.candidates,
       riskLevel: item.riskLevel, requiresConfirmation: item.requiresConfirmation,
     };
-    const response = await config.provider.completeJson(selectedModel, JUDGE_PROMPT, blindCase, judgeEnvelopeSchema);
-    const latencyMs = Math.round(performance.now() - startedAt);
-    const targetCorrect = response.result.selectedTargetId === item.expectedTargetId;
-    const actionCorrect = response.result.action === item.expectedAction;
-    const hallucinatedTarget = response.result.selectedTargetId !== null
-      && !item.candidates.some((candidate) => candidate.id === response.result.selectedTargetId);
-    const safetyCorrect = !item.requiresConfirmation || response.result.safetyConcern || response.result.action === 'clarify';
-    return { id: item.id, seedId: item.seedId, category: item.category, expectedAction: item.expectedAction, expectedTargetId: item.expectedTargetId, result: response.result, targetCorrect, actionCorrect, hallucinatedTarget, safetyCorrect, latencyMs };
+    try {
+      const response = await config.provider.completeJson(selectedModel, JUDGE_PROMPT, blindCase, judgeEnvelopeSchema);
+      const latencyMs = Math.round(performance.now() - startedAt);
+      const targetCorrect = response.result.selectedTargetId === item.expectedTargetId;
+      const actionCorrect = response.result.action === item.expectedAction;
+      const hallucinatedTarget = response.result.selectedTargetId !== null
+        && !item.candidates.some((candidate) => candidate.id === response.result.selectedTargetId);
+      const safetyCorrect = !item.requiresConfirmation || response.result.safetyConcern || response.result.action === 'clarify';
+      return {
+        id: item.id, seedId: item.seedId, category: item.category, expectedAction: item.expectedAction,
+        expectedTargetId: item.expectedTargetId, result: response.result, targetCorrect, actionCorrect,
+        hallucinatedTarget, safetyCorrect, invalidSchema: false,
+        unnecessaryClarification: item.expectedAction !== 'clarify' && response.result.action === 'clarify',
+        missedClarification: item.expectedAction === 'clarify' && response.result.action !== 'clarify',
+        koreanQuestion: /[가-힣]/u.test(item.userMessage),
+        crossLanguage: /[가-힣]/u.test(item.userMessage) !== item.candidates.some((candidate) => /[가-힣]/u.test(candidate.label)),
+        latencyMs,
+      };
+    } catch {
+      return {
+        id: item.id, seedId: item.seedId, category: item.category, expectedAction: item.expectedAction,
+        expectedTargetId: item.expectedTargetId, result: null, targetCorrect: false, actionCorrect: false,
+        hallucinatedTarget: false, safetyCorrect: false, invalidSchema: true,
+        unnecessaryClarification: false, missedClarification: item.expectedAction === 'clarify',
+        koreanQuestion: /[가-힣]/u.test(item.userMessage),
+        crossLanguage: /[가-힣]/u.test(item.userMessage) !== item.candidates.some((candidate) => /[가-힣]/u.test(candidate.label)),
+        latencyMs: Math.round(performance.now() - startedAt),
+      };
+    }
   });
   const report = createReport(selectedModel, benchmark.benchmarkVersion, results);
   await writeJsonl(path.join(dataRoot, 'evaluation', 'latest-results.jsonl'), results);
   await writeJson(path.join(dataRoot, 'evaluation', 'latest-report.json'), report);
   return report;
+}
+
+export async function runBenchmarkComparison(
+  config: PipelineConfig,
+  models: readonly string[],
+  dryRun = false,
+): Promise<unknown> {
+  const uniqueModels = [...new Set(models.map((model) => model.trim()).filter(Boolean))];
+  if (uniqueModels.length < 2) throw new Error('Model comparison requires at least two distinct model IDs.');
+  if (dryRun) return { mode: 'dry-run', models: uniqueModels, modelCount: uniqueModels.length };
+  const reports = [];
+  for (const model of uniqueModels) reports.push(await runBenchmark(config, model, false));
+  const comparison = { benchmark: 'ShowWhere model comparison', comparedAt: new Date().toISOString(), reports };
+  await writeJson(path.join(dataRoot, 'evaluation', 'latest-comparison.json'), comparison);
+  return comparison;
 }
 
 export async function readLatestReport(): Promise<unknown> {
@@ -391,14 +427,28 @@ async function mapLimited<T, R>(items: readonly T[], concurrency: number, worker
   return output;
 }
 
-function createReport(model: string, benchmarkVersion: string, results: Array<{ targetCorrect: boolean; actionCorrect: boolean; hallucinatedTarget: boolean; safetyCorrect: boolean; latencyMs: number }>): unknown {
+function createReport(model: string, benchmarkVersion: string, results: Array<{
+  targetCorrect: boolean; actionCorrect: boolean; hallucinatedTarget: boolean; safetyCorrect: boolean;
+  invalidSchema: boolean; unnecessaryClarification: boolean; missedClarification: boolean;
+  koreanQuestion: boolean; crossLanguage: boolean; category: string; latencyMs: number;
+}>): unknown {
   const rate = (field: keyof typeof results[number]) => results.length === 0 ? 0 : results.filter((item) => item[field] === true).length / results.length;
+  const subsetRate = (items: typeof results, field: 'targetCorrect' | 'actionCorrect') =>
+    items.length === 0 ? null : items.filter((item) => item[field]).length / items.length;
+  const latencies = results.map((item) => item.latencyMs).sort((a, b) => a - b);
+  const percentile = (value: number) => latencies.length === 0 ? 0 : latencies[Math.min(latencies.length - 1, Math.floor((latencies.length - 1) * value))];
   return {
     model, benchmarkVersion, evaluatedAt: new Date().toISOString(), cases: results.length,
     targetAccuracy: rate('targetCorrect'), taskModeAccuracy: rate('actionCorrect'),
     hallucinatedTargetRate: rate('hallucinatedTarget'), safetyAccuracy: rate('safetyCorrect'),
+    unnecessaryClarificationRate: rate('unnecessaryClarification'),
+    missedClarificationRate: rate('missedClarification'),
+    koreanIntentTargetAccuracy: subsetRate(results.filter((item) => item.koreanQuestion), 'targetCorrect'),
+    crossLanguageTargetAccuracy: subsetRate(results.filter((item) => item.crossLanguage), 'targetCorrect'),
+    recoveryTargetAccuracy: subsetRate(results.filter((item) => item.category === 'recovery'), 'targetCorrect'),
     averageLatencyMs: results.length ? Math.round(results.reduce((sum, item) => sum + item.latencyMs, 0) / results.length) : 0,
-    invalidSchemaRate: 0,
+    p50LatencyMs: percentile(0.5), p95LatencyMs: percentile(0.95),
+    invalidSchemaRate: rate('invalidSchema'),
     note: 'Token usage and cost are unavailable unless the provider returns usage metadata.',
   };
 }

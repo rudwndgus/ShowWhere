@@ -10,6 +10,7 @@ export default tseslint.config(
       'node_modules/**',
       '.search-profile/**',
       'learning/data/**',
+      'training/legacy/**',
     ],
   },
   eslint.configs.recommended,

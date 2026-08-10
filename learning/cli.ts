@@ -9,6 +9,7 @@ import {
   readLatestReport,
   recordHumanReview,
   runBenchmark,
+  runBenchmarkComparison,
   validateLearningData,
   type PipelineConfig,
 } from './pipeline';
@@ -115,12 +116,22 @@ async function main(): Promise<void> {
       if (!dryRun) requireProviderConfig(config);
       console.log(JSON.stringify(await runBenchmark(config, option('model'), dryRun), null, 2));
       break;
+    case 'compare': {
+      if (!dryRun) requireProviderConfig(config);
+      const models = (option('models') ?? [
+        process.env.FEATHERLESS_GUIDE_MODEL,
+        process.env.FEATHERLESS_GUIDE_FALLBACK_MODEL,
+      ].filter(Boolean).join(','))
+        .split(',').map((model) => model.trim()).filter(Boolean);
+      console.log(JSON.stringify(await runBenchmarkComparison(config, models, dryRun), null, 2));
+      break;
+    }
     case 'report':
       console.log(JSON.stringify(await readLatestReport(), null, 2));
       break;
     default:
-      console.log('Commands: validate | bootstrap | generate | judge | review-queue | review | build-dataset | run | eval | report');
-      console.log('Options: --seed <id> --category <name> --count 1..10 --model <id> --dry-run');
+      console.log('Commands: validate | bootstrap | generate | judge | review-queue | review | build-dataset | run | eval | compare | report');
+      console.log('Options: --seed <id> --category <name> --count 1..10 --model <id> --models <id,id> --dry-run');
   }
 }
 

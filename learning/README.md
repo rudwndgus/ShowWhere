@@ -2,6 +2,8 @@
 
 This directory turns a small human-approved seed library into synthetic UI-state scenarios, independently judges them, routes uncertain cases to review, and measures model behavior. It does **not** fine-tune a model.
 
+The Semantic v2 source of truth is separate under `training/concepts`, `training/knowledge`, and `training/gold`. Runtime correction events and legacy coordinates never enter Gold automatically. `npm run semantic:export` produces a coordinate-free, fine-tuning-ready export from human-approved Gold only. The existing v1 synthetic pipeline remains isolated until generated scenarios are explicitly converted and reviewed against Semantic v2.
+
 ## Layout
 
 - `contracts.ts`: runtime-validated seed, scenario, judgment, benchmark, review, and privacy-minimized session schemas.

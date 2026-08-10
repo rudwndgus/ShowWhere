@@ -1,5 +1,37 @@
 # ShowWhere
 
+> 화면의 좌표를 외우는 도구가 아니라, 사용자의 의도와 현재 상태를 이해해 다음 행동을 안내하는 도우미입니다.
+
+## Semantic Learning v2
+
+ShowWhere의 학습 단위는 화면 좌표가 아닙니다. 다음 정보를 구조화해 저장합니다.
+
+- 사용자가 실제로 말한 질문
+- 현재 단계와 화면에서 확인된 개념
+- 사용자의 의도와 완료하려는 작업
+- 눌러야 할 대상의 의미와 혼동하기 쉬운 대상
+- 클릭 뒤 기대되는 상태 변화와 성공 증거
+- 위험한 작업의 확인 정책
+
+개발자 학습 창에서 `사용자 질문`, `현재 단계`, `수정사항`을 입력하면 백엔드 AI가 Semantic v2 초안을 만듭니다. 초안은 오른쪽 JSON 편집기에서 사람이 직접 검토·수정할 수 있으며, 검증을 통과하고 명시적으로 승인한 데이터만 `training/gold/`에 저장됩니다. AI가 만든 초안이나 좌표 데이터는 자동으로 Gold가 되지 않습니다.
+
+```text
+개발자 입력 -> AI 라벨 초안 -> 사람의 수정 -> 결정적 검증 -> 승인된 Gold
+                                        |
+                                        +-> 개념 사전 / 작업 그래프 / 평가셋
+```
+
+주요 경로:
+
+- `training/concepts/`: 다국어 개념·동의어·혼동 대상
+- `training/knowledge/task-playbooks/`: 상태 전이 기반 작업 그래프
+- `training/gold/`: 사람이 검증하고 승인한 좌표 비의존 학습 데이터
+- `training/raw/`, `training/drafts/`, `training/evidence/`: 로컬 전용 원본·초안·증거
+- `src/semantic/`: 계약, 검증, 검색, 마이그레이션
+- `services/api/src/teaching/`: 서버 전용 학습 초안 생성 및 Gold 승인
+
+모델 API 키는 Windows 앱으로 전달되지 않습니다. 모든 Featherless 호출은 로컬 백엔드만 수행하며 모델 역할과 폴백은 루트 `.env`에서 설정합니다. 자세한 설정과 검증 명령은 [개발 문서](docs/development.md)를 참고하세요.
+
 The developer-feedback workflow lives in [`training/`](training/README.md). The synthetic generation, independent judging, human review, dataset splitting, and benchmark tools live in [`learning/`](learning/README.md).
 
 화면을 설명하지 않아도 하고 싶은 일만 말하면, Windows 전체 화면에서 다음에 눌러야 할 위치를 직접 표시하는 내비게이션 도우미입니다.

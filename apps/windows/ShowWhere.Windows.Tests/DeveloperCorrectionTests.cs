@@ -74,7 +74,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
         await store.SaveFeedbackAsync(correct);
         await store.SaveFeedbackAsync(incorrect);
 
-        var lines = await File.ReadAllLinesAsync(Path.Combine(_directory, "answer-feedback.jsonl"));
+        var lines = await File.ReadAllLinesAsync(Path.Combine(_directory, "raw", "feedback-events.jsonl"));
         Assert.Equal(2, lines.Length);
         Assert.Contains("\"rating\":\"correct\"", lines[0]);
         Assert.Contains("\"rating\":\"incorrect\"", lines[1]);
@@ -119,6 +119,38 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal(0.25, target.Y, 3);
         Assert.Equal(0.25, target.Width, 3);
         Assert.Equal(0.5, target.Height, 3);
+    }
+
+    [Fact]
+    public void Saved_candidate_correction_creates_an_immediate_highlight_decision()
+    {
+        var candidate = Candidate("network", "Network", "SystemTrayIcon", "windows_taskbar");
+
+        var decision = DeveloperCorrectionApplication.CreateImmediateDecision(
+            candidate,
+            null,
+            "Network");
+
+        Assert.NotNull(decision);
+        Assert.Equal(GuideActions.Highlight, decision.Action);
+        Assert.Equal("network", decision.TargetId);
+        Assert.Equal(1, decision.Confidence);
+    }
+
+    [Fact]
+    public void Saved_freeform_region_creates_an_immediate_visual_highlight_decision()
+    {
+        var visualTarget = new VisualTarget(0.2, 0.3, 0.1, 0.08, "프린터");
+
+        var decision = DeveloperCorrectionApplication.CreateImmediateDecision(
+            null,
+            visualTarget,
+            "프린터");
+
+        Assert.NotNull(decision);
+        Assert.Equal(GuideActions.HighlightVisual, decision.Action);
+        Assert.Equal(visualTarget, decision.VisualTarget);
+        Assert.Null(decision.TargetId);
     }
 
     public void Dispose()

@@ -16,6 +16,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private readonly IWindowsChangeMonitor _changeMonitor;
     private readonly IWindowsScreenCaptureService _screenCapture;
     private readonly IGuideApiClient _apiClient;
+    private readonly ITeachingApiClient _teachingClient;
     private readonly IHighlightOverlay _overlay;
     private readonly ICorrectionSelectionService _correctionSelection;
     private readonly IDeveloperCorrectionStore _correctionStore;
@@ -30,6 +31,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private bool _isPaused;
     private WindowsObservation? _clarificationObservation;
     private GuideDecision? _forcedDecision;
+    private WindowsScreenCapture? _forcedVisualCapture;
     private WindowsObservation? _lastObservation;
     private GuideDecision? _lastDecision;
     private UiCandidate? _lastHighlightedCandidate;
@@ -45,12 +47,20 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private UiBounds? _pendingCorrectionSelection;
     private UiCandidate? _pendingCorrectionCandidate;
     private WindowsScreenCapture? _pendingCorrectionCapture;
+    private string _teachingUserQuestion = string.Empty;
+    private string _teachingCurrentStage = string.Empty;
+    private string _teachingDeveloperCorrection = string.Empty;
+    private string _teachingPreviewJson = string.Empty;
+    private string _teachingValidationSummary = "분석 전입니다.";
+    private bool _teachingValidationPassed;
+    private bool _teachingGoldSaved;
 
     public GuidanceViewModel(
         IWindowsUiObserver observer,
         IWindowsChangeMonitor changeMonitor,
         IWindowsScreenCaptureService screenCapture,
         IGuideApiClient apiClient,
+        ITeachingApiClient teachingClient,
         IHighlightOverlay overlay,
         ICorrectionSelectionService correctionSelection,
         IDeveloperCorrectionStore correctionStore,
@@ -60,6 +70,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _changeMonitor = changeMonitor;
         _screenCapture = screenCapture;
         _apiClient = apiClient;
+        _teachingClient = teachingClient;
         _overlay = overlay;
         _correctionSelection = correctionSelection;
         _correctionStore = correctionStore;
@@ -72,6 +83,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         CancelCommand = new RelayCommand(CancelCurrentTask, () => _session is not null);
         CaptureCorrectionCommand = new AsyncRelayCommand(CaptureCorrectionAsync, CanCaptureCorrection);
         SaveCorrectionCommand = new AsyncRelayCommand(SaveCorrectionAsync, CanSaveCorrection);
+        AnalyzeTeachingCommand = new AsyncRelayCommand(AnalyzeTeachingAsync, CanAnalyzeTeaching);
+        ValidateTeachingCommand = new AsyncRelayCommand(ValidateTeachingAsync, CanValidateTeaching);
+        SaveApprovedGoldCommand = new AsyncRelayCommand(SaveApprovedGoldAsync, CanSaveApprovedGold);
         CancelCorrectionEditCommand = new RelayCommand(CloseCorrectionEditor);
         MarkAnswerCorrectCommand = new AsyncParameterRelayCommand(MarkAnswerCorrectAsync, CanEvaluateAnswer);
         MarkAnswerIncorrectCommand = new AsyncParameterRelayCommand(MarkAnswerIncorrectAsync, CanEvaluateAnswer);
@@ -86,12 +100,17 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public event Action<UiBounds>? TargetHighlighted;
     public event Action? CorrectionSelectionStarted;
     public event Action? CorrectionSelectionCompleted;
+    public event Action? TeachingEditorRequested;
+    public event Action? TeachingEditorClosed;
     public ICommand SubmitCommand { get; }
     public ICommand SelectClarificationCommand { get; }
     public ICommand RecoveryCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand CaptureCorrectionCommand { get; }
     public ICommand SaveCorrectionCommand { get; }
+    public ICommand AnalyzeTeachingCommand { get; }
+    public ICommand ValidateTeachingCommand { get; }
+    public ICommand SaveApprovedGoldCommand { get; }
     public ICommand CancelCorrectionEditCommand { get; }
     public ICommand MarkAnswerCorrectCommand { get; }
     public ICommand MarkAnswerIncorrectCommand { get; }
@@ -136,6 +155,36 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         set => Set(ref _saveCorrectionScreenshot, value);
     }
     public string CorrectionDataDirectory => _correctionStore.DataDirectory;
+    public string TeachingUserQuestion
+    {
+        get => _teachingUserQuestion;
+        set { if (Set(ref _teachingUserQuestion, value)) InvalidateTeachingValidation(); }
+    }
+    public string TeachingCurrentStage
+    {
+        get => _teachingCurrentStage;
+        set { if (Set(ref _teachingCurrentStage, value)) InvalidateTeachingValidation(); }
+    }
+    public string TeachingDeveloperCorrection
+    {
+        get => _teachingDeveloperCorrection;
+        set { if (Set(ref _teachingDeveloperCorrection, value)) InvalidateTeachingValidation(); }
+    }
+    public string TeachingPreviewJson
+    {
+        get => _teachingPreviewJson;
+        set { if (Set(ref _teachingPreviewJson, value)) InvalidateTeachingValidation(); }
+    }
+    public string TeachingValidationSummary
+    {
+        get => _teachingValidationSummary;
+        private set => Set(ref _teachingValidationSummary, value);
+    }
+    public bool TeachingValidationPassed
+    {
+        get => _teachingValidationPassed;
+        private set { if (Set(ref _teachingValidationPassed, value)) RaiseCommandStates(); }
+    }
     public string PauseMenuText => IsPaused ? "다시 시작" : "일시 정지";
 
     private bool CanSubmit() => !IsPaused && !IsLoading && !string.IsNullOrWhiteSpace(GoalText);
@@ -245,8 +294,21 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 GuideDecision decision;
                 if (_forcedDecision is not null)
                 {
-                    decision = ContractValidator.ValidateDecision(_forcedDecision, request);
+                    var forcedDecision = _forcedDecision;
+                    var forcedVisualCapture = _forcedVisualCapture;
                     _forcedDecision = null;
+                    _forcedVisualCapture = null;
+                    if (forcedDecision.Action == GuideActions.HighlightVisual)
+                    {
+                        if (forcedVisualCapture is null)
+                            throw new ContractValidationException("The saved visual correction has no screen capture.");
+                        request = request with
+                        {
+                            Screenshot = forcedVisualCapture.DataUrl,
+                            ScreenshotBounds = forcedVisualCapture.Bounds,
+                        };
+                    }
+                    decision = ContractValidator.ValidateDecision(forcedDecision, request);
                     StatusText = "선택한 위치 안내";
                 }
                 else if (_correctionStore.TryResolveTarget(
@@ -599,6 +661,17 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             || !string.IsNullOrWhiteSpace(CorrectionIntentText)
             || !string.IsNullOrWhiteSpace(CorrectionCommentText));
 
+    private bool CanAnalyzeTeaching() => IsCorrectionEditorVisible && !IsLoading
+        && !string.IsNullOrWhiteSpace(TeachingUserQuestion)
+        && !string.IsNullOrWhiteSpace(TeachingCurrentStage)
+        && !string.IsNullOrWhiteSpace(TeachingDeveloperCorrection);
+
+    private bool CanValidateTeaching() => IsCorrectionEditorVisible && !IsLoading
+        && !string.IsNullOrWhiteSpace(TeachingPreviewJson);
+
+    private bool CanSaveApprovedGold() => IsCorrectionEditorVisible && !IsLoading
+        && TeachingValidationPassed && !_teachingGoldSaved;
+
     private static bool CanEvaluateAnswer(object? parameter) =>
         parameter is ChatMessageItem { CanEvaluate: true };
 
@@ -638,6 +711,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private void CloseCorrectionEditor()
     {
         ResetCorrectionDraft();
+        TeachingEditorClosed?.Invoke();
         _overlay.Clear();
         StatusText = "교정 취소됨";
     }
@@ -654,7 +728,125 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _pendingCorrectionSelection = null;
         _pendingCorrectionCandidate = null;
         _pendingCorrectionCapture = null;
+        TeachingUserQuestion = answer.OriginalGoal
+            ?? (string.IsNullOrWhiteSpace(_submittedGoal) ? _session?.OriginalUserMessage ?? string.Empty : _submittedGoal);
+        var context = answer.Context ?? _lastObservation?.Context;
+        TeachingCurrentStage = string.Join(Environment.NewLine, new[]
+        {
+            context is null ? null : $"현재 앱: {context.ApplicationName}",
+            string.IsNullOrWhiteSpace(context?.WindowTitle) ? null : $"현재 화면: {context.WindowTitle}",
+            string.IsNullOrWhiteSpace(_session?.CurrentStep) ? null : $"현재 안내 단계: {_session.CurrentStep}",
+            _session?.CompletedSteps.Count > 0 ? $"완료 단계: {string.Join(" > ", _session.CompletedSteps)}" : null,
+        }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        TeachingDeveloperCorrection = string.Empty;
+        TeachingPreviewJson = string.Empty;
+        TeachingValidationSummary = "세 항목을 작성하고 '분석 및 라벨링'을 눌러주세요.";
+        TeachingValidationPassed = false;
+        _teachingGoldSaved = false;
         IsCorrectionEditorVisible = true;
+        TeachingEditorRequested?.Invoke();
+    }
+
+    private async Task AnalyzeTeachingAsync()
+    {
+        if (!CanAnalyzeTeaching()) return;
+        try
+        {
+            IsLoading = true;
+            TeachingValidationSummary = "Featherless가 의미 라벨 초안을 만드는 중입니다.";
+            var candidates = (_lastObservation?.Candidates ?? [])
+                .Where(candidate => candidate.Visible)
+                .Take(100)
+                .Select(candidate => new TeachingCandidate(
+                    candidate.Label ?? candidate.Description ?? candidate.Role,
+                    candidate.Role,
+                    candidate.Enabled))
+                .ToArray();
+            var input = new TeachingInput(
+                TeachingUserQuestion.Trim(),
+                TeachingCurrentStage.Trim(),
+                TeachingDeveloperCorrection.Trim(),
+                _lastObservation?.Context,
+                candidates);
+            TeachingPreviewJson = await _teachingClient.AnalyzeAsync(input, CancellationToken.None);
+            TeachingValidationSummary = "AI 초안입니다. 오른쪽 JSON을 직접 검토·수정한 뒤 검증하세요.";
+            StatusText = "Semantic v2 라벨 초안 생성됨";
+        }
+        catch (Exception exception)
+        {
+            DesktopDiagnostics.Write(exception);
+            TeachingValidationSummary = "라벨 초안을 만들지 못했습니다. 백엔드와 모델 설정을 확인해 주세요.";
+            StatusText = "라벨링 오류";
+        }
+        finally
+        {
+            IsLoading = false;
+            RaiseCommandStates();
+        }
+    }
+
+    private async Task ValidateTeachingAsync()
+    {
+        if (!CanValidateTeaching()) return;
+        try
+        {
+            IsLoading = true;
+            var result = await _teachingClient.ValidateAsync(TeachingPreviewJson, CancellationToken.None);
+            var details = result.Issues.Count == 0
+                ? string.Empty
+                : Environment.NewLine + string.Join(Environment.NewLine, result.Issues.Select(issue =>
+                    $"[{issue.Severity}] {issue.Code}: {issue.Message}"));
+            TeachingValidationSummary = $"{result.ShortReason} (신뢰도 {result.Confidence:P0}){details}";
+            TeachingValidationPassed = result.Valid;
+            StatusText = result.Valid ? "Gold 저장 가능 · 개발자 최종 승인 필요" : "라벨 검증 실패";
+        }
+        catch (Exception exception)
+        {
+            DesktopDiagnostics.Write(exception);
+            TeachingValidationPassed = false;
+            TeachingValidationSummary = "JSON 형식 또는 의미 검증에 실패했습니다.";
+            StatusText = "라벨 검증 오류";
+        }
+        finally
+        {
+            IsLoading = false;
+            RaiseCommandStates();
+        }
+    }
+
+    private async Task SaveApprovedGoldAsync()
+    {
+        if (!CanSaveApprovedGold()) return;
+        try
+        {
+            IsLoading = true;
+            await _teachingClient.SaveApprovedAsync(TeachingPreviewJson, Environment.UserName, CancellationToken.None);
+            _teachingGoldSaved = true;
+            TeachingValidationPassed = false;
+            TeachingValidationSummary = "사람이 검토하고 승인한 Semantic v2 Gold로 저장했습니다.";
+            StatusText = "Gold 학습 데이터 저장 완료";
+            Messages.Add(CreateAssistantMessage("assistant", "검수한 의미 데이터를 Gold에 저장했어요. 좌표는 학습 지식에 포함하지 않았습니다."));
+        }
+        catch (Exception exception)
+        {
+            DesktopDiagnostics.Write(exception);
+            TeachingValidationPassed = false;
+            TeachingValidationSummary = "Gold 저장 직전 검증에서 차단됐습니다. 오류를 수정하고 다시 검증해 주세요.";
+            StatusText = "Gold 저장 차단";
+        }
+        finally
+        {
+            IsLoading = false;
+            RaiseCommandStates();
+        }
+    }
+
+    private void InvalidateTeachingValidation()
+    {
+        if (TeachingValidationPassed)
+            TeachingValidationPassed = false;
+        _teachingGoldSaved = false;
+        RaiseCommandStates();
     }
 
     private async Task CaptureCorrectionAsync()
@@ -747,12 +939,44 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             var saved = await _correctionStore.SaveAsync(
                 record,
                 SaveCorrectionScreenshot ? _pendingCorrectionCapture?.DataUrl : null);
-            var selectedLabel = _pendingCorrectionCandidate?.Label ?? "정답 정보";
+            var selectedCandidate = _pendingCorrectionCandidate;
+            var selectedLabel = selectedCandidate?.Label
+                ?? selectedCandidate?.Description
+                ?? normalizedTarget?.Label
+                ?? "정답 위치";
+            var immediateDecision = DeveloperCorrectionApplication.CreateImmediateDecision(
+                selectedCandidate,
+                normalizedTarget,
+                selectedLabel);
+            var immediateCapture = immediateDecision?.Action == GuideActions.HighlightVisual
+                ? _pendingCorrectionCapture
+                : null;
+            var observation = _lastObservation;
             ResetCorrectionDraft(clearOverlay: false);
-            Messages.Add(CreateAssistantMessage(
-                "assistant",
-                $"교정 내용을 확인하고 저장했어요. 다음 같은 질문에서는 '{selectedLabel}' 기준을 우선 적용합니다."));
             StatusText = $"교정 저장됨 · {saved.Id[..8]}";
+
+            if (!string.IsNullOrWhiteSpace(correctedIntent))
+                _session = TaskSessionStateMachine.Create(correctedIntent);
+
+            if (immediateDecision is not null)
+            {
+                _forcedDecision = immediateDecision;
+                _forcedVisualCapture = immediateCapture;
+                _taskCancellation = new CancellationTokenSource();
+                await RunGuidanceLoopAsync(observation, _taskCancellation.Token);
+            }
+            else if (!string.IsNullOrWhiteSpace(correctedIntent))
+            {
+                _taskCancellation = new CancellationTokenSource();
+                await RunGuidanceLoopAsync(observation, _taskCancellation.Token);
+            }
+            else
+            {
+                _overlay.Clear();
+                Messages.Add(CreateAssistantMessage(
+                    "assistant",
+                    "교정 메모를 저장했어요. 정답 위치를 선택하면 현재 화면에도 바로 적용할 수 있어요."));
+            }
         }
         catch (Exception exception)
         {
@@ -825,6 +1049,19 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _pendingCorrectionSelection = null;
         _pendingCorrectionCandidate = null;
         _pendingCorrectionCapture = null;
+        _teachingUserQuestion = string.Empty;
+        _teachingCurrentStage = string.Empty;
+        _teachingDeveloperCorrection = string.Empty;
+        _teachingPreviewJson = string.Empty;
+        _teachingValidationSummary = "분석 전입니다.";
+        _teachingValidationPassed = false;
+        _teachingGoldSaved = false;
+        OnPropertyChanged(nameof(TeachingUserQuestion));
+        OnPropertyChanged(nameof(TeachingCurrentStage));
+        OnPropertyChanged(nameof(TeachingDeveloperCorrection));
+        OnPropertyChanged(nameof(TeachingPreviewJson));
+        OnPropertyChanged(nameof(TeachingValidationSummary));
+        OnPropertyChanged(nameof(TeachingValidationPassed));
         if (clearOverlay) _overlay.Clear();
     }
 
@@ -861,6 +1098,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _taskCancellation = null;
         _overlay.Clear();
         _forcedDecision = null;
+        _forcedVisualCapture = null;
         if (markCancelled && _session is not null)
             _session = TaskSessionStateMachine.Cancelled(_session);
     }
@@ -872,6 +1110,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (CaptureCorrectionCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         (SaveCorrectionCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        (AnalyzeTeachingCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        (ValidateTeachingCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        (SaveApprovedGoldCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         (MarkAnswerCorrectCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();
         (MarkAnswerIncorrectCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();
         (SelectClarificationCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();

@@ -1,0 +1,46 @@
+{
+  "benchmark": "ShowWhere model comparison",
+  "comparedAt": "2026-08-10T16:09:07.918Z",
+  "reports": [
+    {
+      "model": "deepseek-ai/DeepSeek-V3.2",
+      "benchmarkVersion": "0.1.0",
+      "evaluatedAt": "2026-08-10T16:07:51.170Z",
+      "cases": 8,
+      "targetAccuracy": 0.75,
+      "taskModeAccuracy": 0.5,
+      "hallucinatedTargetRate": 0,
+      "safetyAccuracy": 0.875,
+      "unnecessaryClarificationRate": 0.25,
+      "missedClarificationRate": 0,
+      "koreanIntentTargetAccuracy": 0.75,
+      "crossLanguageTargetAccuracy": 0.75,
+      "recoveryTargetAccuracy": 0,
+      "averageLatencyMs": 9777,
+      "p50LatencyMs": 10543,
+      "p95LatencyMs": 13302,
+      "invalidSchemaRate": 0.125,
+      "note": "Token usage and cost are unavailable unless the provider returns usage metadata."
+    },
+    {
+      "model": "Qwen/Qwen3.6-35B-A3B",
+      "benchmarkVersion": "0.1.0",
+      "evaluatedAt": "2026-08-10T16:09:07.913Z",
+      "cases": 8,
+      "targetAccuracy": 0.25,
+      "taskModeAccuracy": 0.125,
+      "hallucinatedTargetRate": 0,
+      "safetyAccuracy": 0.25,
+      "unnecessaryClarificationRate": 0,
+      "missedClarificationRate": 0.125,
+      "koreanIntentTargetAccuracy": 0.25,
+      "crossLanguageTargetAccuracy": 0.25,
+      "recoveryTargetAccuracy": 0,
+      "averageLatencyMs": 18100,
+      "p50LatencyMs": 15178,
+      "p95LatencyMs": 28693,
+      "invalidSchemaRate": 0.75,
+      "note": "Token usage and cost are unavailable unless the provider returns usage metadata."
+    }
+  ]
+}

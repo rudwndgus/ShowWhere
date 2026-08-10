@@ -23,7 +23,10 @@ const exclusions = await readJsonl('feedback-exclusions.jsonl');
 const excludedFeedbackIds = new Set(exclusions
   .filter((record) => record.schemaVersion === 1 && typeof record.answerFeedbackId === 'string')
   .map((record) => record.answerFeedbackId));
-const feedback = (await readJsonl('answer-feedback.jsonl'))
+const feedback = [
+  ...(await readJsonl('answer-feedback.jsonl')),
+  ...(await readJsonl(path.join('raw', 'feedback-events.jsonl'))),
+]
   .filter((record) => record.schemaVersion === 1
     && ['correct', 'incorrect'].includes(record.rating)
     && !excludedFeedbackIds.has(record.id));

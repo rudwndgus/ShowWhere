@@ -1,5 +1,23 @@
 # ShowWhere architecture
 
+## Semantic knowledge architecture
+
+Runtime guidance and learning share semantic identifiers instead of persisted coordinates:
+
+```text
+live UIA candidates
+  -> normalized labels and concepts
+  -> task/concept/Gold retrieval
+  -> purpose-based model router
+  -> semantic target decision
+  -> resolve semantic target against the current live candidate list
+  -> highlight only a request-owned targetId
+```
+
+The source of truth consists of a multilingual concept dictionary, explicit task state graphs, and human-approved Semantic v2 Gold records. AI teaching output remains a draft until deterministic validation and developer approval. Screenshots, UI snapshots, raw feedback, and unapproved drafts remain local and are ignored by Git.
+
+Model routing is role-based: guide, fast, reasoning, vision, embedding, learning generator, and independent judge. Every provider response is runtime validated; unavailable or malformed models use a bounded fallback, and raw provider errors never reach the desktop client.
+
 ShowWhere is a Windows-only desktop guidance application with a local Node backend.
 
 ## Runtime flow

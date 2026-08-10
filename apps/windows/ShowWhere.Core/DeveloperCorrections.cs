@@ -58,6 +58,40 @@ public sealed record RefinedDeveloperComment(
     string Normalized,
     IReadOnlyList<string> IssueTags);
 
+public static class DeveloperCorrectionApplication
+{
+    public static GuideDecision? CreateImmediateDecision(
+        UiCandidate? selectedCandidate,
+        VisualTarget? normalizedVisualTarget,
+        string selectedLabel)
+    {
+        var message = $"수정한 내용을 바로 반영했어요. 표시한 '{selectedLabel}'을 눌러보세요.";
+        if (selectedCandidate is not null)
+        {
+            return new GuideDecision(
+                GuideStatuses.InProgress,
+                GuideActions.Highlight,
+                message,
+                1,
+                TargetId: selectedCandidate.Id,
+                ExpectedChange: "사용자가 수정된 대상과 상호작용합니다.");
+        }
+
+        if (normalizedVisualTarget is not null)
+        {
+            return new GuideDecision(
+                GuideStatuses.InProgress,
+                GuideActions.HighlightVisual,
+                message,
+                1,
+                ExpectedChange: "사용자가 수정된 화면 영역과 상호작용합니다.",
+                VisualTarget: normalizedVisualTarget);
+        }
+
+        return null;
+    }
+}
+
 public interface IDeveloperCorrectionStore
 {
     string DataDirectory { get; }
@@ -94,8 +128,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         DataDirectory = dataDirectory ?? ResolveDefaultDataDirectory();
         if (dataDirectory is null) MigrateLegacyTrainingData(DataDirectory);
         _recordsPath = Path.Combine(DataDirectory, "corrections.jsonl");
-        _feedbackPath = Path.Combine(DataDirectory, "answer-feedback.jsonl");
+        _feedbackPath = Path.Combine(DataDirectory, "raw", "feedback-events.jsonl");
         Directory.CreateDirectory(DataDirectory);
+        Directory.CreateDirectory(Path.GetDirectoryName(_feedbackPath)!);
         _records = LoadRecords(_recordsPath);
     }
 

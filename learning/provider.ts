@@ -36,6 +36,7 @@ export class LearningProvider {
             'Content-Type': 'application/json',
             'HTTP-Referer': 'https://github.com/rudwndgus/ShowWhere',
             'X-Title': 'ShowWhere Learning Pipeline',
+            'User-Agent': 'ShowWhere/0.2',
           },
           body: JSON.stringify({
             model,
