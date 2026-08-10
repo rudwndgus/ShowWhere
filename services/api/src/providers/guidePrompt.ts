@@ -29,7 +29,7 @@ Rules:
 - Mark status as completed only when the original goal is achieved, not merely because one intermediate control was selected.
 - If the current screen semantics already demonstrate the user's requested outcome, return status=completed with action=explain. Do not invent another click merely to keep the conversation going.
 - Write message in the user's language and name the visible control to click.
-- Browser candidates come from the live DOM (the same semantic information exposed in developer tools), including text, ARIA labels, titles, placeholders, roles, and whether the element is currently in the viewport.
+- Browser candidates come from Windows accessibility and UI Automation data, including visible labels, accessible names, roles, process scope, and whether an element is currently on screen.
 - A relevant browser candidate may have inViewport=false. You may still select it; the client will show a scroll-direction arrow before highlighting it.
 - If no candidate is suitable and no screenshot is attached, request_vision. Prefer ask_user when a screenshot is attached but the visual target is absent, obscured, or confidence is low.
 - When two to four candidates are plausible and you need the user to choose, use ask_user and include their exact IDs in alternativeTargetIds. Never include unknown IDs. Omit alternativeTargetIds when no candidate is suitable.

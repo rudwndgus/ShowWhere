@@ -1,19 +1,31 @@
-# ShowWhere shared learning data
+# 좋은 안내를 만드는 기억
 
-The `ai-learning` application writes its persistent learning records here so they can be committed and synchronized between development computers.
+> `ai-learning` 브랜치는 사람의 교정을 바탕으로 ShowWhere의 판단을 더 정확하게 만드는 공간입니다.
 
-Tracked through Git:
+ShowWhere가 기억해야 하는 것은 화면 위의 고정된 위치가 아닙니다. 화면 크기와 배치가 달라져도 변하지 않는 사용자의 목적, 현재 단계, 버튼의 의미, 행동 뒤에 기대되는 결과를 기억해야 합니다.
 
-- `answer-feedback.jsonl`: every explicit O/X answer rating.
-- `corrections.jsonl`: corrections confirmed with the Save button.
+## 좌표보다 의미가 중요한 이유
 
-Kept local and ignored by Git:
+어제 오른쪽 위에 있던 버튼이 오늘은 왼쪽 메뉴 안에 있을 수 있습니다. 같은 기능이 한국어 화면에서는 “주문 내역”, 영어 화면에서는 “Orders”나 “Purchases”로 나타날 수도 있습니다.
 
-- `screenshots/`: full-screen captures that can contain account names, email addresses, API keys, or other private information.
-- `exports/`: reproducible model-oriented exports.
+좌표를 기억하면 화면이 조금만 달라져도 길을 잃습니다. 의미를 기억하면 처음 보는 표현에서도 사용자가 원하는 결과를 찾아갈 수 있습니다.
 
-After collecting records on one computer, review the JSONL diff and commit/push it on `ai-learning`. Pull `ai-learning` on the other computer before starting ShowWhere so its correction memory loads the shared records.
+## 좋은 기억은 무엇인가요?
 
-Set `SHOWWHERE_TRAINING_DIR` only when an alternate dataset directory is intentionally required.
+좋은 기억에는 사용자의 질문만 있는 것이 아닙니다.
 
-This folder contains feedback captured from the Windows developer UI. The separate [`learning`](../learning/README.md) pipeline validates and expands approved seed examples, builds review queues, and runs benchmarks. Synthetic output is never written into this human-feedback folder.
+사용자가 무엇을 하려 했는지, 현재 어디까지 왔는지, 화면에서 무엇을 확인할 수 있었는지, 다음 행동은 무엇이었는지, 그 행동이 성공했다면 어떤 변화가 보여야 하는지가 함께 담겨야 합니다.
+
+그리고 무엇보다 중요한 것은 완료 지점입니다. 사용자가 이미 목표를 이뤘다면 ShowWhere는 더 많은 행동을 추천하지 않고 멈출 줄 알아야 합니다.
+
+## 사람의 승인이 필요한 이유
+
+잘못된 기억은 기억이 없는 것보다 위험할 수 있습니다. ShowWhere가 자신 있게 틀린 곳을 가리키면 사용자는 더 큰 혼란을 겪습니다.
+
+그래서 AI의 추측은 곧바로 정답이 되지 않습니다. 사람이 검토하고 옳다고 확인한 안내만 가장 신뢰할 수 있는 기준이 됩니다. 확실하지 않은 내용은 보류하고, 서로 충돌하는 교정은 다시 확인해야 합니다.
+
+## 기억을 다루는 태도
+
+ShowWhere는 사용자의 화면을 배움의 재료로만 보지 않습니다. 화면에는 이름, 계정 정보, 문서, 메시지처럼 보호해야 할 정보가 있을 수 있습니다.
+
+필요한 의미만 남기고 불필요한 개인 정보는 남기지 않는 것, 화면의 위치보다 목적과 관계를 배우는 것, 사람의 확인 없이 정답이라고 주장하지 않는 것이 ShowWhere가 기억을 다루는 원칙입니다.

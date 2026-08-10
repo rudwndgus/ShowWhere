@@ -48,7 +48,7 @@ Floating WPF assistant
 - `ShowWhere.ApiClient`: validated HTTP access to the local backend.
 - `ShowWhere.Windows.Tests`: contract, navigation, observation, and native overlay tests.
 
-Chrome and Edge are handled as ordinary Windows applications. Native UI Automation distinguishes browser chrome from document content; full-screen vision is used when browser accessibility data is insufficient. No browser extension or injected page code is used.
+Chrome and Edge are handled as ordinary Windows applications. Native UI Automation distinguishes browser chrome from document content, and full-screen vision is used when browser accessibility data is insufficient.
 
 ## Windows Settings guidance
 

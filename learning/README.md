@@ -1,57 +1,41 @@
-# ShowWhere Learning Pipeline
+# ShowWhere가 더 똑똑해지는 방식
 
-This directory turns a small human-approved seed library into synthetic UI-state scenarios, independently judges them, routes uncertain cases to review, and measures model behavior. It does **not** fine-tune a model.
+> `ai-learning` 브랜치는 ShowWhere가 사람의 의도와 화면의 의미를 더 정확하게 이해하도록 발전시키는 공간입니다.
 
-The Semantic v2 source of truth is separate under `training/concepts`, `training/knowledge`, and `training/gold`. Runtime correction events and legacy coordinates never enter Gold automatically. `npm run semantic:export` produces a coordinate-free, fine-tuning-ready export from human-approved Gold only. The existing v1 synthetic pipeline remains isolated until generated scenarios are explicitly converted and reviewed against Semantic v2.
+ShowWhere의 배움은 단순히 많은 답을 모으는 일이 아닙니다. 어떤 상황에서 어떤 안내가 실제로 도움이 되었는지, 어디에서 멈춰야 했는지, 무엇이 비슷해 보이지만 잘못된 선택이었는지를 이해하는 과정입니다.
 
-## Layout
+## 왜 학습이 필요한가요?
 
-- `contracts.ts`: runtime-validated seed, scenario, judgment, benchmark, review, and privacy-minimized session schemas.
-- `provider.ts`: OpenAI-compatible Featherless JSON client with timeout and retry limits.
-- `pipeline.ts`: generation, privacy checks, deduplication, blind multi-model judging, review routing, deterministic family splits, and evaluation.
-- `cli.ts`: development commands.
-- `data/seeds/`: human-authored source of truth. Do not place synthetic examples here.
-- `data/generated/`: untrusted model output and resumable generation manifest.
-- `data/accepted/`, `rejected/`, `judged/`: validation results.
-- `data/human-reviewed/`: review queue and future explicit reviewer decisions.
-- `data/training/`, `validation/`, `evaluation/`: family-separated datasets. Permanent benchmark seed families are held out of training.
-- `playbooks/`: deterministic troubleshooting branches which should not be memorized by a model.
+사람은 같은 목적을 매우 다르게 표현합니다.
 
-## Safe workflow
+“배송 어디야?”, “택배 언제 와?”, “저번주에 산 물건 지금 어디쯤 왔어?”는 모두 같은 마음에서 나온 질문일 수 있습니다. 반대로 화면에 비슷한 메뉴가 여러 개 보여도 사용자가 원하는 결과로 이어지는 선택은 하나뿐일 수 있습니다.
 
-```powershell
-npm.cmd run learning:validate
-npm.cmd run learning:bootstrap
-npm.cmd run learning:generate -- --seed windows_default_printer --count 5 --dry-run
-npm.cmd run learning:generate -- --seed windows_default_printer --count 5
-npm.cmd run learning:judge
-npm.cmd run learning:review-queue
-npm.cmd run learning:review -- --scenario <id> --action correct --target <candidate-id> --instruction "수정 안내" --comment "검토 메모"
-npm.cmd run learning:build-dataset
-npm.cmd run eval -- --dry-run
-npm.cmd run eval
-```
+ShowWhere는 문장을 그대로 외우는 대신 그 안에 담긴 목적을 이해하고, 현재 상황과 연결해 다음 행동을 판단해야 합니다.
 
-`npm.cmd` is shown because some Windows PowerShell execution policies block `npm.ps1`. Plain `npm` is fine in terminals without that restriction.
+## 사람의 판단이 가장 중요합니다
 
-`learning:bootstrap` performs a deterministic one-to-one conversion of the runtime-validated human seed library into canonical scenario records. It calls no model and writes `provenance: human`; it does not invent variations or claim model validation.
+AI가 만든 답은 언제나 초안입니다. 실제로 무엇이 옳았는지는 화면과 사용자의 목적을 이해한 사람이 결정합니다.
 
-`learning:build-dataset` combines those human-seed records with separately labeled auto-accepted synthetic records. Every output record retains its source. Permanent benchmark task families are routed only to evaluation so closely related cases cannot leak into training.
+개발자의 교정은 ShowWhere가 더 좋은 안내를 만드는 가장 중요한 기준입니다. 좋은 교정은 단순히 “틀렸다”고 말하는 데서 끝나지 않습니다. 사용자가 무엇을 원했고, 현재 어디까지 왔으며, 다음에는 무엇을 해야 하고, 어느 시점에 목표가 완성되는지를 알려줍니다.
 
-Configure `LEARNING_GENERATOR_MODEL`, `LEARNING_JUDGE_A_MODEL`, and `LEARNING_JUDGE_B_MODEL` in the untracked root `.env`. Judges should be genuinely independent models where possible. The judge request never contains the generator's proposed action/target, and benchmark requests never contain expected answers.
+## ShowWhere가 배우려는 것
 
-Reviewer actions are `accept`, `reject`, `correct`, and `mark_ambiguous`. A correction cannot be saved with a target outside the scenario candidate list. Re-reviewing the same scenario replaces its prior decision instead of duplicating it.
+- 사용자가 진짜로 이루고 싶은 결과
+- 현재 작업이 어느 단계에 있는지
+- 화면에 보이는 항목이 어떤 의미인지
+- 비슷하지만 잘못된 선택은 무엇인지
+- 행동 뒤에 어떤 변화가 나타나야 하는지
+- 이미 목표에 도달했을 때 멈춰야 한다는 사실
+- 결제나 삭제처럼 더 신중해야 하는 순간
 
-Defaults are deliberately small: at most 10 variants per seed, 50 examples per run, concurrency 2, and bounded output tokens. Increase limits explicitly only after reviewing a dry run. Generation resumes by merging valid prior output and removing exact structural duplicates.
+## 우리가 지키는 기준
 
-`data/generated/manifest.json` is the latest run summary. Every attempt is also preserved under `data/generated/runs/`, so sequential tests do not erase earlier success or failure history.
+많은 데이터보다 정확한 데이터가 중요합니다. AI가 스스로 만든 예시는 사람의 확인 없이 정답이 되지 않습니다. 평가를 위한 질문은 학습용 정답으로 섞지 않습니다. 개인 정보와 민감한 화면은 배움이라는 이유로 함부로 사용하지 않습니다.
 
-## Trust levels
+ShowWhere의 학습은 사람을 대신하기 위한 과정이 아니라, 사람의 의도를 더 잘 존중하기 위한 과정입니다.
 
-1. Human-authored seed or explicit correction: trusted source material.
-2. Synthetic generated scenario: untrusted.
-3. Auto-accepted scenario: schema-valid and agreed upon by generator plus two judges; useful for experiments, but not equivalent to a human label.
-4. Human-reviewed accepted scenario: preferred future training/few-shot material.
-5. Permanent evaluation benchmark: never exposed as an answer to evaluated models and never included in training/few-shot data.
+## 우리가 바라는 변화
 
-Full screenshots, passwords, tokens, payment data, message/document bodies, and unnecessary personal information do not belong here. Real-session collection is schema-ready but is not enabled automatically.
+처음에는 개발자가 하나씩 가르쳐야 했던 상황도 시간이 지나면 ShowWhere가 의미를 이해해 새로운 표현과 새로운 화면에 적용할 수 있어야 합니다.
+
+궁극적으로는 사용자가 화면을 자세히 설명하지 않아도 ShowWhere가 상황을 이해하고, 정확한 다음 행동을 보여주며, 목표를 이뤘을 때 자연스럽게 멈추는 동반자가 되는 것이 이 배움의 목적입니다.

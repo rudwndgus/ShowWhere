@@ -1,146 +1,88 @@
+<div align="center">
+
 # ShowWhere
 
-> 화면의 좌표를 외우는 도구가 아니라, 사용자의 의도와 현재 상태를 이해해 다음 행동을 안내하는 도우미입니다.
+### Don't explain your screen. Just tell us your goal.
 
-## Semantic Learning v2
+화면을 설명하지 않아도 괜찮습니다.<br>
+하고 싶은 일만 말하면 ShowWhere가 다음에 해야 할 행동을 함께 찾아갑니다.
 
-ShowWhere의 학습 단위는 화면 좌표가 아닙니다. 다음 정보를 구조화해 저장합니다.
+</div>
 
-- 사용자가 실제로 말한 질문
-- 현재 단계와 화면에서 확인된 개념
-- 사용자의 의도와 완료하려는 작업
-- 눌러야 할 대상의 의미와 혼동하기 쉬운 대상
-- 클릭 뒤 기대되는 상태 변화와 성공 증거
-- 위험한 작업의 확인 정책
+> [!NOTE]
+> `ai-learning` 브랜치는 ShowWhere의 의도 이해, 완료 판단, 개발자 교정 학습, 모델 평가를 발전시키는 공간입니다.
 
-개발자 학습 창에서 `사용자 질문`, `현재 단계`, `수정사항`을 입력하면 백엔드 AI가 Semantic v2 초안을 만듭니다. 초안은 오른쪽 JSON 편집기에서 사람이 직접 검토·수정할 수 있으며, 검증을 통과하고 명시적으로 승인한 데이터만 `training/gold/`에 저장됩니다. AI가 만든 초안이나 좌표 데이터는 자동으로 Gold가 되지 않습니다.
+## ShowWhere는 어떤 프로그램인가요?
 
-답변 아래의 `✓ 완성 · 끝내기`는 현재 화면을 해당 질문의 완료 지점으로 기록하고 즉시 안내를 종료합니다. 저장된 완료 기억은 화면 좌표가 아니라 앱·창과 현재 UI 의미 요소로 대조되며, 다음 실행에서는 AI 호출 전에 목표 도달 여부를 확인합니다.
+ShowWhere는 컴퓨터 사용이 낯설거나 복잡한 화면에서 길을 잃은 사람을 위한 인터페이스 내비게이션 도우미입니다.
 
-```text
-개발자 입력 -> AI 라벨 초안 -> 사람의 수정 -> 결정적 검증 -> 승인된 Gold
-                                        |
-                                        +-> 개념 사전 / 작업 그래프 / 평가셋
-```
+사용자는 버튼의 이름이나 위치를 알 필요가 없습니다. “프린터 상태를 확인하고 싶어요”, “내 주문이 어디쯤 왔는지 보고 싶어요”, “로그아웃하고 싶어요”처럼 자신의 목적만 말하면 됩니다. ShowWhere는 현재 상황을 이해하고, 지금 해야 할 한 가지를 화면 위에서 알려줍니다.
 
-주요 경로:
+ShowWhere는 사용자를 대신해 마음대로 조작하는 자동화 도구가 아닙니다. 사용자가 직접 결정하고 행동할 수 있도록 곁에서 안내하는 동반자입니다.
 
-- `training/concepts/`: 다국어 개념·동의어·혼동 대상
-- `training/knowledge/task-playbooks/`: 상태 전이 기반 작업 그래프
-- `training/gold/`: 사람이 검증하고 승인한 좌표 비의존 학습 데이터
-- `training/raw/`, `training/drafts/`, `training/evidence/`: 로컬 전용 원본·초안·증거
-- `src/semantic/`: 계약, 검증, 검색, 마이그레이션
-- `services/api/src/teaching/`: 서버 전용 학습 초안 생성 및 Gold 승인
+## 왜 필요한가요?
 
-모델 API 키는 Windows 앱으로 전달되지 않습니다. 모든 Featherless 호출은 로컬 백엔드만 수행하며 모델 역할과 폴백은 루트 `.env`에서 설정합니다. 자세한 설정과 검증 명령은 [개발 문서](docs/development.md)를 참고하세요.
+기술이 어려운 가장 흔한 이유는 기능이 없어서가 아니라 그 기능이 어디에 있는지 알기 어렵기 때문입니다.
 
-The developer-feedback workflow lives in [`training/`](training/README.md). The synthetic generation, independent judging, human review, dataset splitting, and benchmark tools live in [`learning/`](learning/README.md).
+“설정을 눌러주세요.”<br>
+“설정이 어디 있나요?”<br>
+“오른쪽 위에 있는 아이콘입니다.”<br>
+“그게 안 보여요.”
 
-화면을 설명하지 않아도 하고 싶은 일만 말하면, Windows 전체 화면에서 다음에 눌러야 할 위치를 직접 표시하는 내비게이션 도우미입니다.
+이 짧은 대화는 고객 지원, 가족 간 도움, 회사 교육 현장에서 매일 반복됩니다. 사용자는 자신의 목적을 이미 알고 있지만, 프로그램마다 다른 화면과 용어 때문에 다음 행동을 찾지 못합니다.
 
-ShowWhere는 Windows 10/11용 .NET 8 WPF 프로그램입니다. Microsoft UI Automation으로 실제 버튼을 찾고, 필요한 경우 Featherless 비전 모델이 전체 화면을 분석합니다. 버튼은 자동으로 누르지 않으며 사용자가 표시된 위치를 직접 선택합니다.
+ShowWhere는 사람에게 화면 구조를 공부하라고 요구하는 대신, 인터페이스가 사람의 목적을 이해하도록 만들고자 합니다.
 
-## 구조
+## ShowWhere가 만들고 싶은 경험
 
-```text
-ShowWhere/
-├─ apps/windows/
-│  ├─ ShowWhere.Desktop/            WPF UI와 안내 반복
-│  ├─ ShowWhere.WindowsAutomation/  UI Automation과 화면 캡처
-│  ├─ ShowWhere.Overlay/            DPI 대응 최상단 표시
-│  ├─ ShowWhere.ApiClient/          백엔드 HTTP 클라이언트
-│  ├─ ShowWhere.Core/               계약과 상태 검증
-│  └─ ShowWhere.Windows.Tests/      Windows 테스트
-├─ services/api/                    Featherless 백엔드
-├─ src/contracts/                   TypeScript 요청/응답 계약
-├─ src/guide-api/                   API 안전 검증과 문맥 보호
-├─ scripts/                         Windows 실행 스크립트
-└─ docs/                            개발 및 설계 문서
-```
+ShowWhere는 한 번에 많은 설명을 쏟아내지 않습니다.
 
-## 동작 순서
+먼저 사용자가 원하는 일을 이해합니다. 현재 화면에서 가장 의미 있는 다음 행동 하나를 찾습니다. 사용자가 그 행동을 마치면 달라진 상황을 다시 살피고, 목표에 도달할 때까지 한 단계씩 함께 갑니다. 이미 목적을 이뤘다면 더 이상 불필요한 행동을 권하지 않고 멈춥니다.
 
-```text
-사용자 목표 입력
-→ Windows UI Automation 후보 수집
-→ Windows 설정 작업은 공식 설정 분류를 반영한 로컬 카탈로그로 경로 결정
-→ 일반 후보는 DeepSeek가 다음 targetId 선택
-→ 후보를 찾지 못하면 전체 화면 캡처
-→ UI-TARS가 다음 클릭 좌표 탐색
-→ 응답과 좌표 검증
-→ 실제 화면에 click-through 오버레이 표시
-→ 사용자 클릭 감지
-→ 새 화면을 관찰해 다음 단계 반복
-```
+이 과정에서 중요한 것은 좌표를 외우는 것이 아니라 의미를 이해하는 것입니다. 같은 목적이라도 사람마다 표현이 다르고, 같은 기능도 프로그램마다 이름이 다릅니다. ShowWhere는 그 차이를 넘어 사용자의 의도와 화면의 의미를 연결하는 것을 목표로 합니다.
 
-Chrome과 Edge도 Windows 프로그램이 UI Automation 및 화면 비전으로 관찰합니다. 브라우저 확장 프로그램은 사용하지 않습니다.
+## 누구를 위한가요?
 
-Windows 설정 안내는 표시 언어가 한국어 또는 영어인 Windows 10/11의 실제 UI Automation 후보를 확인한 뒤 한 단계씩 표시합니다. 최소화·최대화·복원·닫기 같은 창 제목 표시줄 버튼은 설정 후보에서 제외하며, 해당 Windows 버전이나 장치에 존재하지 않는 항목을 임의의 좌표로 표시하지 않습니다.
+- 처음 사용하는 프로그램이 부담스러운 사람
+- 컴퓨터와 디지털 서비스가 익숙하지 않은 사람
+- 작은 글씨와 복잡한 메뉴 때문에 어려움을 겪는 고령층
+- 새로운 업무 프로그램을 배워야 하는 직원
+- 같은 화면 위치를 반복해서 설명해야 하는 고객 지원 담당자
+- 하고 싶은 일에 집중하고 싶은 모든 사람
 
-`ai-learning` 개발 모드에서는 모든 assistant 답변에 O/X 평가가 표시됩니다. O와 X 평가는 즉시 영구 저장되고, X를 선택하면 의미·코멘트·정답 영역을 수정할 수 있습니다. 드래그는 미리보기만 만들며 명시적으로 `저장`을 눌러야 교정 스크린샷과 좌표가 기록됩니다. 저장된 의미와 UI Automation 서명은 다음 같은 질문에 즉시 재사용하며, 학습용 JSONL로도 내보낼 수 있습니다. 자세한 형식은 [개발자 교정 모드](docs/developer-corrections.md)를 참고하세요.
+## 우리가 믿는 원칙
 
-배포용 `window-back-kyung`과 학습용 `ai-learning` 사이의 개선 승격 절차는 [학습 브랜치 운영 방식](docs/learning-branch-workflow.md)에 정리돼 있습니다.
+### 사람의 의도가 먼저입니다
 
-## 개발 환경
+버튼을 찾는 것보다 사용자가 왜 그 버튼을 찾는지 이해하는 것이 중요합니다.
 
-필수 항목:
+### 한 번에 한 단계만 안내합니다
 
-- Windows 10/11
-- Node.js
-- .NET 8 SDK
+긴 설명 대신 지금 해야 할 행동 하나를 정확히 보여줍니다.
 
-```powershell
-npm install
-npm test
-npm run typecheck
-npm run lint
-npm run build:all
-```
+### 확실하지 않으면 묻습니다
 
-API 개발 실행:
+틀린 위치를 자신 있게 가리키는 것보다 필요한 선택지를 물어보는 것이 더 안전합니다.
 
-```powershell
-npm run dev:api
-```
+### 목표에 도달하면 멈춥니다
 
-Windows 앱 개발 실행:
+안내를 계속하는 것이 목적이 아닙니다. 사용자가 원하는 일을 끝내는 것이 목적입니다.
 
-```powershell
-npm run run:windows
-```
+### 사용자의 통제권을 지킵니다
 
-배포용 Windows 빌드:
+ShowWhere는 곁에서 보여주고 설명합니다. 중요한 행동은 사용자가 직접 선택합니다.
 
-```powershell
-npm run build:api
-npm run publish:windows
-```
+## ShowWhere가 꿈꾸는 미래
 
-결과는 `build/windows/ShowWhere.exe`에 생성됩니다.
+ShowWhere의 목표는 특정 프로그램의 사용법을 외우게 만드는 것이 아닙니다.
 
-## AI 설정
+은행, 정부 서비스, 쇼핑몰, 회사 업무 시스템, Windows 프로그램처럼 서로 다른 환경에서도 사용자가 자신의 말로 목적을 표현하면 자연스럽게 길을 찾을 수 있는 세상을 지향합니다.
 
-실제 API 키는 Git에서 제외되는 루트 `.env`에만 저장합니다.
+언젠가는 새로운 프로그램을 만났을 때 “이걸 어떻게 배워야 하지?”가 아니라 “내가 하고 싶은 일을 말하면 되겠구나”라고 느낄 수 있기를 바랍니다.
 
-```dotenv
-SHOWWHERE_AI_MODE=featherless
-FEATHERLESS_API_KEY=your-server-only-key
-FEATHERLESS_BASE_URL=https://api.featherless.ai/v1
-FEATHERLESS_GUIDE_MODEL=deepseek-ai/DeepSeek-V3.2
-FEATHERLESS_VISION_MODELS=ByteDance-Seed/UI-TARS-1.5-7B,Qwen/Qwen3-VL-30B-A3B-Instruct,Qwen/Qwen3-VL-8B-Instruct
-SHOWWHERE_API_HOST=127.0.0.1
-SHOWWHERE_API_PORT=8787
-```
+## 프로젝트 철학
 
-API 키는 Node 백엔드만 읽습니다. Windows 실행 파일에는 키가 포함되지 않습니다.
+> **Don't take control. Stay beside the user.**
 
-## 테스트
-
-```powershell
-npm test
-npm run typecheck
-npm run lint
-npm run test:windows
-```
-
-자세한 내용은 [개발 문서](docs/development.md), [구조 문서](docs/architecture.md), [안전 원칙](docs/safety.md)을 참고하세요.
+사용자를 대신해 앞서가지 않습니다.<br>
+사용자가 스스로 해낼 수 있도록 곁에서 함께합니다.
