@@ -27,7 +27,7 @@ export const UiCandidateSchema = z.object({
 }).strict();
 
 export const ApplicationContextSchema = z.object({
-  platform: z.enum(['browser', 'windows', 'android']),
+  platform: z.literal('windows'),
   applicationName: z.string().trim().min(1).max(300),
   windowTitle: z.string().trim().max(500).optional(),
   url: z.string().trim().max(2_048).optional(),
@@ -61,12 +61,37 @@ export const GuideRequestSchema = z.object({
   context: ApplicationContextSchema,
   candidates: z.array(UiCandidateSchema).max(100),
   screenshot: z.string().max(8_000_000).optional(),
-}).strict();
+  screenshotBounds: BoundsSchema.optional(),
+}).strict().superRefine((request, context) => {
+  if ((request.screenshot === undefined) !== (request.screenshotBounds === undefined)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['screenshotBounds'],
+      message: 'screenshot and screenshotBounds must be supplied together.',
+    });
+  }
+});
+
+export const VisualTargetSchema = z.object({
+  x: z.number().finite().min(0).max(1),
+  y: z.number().finite().min(0).max(1),
+  width: z.number().finite().min(0.005).max(1),
+  height: z.number().finite().min(0.005).max(1),
+  label: z.string().trim().min(1).max(160),
+}).strict().superRefine((target, context) => {
+  if (target.x + target.width > 1 || target.y + target.height > 1) {
+    context.addIssue({
+      code: 'custom',
+      message: 'visualTarget must stay inside the normalized screenshot.',
+    });
+  }
+});
 
 export const GuideDecisionSchema = z.object({
   status: z.enum(['in_progress', 'completed', 'needs_clarification', 'blocked']),
   action: z.enum([
     'highlight',
+    'highlight_visual',
     'ask_user',
     'explain',
     'request_new_observation',
@@ -79,12 +104,20 @@ export const GuideDecisionSchema = z.object({
   confidence: z.number().finite().min(0).max(1),
   safeToolId: z.string().trim().min(1).max(160).optional(),
   alternativeTargetIds: z.array(z.string().trim().min(1).max(160)).min(2).max(4).optional(),
+  visualTarget: VisualTargetSchema.optional(),
 }).strict().superRefine((decision, context) => {
   if (decision.action === 'highlight' && !decision.targetId) {
     context.addIssue({
       code: 'custom',
       path: ['targetId'],
       message: 'targetId is required when action is highlight.',
+    });
+  }
+  if (decision.action === 'highlight_visual' && !decision.visualTarget) {
+    context.addIssue({
+      code: 'custom',
+      path: ['visualTarget'],
+      message: 'visualTarget is required when action is highlight_visual.',
     });
   }
   if (decision.action === 'request_safe_tool' && !decision.safeToolId) {
@@ -117,6 +150,7 @@ export type ApplicationContext = z.infer<typeof ApplicationContextSchema>;
 export type TaskSession = z.infer<typeof TaskSessionSchema>;
 export type GuideRequest = z.infer<typeof GuideRequestSchema>;
 export type GuideDecision = z.infer<typeof GuideDecisionSchema>;
+export type VisualTarget = z.infer<typeof VisualTargetSchema>;
 
 export const DEFAULT_GUIDE_CONFIDENCE_THRESHOLD = 0.65;
 

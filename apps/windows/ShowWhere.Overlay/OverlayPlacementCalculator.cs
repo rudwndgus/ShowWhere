@@ -14,8 +14,23 @@ public sealed record OverlayPlacement(
     PhysicalRectangle Tooltip,
     bool TooltipAboveTarget);
 
+public sealed record NativeWindowPlacement(int X, int Y, int Width, int Height);
+
 public static class OverlayPlacementCalculator
 {
+    public static NativeWindowPlacement ToNativeWindowPlacement(PhysicalRectangle rectangle)
+    {
+        var left = (int)Math.Floor(rectangle.X);
+        var top = (int)Math.Floor(rectangle.Y);
+        var right = (int)Math.Ceiling(rectangle.Right);
+        var bottom = (int)Math.Ceiling(rectangle.Bottom);
+        return new NativeWindowPlacement(
+            left,
+            top,
+            Math.Max(1, right - left),
+            Math.Max(1, bottom - top));
+    }
+
     public static OverlayPlacement Calculate(
         UiBounds target,
         PhysicalRectangle workingArea,

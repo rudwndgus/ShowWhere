@@ -9,7 +9,6 @@ const config: ApiConfig = {
   aiMode: 'mock',
   host: '127.0.0.1',
   port: 0,
-  allowedOrigins: new Set(['chrome-extension://allowed-id']),
   maxRequestBytes: 100_000,
   debug: false,
 };
@@ -46,18 +45,5 @@ describe('POST /api/guide', () => {
     expect(response.status).toBe(502);
     expect(text).not.toContain('provider-secret-do-not-leak');
     expect(JSON.parse(text).action).toBe('ask_user');
-  });
-
-  it('rejects browser origins outside the exact allowlist', async () => {
-    const endpoint = await listen({ async decideNextAction() { return {}; } });
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Origin: 'chrome-extension://not-allowed',
-      },
-      body: JSON.stringify(guideRequestFixture),
-    });
-    expect(response.status).toBe(403);
   });
 });

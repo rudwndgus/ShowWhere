@@ -3,8 +3,17 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              IsHitTestVisible="False">
   <Grid>
-    <Ellipse Fill="#FF1E6FF2" Stroke="#FFFFFFFF" StrokeThickness="2" />
-    <TextBlock Text="?" Foreground="White" FontSize="30" FontWeight="Bold"
-               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+    <TextBlock Text="?" Foreground="White" FontFamily="Arial" FontSize="38" FontWeight="ExtraBold"
+               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-2,-2,0,0">
+      <TextBlock.Effect>
+        <DropShadowEffect Color="White" BlurRadius="5" ShadowDepth="0" Opacity="1" />
+      </TextBlock.Effect>
+    </TextBlock>
+    <TextBlock Text="?" Foreground="#FFCA2C34" FontFamily="Arial" FontSize="34" FontWeight="ExtraBold"
+               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-2,-2,0,0">
+      <TextBlock.Effect>
+        <DropShadowEffect Color="#55000000" BlurRadius="5" ShadowDepth="3" Opacity="0.45" />
+      </TextBlock.Effect>
+    </TextBlock>
   </Grid>
 </UserControl>

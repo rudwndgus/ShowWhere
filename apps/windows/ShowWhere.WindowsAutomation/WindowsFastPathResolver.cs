@@ -8,7 +8,8 @@ public static partial class WindowsFastPathResolver
     private sealed record Route(
         string[] GoalTerms,
         string[][] CandidateSteps,
-        string[]? ExcludedCandidateTerms = null);
+        string[]? ExcludedCandidateTerms = null,
+        string? Breadcrumb = null);
 
     private static readonly HashSet<string> TrustedWindowsProcesses = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -342,13 +343,20 @@ public static partial class WindowsFastPathResolver
         if (!string.Equals(request.Context.Platform, Platforms.Windows, StringComparison.Ordinal)) return false;
 
         var goal = request.Session.OriginalUserMessage.ToLowerInvariant();
-        var route = Routes.FirstOrDefault(candidate => candidate.GoalTerms.Any(goal.Contains));
+        var hasSettingsRoute = WindowsSettingsCatalog.TryFind(goal, out var settingsRoute);
+        var route = hasSettingsRoute
+            ? new Route(
+                settingsRoute.GoalTerms,
+                settingsRoute.CandidateSteps.ToArray(),
+                Breadcrumb: string.Join(" > ", settingsRoute.Breadcrumb))
+            : Routes.FirstOrDefault(candidate => candidate.GoalTerms.Any(goal.Contains));
         if (route is null) return false;
 
         foreach (var stepTerms in route.CandidateSteps)
         {
             var target = request.Candidates
                 .Where(IsEligibleTrustedCandidate)
+                .Where(candidate => !hasSettingsRoute || !WindowsWindowChromeFilter.IsCaptionControl(candidate))
                 .Where(candidate => !WasAlreadySelected(request.Session, candidate))
                 .Where(candidate => !ContainsExcludedTerm(candidate, route.ExcludedCandidateTerms))
                 .Select(candidate => new { Candidate = candidate, Score = Score(candidate, stepTerms) })
@@ -372,7 +380,8 @@ public static partial class WindowsFastPathResolver
                     ? CreateKoreanGuidanceMessage(
                         request.Session.OriginalUserMessage,
                         targetDescription,
-                        stepNumber)
+                        stepNumber,
+                        route.Breadcrumb)
                     : $"Step {stepNumber}: Select '{label}'. Only use the highlighted target.",
                 0.99,
                 target.Id,
@@ -389,7 +398,8 @@ public static partial class WindowsFastPathResolver
     {
         if (string.IsNullOrWhiteSpace(goal)) return false;
         var normalized = goal.ToLowerInvariant();
-        return Routes.Any(route => route.GoalTerms.Any(normalized.Contains))
+        return WindowsSettingsCatalog.IsSettingsGoal(normalized)
+            || Routes.Any(route => route.GoalTerms.Any(normalized.Contains))
             || ContainsAny(normalized, ["사진", "photo", "photos", "picture", "pictures"]);
     }
 
@@ -399,6 +409,9 @@ public static partial class WindowsFastPathResolver
     private static bool IsEligibleTrustedCandidate(UiCandidate candidate)
     {
         if (!candidate.Visible || !candidate.Enabled || !candidate.Clickable) return false;
+        if (candidate.Attributes?.TryGetValue("inViewport", out var inViewport) == true
+            && inViewport is bool isInViewport
+            && !isInViewport) return false;
         var processName = StringAttribute(candidate, "processName");
         var scope = StringAttribute(candidate, "sourceScope");
         if (scope == "windows_taskbar") return true;
@@ -456,20 +469,24 @@ public static partial class WindowsFastPathResolver
     private static string CreateKoreanGuidanceMessage(
         string goal,
         string targetDescription,
-        int stepNumber)
+        int stepNumber,
+        string? breadcrumb)
     {
+        var path = string.IsNullOrWhiteSpace(breadcrumb)
+            ? string.Empty
+            : $" 정확한 설정 경로는 {breadcrumb}입니다.";
         if (stepNumber > 1)
-            return $"좋아요! 그렇다면 이제 다음으로 누를 곳은 {targetDescription}예요. 제가 표시한 곳을 눌러보세요!";
+            return $"좋아요! 지금 다음으로 누를 곳은 {targetDescription}예요. 제가 표시한 곳을 눌러보세요!";
 
         var normalizedGoal = goal.ToLowerInvariant();
         if (ContainsAny(normalizedGoal, ["프린터", "프린트", "printer", "printing"]))
         {
-            return "프린터 설정을 확인하고 싶으시군요! Windows의 프린터 설정으로 이동해야 해요. "
+            return $"프린터 설정을 확인하고 싶으시군요!{path} "
                 + $"우선 다음으로 누를 곳은 {targetDescription}입니다. 제가 표시한 곳을 눌러보시겠어요?";
         }
 
         var intent = DescribeKoreanIntent(normalizedGoal);
-        return $"{intent} 함께 차근차근 찾아볼게요. "
+        return $"{intent} 함께 차근차근 찾아볼게요.{path} "
             + $"우선 다음으로 누를 곳은 {targetDescription}입니다. 제가 표시한 곳을 눌러보시겠어요?";
     }
 

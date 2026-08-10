@@ -38,7 +38,10 @@ public sealed record GuideRequest(
     TaskSession Session,
     ApplicationContext Context,
     IReadOnlyList<UiCandidate> Candidates,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Screenshot = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Screenshot = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UiBounds? ScreenshotBounds = null);
+
+public sealed record VisualTarget(double X, double Y, double Width, double Height, string Label);
 
 public sealed record GuideDecision(
     string Status,
@@ -48,18 +51,18 @@ public sealed record GuideDecision(
     string? TargetId = null,
     string? ExpectedChange = null,
     string? SafeToolId = null,
-    IReadOnlyList<string>? AlternativeTargetIds = null);
+    IReadOnlyList<string>? AlternativeTargetIds = null,
+    VisualTarget? VisualTarget = null);
 
 public static class Platforms
 {
-    public const string Browser = "browser";
     public const string Windows = "windows";
-    public const string Android = "android";
 }
 
 public static class GuideActions
 {
     public const string Highlight = "highlight";
+    public const string HighlightVisual = "highlight_visual";
     public const string AskUser = "ask_user";
     public const string Explain = "explain";
     public const string RequestNewObservation = "request_new_observation";

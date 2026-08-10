@@ -27,4 +27,41 @@ describe('guide prompt', () => {
     expect(messages.at(-1)?.content).toContain('My Tickets');
     expect(messages.at(-1)?.content).not.toContain('"bounds"');
   });
+
+  it('explains browser chrome versus destination-site content', () => {
+    const messages = createGuideMessages({
+      ...guideRequestFixture,
+      session: {
+        ...guideRequestFixture.session,
+        originalUserMessage: '유튜브 뮤직에서 노래를 찾아줘',
+      },
+      context: { platform: 'windows', applicationName: 'chrome', windowTitle: 'YouTube Music - Google Chrome' },
+      candidates: [{
+        ...guideRequestFixture.candidates[0],
+        id: 'youtube-search',
+        label: 'Search',
+        role: 'edit',
+        attributes: { sourceScope: 'browser_content', containerLabel: 'YouTube Music' },
+      }],
+    });
+
+    expect(messages[0].content).toContain('sourceScope=browser_chrome');
+    expect(messages[0].content).toContain('Never choose the Chrome/Edge address bar');
+    expect(messages.at(-1)?.content).toContain('"scope":"browser_content"');
+    expect(messages.at(-1)?.content).toContain('"container":"YouTube Music"');
+  });
+
+  it('omits semantic candidates during screenshot fallback and requires visual targeting', () => {
+    const messages = createGuideMessages({
+      ...guideRequestFixture,
+      screenshot: 'data:image/jpeg;base64,abc',
+      screenshotBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+    const content = messages.at(-1)?.content;
+
+    expect(messages[0].content).toContain('Do not use highlight');
+    expect(Array.isArray(content)).toBe(true);
+    expect((content as Array<{ type: string; text?: string }>)[0].text).toContain('"candidates":[]');
+    expect(JSON.stringify(content)).not.toContain('candidate-settings');
+  });
 });

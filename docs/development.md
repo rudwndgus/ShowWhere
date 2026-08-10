@@ -2,31 +2,40 @@
 
 ## Prerequisites
 
-- Node.js and npm
-- .NET 8 SDK with WindowsDesktop support
 - Windows 10 or later
-- Chrome only when testing the optional browser adapter
+- Node.js and npm
+- .NET 8 SDK with Windows Desktop support
 
-Install dependencies and verify everything:
+Install and verify:
 
 ```powershell
 npm install
 npm test
 npm run typecheck
 npm run lint
-npm run build
-dotnet test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release
-dotnet build apps/windows/ShowWhere.Windows.sln -c Release
+npm run build:api
+& "C:\Program Files\dotnet\dotnet.exe" test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release
+& "C:\Program Files\dotnet\dotnet.exe" build apps/windows/ShowWhere.Windows.sln -c Release
 ```
 
-## Backend mock mode
+## Backend
 
-Copy `.env.example` to the ignored `.env` and set:
+Mock mode needs no provider key:
 
 ```dotenv
 SHOWWHERE_AI_MODE=mock
 SHOWWHERE_API_HOST=127.0.0.1
 SHOWWHERE_API_PORT=8787
+```
+
+Live Featherless mode:
+
+```dotenv
+SHOWWHERE_AI_MODE=featherless
+FEATHERLESS_API_KEY=your-server-only-key
+FEATHERLESS_BASE_URL=https://api.featherless.ai/v1
+FEATHERLESS_GUIDE_MODEL=deepseek-ai/DeepSeek-V3.2
+FEATHERLESS_VISION_MODELS=ByteDance-Seed/UI-TARS-1.5-7B,Qwen/Qwen3-VL-30B-A3B-Instruct,Qwen/Qwen3-VL-8B-Instruct
 ```
 
 Run the backend:
@@ -35,63 +44,28 @@ Run the backend:
 npm run dev:api
 ```
 
-No API key or provider request is used in mock mode.
-
-## Windows desktop client
-
-With the backend running:
+## Windows desktop
 
 ```powershell
 npm run run:windows
 ```
 
-The `?` assistant appears above normal applications. Drag it to move it, left-click to open the panel, and right-click for Pause/Exit. Type a goal and press Enter to send it; use Shift+Enter for a new line. The panel keeps the user and assistant messages as chat bubbles. ShowWhere observes both the current app and global Windows taskbar controls, highlights one safe next target, and analyzes the next screen only after the user clicks inside that highlighted target. The last assistant position is stored under the current user's Local Application Data, outside the repository.
+The floating red `?` opens the compact guidance panel. Enter sends a goal and Shift+Enter inserts a line break. ShowWhere highlights only one next target and waits for the user to click it.
 
-Create a normal framework-dependent executable output:
-
-```powershell
-npm run publish:windows
-```
-
-Output: `build/windows/ShowWhere.exe`. A production installer is intentionally not part of this phase.
-
-For local provider timing and decision metadata, run `scripts/start-showwhere-dev.ps1` or open the **ShowWhere Dev** desktop shortcut. It tails `%LOCALAPPDATA%\ShowWhere\api-debug.log`; the log contains model, duration, candidate count, decision action, and selected label, but never the API key or raw provider error.
-
-Optional non-secret Windows environment settings:
+Optional non-secret client settings:
 
 ```dotenv
 SHOWWHERE_BACKEND_URL=http://127.0.0.1:8787/api/guide
 SHOWWHERE_BACKEND_TIMEOUT_SECONDS=75
 ```
 
-Never add `FEATHERLESS_API_KEY` to Windows environment settings, `appsettings.json`, or the executable build.
-
-## Live backend mode
-
-Only the backend `.env` receives provider configuration:
-
-```dotenv
-SHOWWHERE_AI_MODE=featherless
-FEATHERLESS_API_KEY=your-server-only-key
-FEATHERLESS_BASE_URL=https://api.featherless.ai/v1
-FEATHERLESS_GUIDE_MODEL=your-configured-model
-```
-
-Restart the backend after changing its environment. The desktop application continues to call only `SHOWWHERE_BACKEND_URL`.
-
-## Chrome extension
-
-Set the public endpoint and exact extension origin in `.env`, then build:
-
-```dotenv
-VITE_SHOWWHERE_GUIDE_API_URL=http://127.0.0.1:8787/api/guide
-SHOWWHERE_ALLOWED_ORIGINS=chrome-extension://YOUR_EXTENSION_ID
-```
+Publish:
 
 ```powershell
-npm run build:extension
+npm run build:api
+npm run publish:windows
 ```
 
-Load `dist/` from `chrome://extensions` using **Load unpacked**, reload the extension, and reload the target page. Backend calls are performed by the extension service worker, not by the page-origin content script.
+Output: `build/windows/ShowWhere.exe`.
 
-Chrome-protected pages such as `chrome://extensions` and the Chrome Web Store do not allow ordinary content-script injection.
+Use `scripts/start-showwhere.ps1` to start the built backend and desktop app together. Diagnostic logs are written under `%LOCALAPPDATA%\ShowWhere` without provider credentials.

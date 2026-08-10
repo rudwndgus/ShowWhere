@@ -25,11 +25,14 @@ public static class WindowsCandidatePrioritizer
         int maximumSystemCandidates = 40)
     {
         var normalizedGoal = goal.ToLowerInvariant();
+        var eligibleCandidates = WindowsSettingsCatalog.IsSettingsGoal(normalizedGoal)
+            ? candidates.Where(candidate => !WindowsWindowChromeFilter.IsCaptionControl(candidate)).ToArray()
+            : candidates;
         var intent = SystemIntents.FirstOrDefault(group =>
             group.GoalTerms.Any(normalizedGoal.Contains));
-        if (intent is null) return candidates;
+        if (intent is null) return eligibleCandidates;
 
-        return candidates
+        return eligibleCandidates
             .Select((candidate, index) => new
             {
                 Candidate = candidate,
