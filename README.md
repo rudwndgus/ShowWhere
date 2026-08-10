@@ -1,106 +1,55 @@
+<div align="center">
+
 # ShowWhere
 
-화면을 설명하지 않아도 하고 싶은 일만 말하면, Windows 전체 화면에서 다음에 눌러야 할 위치를 직접 표시하는 내비게이션 도우미입니다.
+### Don't explain your screen. Just tell us your goal.
 
-ShowWhere는 Windows 10/11용 .NET 8 WPF 프로그램입니다. Microsoft UI Automation으로 실제 버튼을 찾고, 필요한 경우 Featherless 비전 모델이 전체 화면을 분석합니다. 버튼은 자동으로 누르지 않으며 사용자가 표시된 위치를 직접 선택합니다.
+Windows 어디에서든 사용자의 목적을 이해하고<br>
+다음에 해야 할 행동을 한 단계씩 함께 찾아가는 안내 동반자
 
-## 구조
+</div>
 
-```text
-ShowWhere/
-├─ apps/windows/
-│  ├─ ShowWhere.Desktop/            WPF UI와 안내 반복
-│  ├─ ShowWhere.WindowsAutomation/  UI Automation과 화면 캡처
-│  ├─ ShowWhere.Overlay/            DPI 대응 최상단 표시
-│  ├─ ShowWhere.ApiClient/          백엔드 HTTP 클라이언트
-│  ├─ ShowWhere.Core/               계약과 상태 검증
-│  └─ ShowWhere.Windows.Tests/      Windows 테스트
-├─ services/api/                    Featherless 백엔드
-├─ src/contracts/                   TypeScript 요청/응답 계약
-├─ src/guide-api/                   API 안전 검증과 문맥 보호
-├─ scripts/                         Windows 실행 스크립트
-└─ docs/                            개발 및 설계 문서
-```
+> [!NOTE]
+> `window-back-kyung` 브랜치는 Windows 전체 화면 관찰, 단계별 안내, 화면 표시의 정확성과 안정성을 발전시키는 공간입니다.
 
-## 동작 순서
+## Windows에서 길을 잃는 순간
 
-```text
-사용자 목표 입력
-→ Windows UI Automation 후보 수집
-→ Windows 설정 작업은 공식 설정 분류를 반영한 로컬 카탈로그로 경로 결정
-→ 일반 후보는 DeepSeek가 다음 targetId 선택
-→ 후보를 찾지 못하면 전체 화면 캡처
-→ UI-TARS가 다음 클릭 좌표 탐색
-→ 응답과 좌표 검증
-→ 실제 화면에 click-through 오버레이 표시
-→ 사용자 클릭 감지
-→ 새 화면을 관찰해 다음 단계 반복
-```
+컴퓨터 사용자는 하나의 프로그램 안에서만 움직이지 않습니다.
 
-Chrome과 Edge도 Windows 프로그램이 UI Automation 및 화면 비전으로 관찰합니다. 브라우저 확장 프로그램은 사용하지 않습니다.
+웹사이트를 보다가 Windows 설정을 열고, 파일을 선택하고, 프린터 상태를 확인하고, 작업 표시줄의 네트워크 상태를 살펴보기도 합니다. 창이 바뀔 때마다 버튼의 이름과 위치가 달라지고, 현재 화면이 목표와 관련 있는지 판단하기도 어렵습니다.
 
-Windows 설정 안내는 표시 언어가 한국어 또는 영어인 Windows 10/11의 실제 UI Automation 후보를 확인한 뒤 한 단계씩 표시합니다. 최소화·최대화·복원·닫기 같은 창 제목 표시줄 버튼은 설정 후보에서 제외하며, 해당 Windows 버전이나 장치에 존재하지 않는 항목을 임의의 좌표로 표시하지 않습니다.
+ShowWhere는 사용자가 어느 창에 있는지 설명하도록 요구하지 않습니다. 사용자가 이루고 싶은 일을 중심에 두고, 현재 Windows 화면에서 다음으로 의미 있는 행동을 찾고자 합니다.
 
-## 개발 환경
+## 한 단계씩 함께 가는 안내
 
-필수 항목:
+“프린터 상태를 확인하고 싶어요”라는 목표가 있다면 한 번에 전체 경로를 설명하는 대신 현재 화면에서 먼저 해야 할 한 가지를 보여줍니다.
 
-- Windows 10/11
-- Node.js
-- .NET 8 SDK
+사용자가 그 행동을 직접 수행하면 ShowWhere는 달라진 화면을 다시 살피고 다음 단계를 안내합니다. 이미 필요한 화면에 도달했다면 더 이상 다른 메뉴를 추천하지 않고 멈춥니다.
 
-```powershell
-npm install
-npm test
-npm run typecheck
-npm run lint
-npm run build:all
-```
+## 우리가 중요하게 생각하는 것
 
-API 개발 실행:
+### 정확한 화면 이해
 
-```powershell
-npm run dev:api
-```
+현재 앞에 있는 창뿐 아니라 작업과 관련된 Windows 영역을 함께 이해해야 합니다. 비슷한 이름의 버튼이 여러 개라면 목적과 맞는 대상을 구분해야 합니다.
 
-Windows 앱 개발 실행:
+### 실제 화면에 맞는 안내
 
-```powershell
-npm run run:windows
-```
+컴퓨터의 언어, 화면 배율, 창 위치와 환경이 달라도 눈앞에 실제로 존재하는 대상을 기준으로 안내해야 합니다.
 
-배포용 Windows 빌드:
+### 안전한 판단
 
-```powershell
-npm run build:api
-npm run publish:windows
-```
+확실하지 않은 위치를 억지로 가리키지 않습니다. 필요한 정보가 부족하면 사용자에게 물어보고, 중요한 행동은 사용자가 직접 결정하도록 합니다.
 
-결과는 `build/windows/ShowWhere.exe`에 생성됩니다.
+### 목표를 기억하는 흐름
 
-## AI 설정
+창이 바뀌어도 처음 질문의 의미를 잃지 않아야 합니다. 중간 단계에 머물지 않고 사용자가 원한 최종 결과까지 이어져야 합니다.
 
-실제 API 키는 Git에서 제외되는 루트 `.env`에만 저장합니다.
+### 완료를 아는 안내
 
-```dotenv
-SHOWWHERE_AI_MODE=featherless
-FEATHERLESS_API_KEY=your-server-only-key
-FEATHERLESS_BASE_URL=https://api.featherless.ai/v1
-FEATHERLESS_GUIDE_MODEL=deepseek-ai/DeepSeek-V3.2
-FEATHERLESS_VISION_MODELS=ByteDance-Seed/UI-TARS-1.5-7B,Qwen/Qwen3-VL-30B-A3B-Instruct,Qwen/Qwen3-VL-8B-Instruct
-SHOWWHERE_API_HOST=127.0.0.1
-SHOWWHERE_API_PORT=8787
-```
+더 많은 행동을 추천하는 것이 좋은 안내는 아닙니다. 목표가 충족된 화면을 알아보고 적절한 순간에 끝내는 것도 정확성의 일부입니다.
 
-API 키는 Node 백엔드만 읽습니다. Windows 실행 파일에는 키가 포함되지 않습니다.
+## 이 공간이 지향하는 미래
 
-## 테스트
+Windows 사용법을 외우지 않아도 사용자가 자신의 목적만 말하면 필요한 설정과 작업을 찾아갈 수 있는 환경을 만들고자 합니다.
 
-```powershell
-npm test
-npm run typecheck
-npm run lint
-npm run test:windows
-```
-
-자세한 내용은 [개발 문서](docs/development.md), [구조 문서](docs/architecture.md), [안전 원칙](docs/safety.md)을 참고하세요.
+처음 사용하는 컴퓨터에서도, 익숙하지 않은 업무 프로그램에서도, 도움을 요청할 사람이 곁에 없는 순간에도 ShowWhere가 차분하게 옆에서 길을 보여주는 것이 이 브랜치의 목표입니다.
