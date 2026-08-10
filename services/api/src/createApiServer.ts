@@ -75,7 +75,16 @@ export function createApiServer(config: ApiConfig, provider: AiProvider, teachin
           typeof envelope.approvedBy === 'string' ? envelope.approvedBy : 'developer',
         ));
         return;
-      } catch {
+      } catch (error) {
+        if (config.debug) {
+          const category = error instanceof Error
+            ? error.message.replace(/\s+/gu, ' ').slice(0, 180)
+            : 'unknown_teaching_error';
+          console.error(
+            `[showwhere:teaching] route=${url.pathname} status=failed category=${JSON.stringify(category)}`
+            + ` duration_ms=${Math.round(performance.now() - requestStartedAt)}`,
+          );
+        }
         sendJson(response, url.pathname === TEACHING_GOLD_PATH ? 422 : 502, {
           message: url.pathname === TEACHING_GOLD_PATH
             ? '검증 오류를 수정한 뒤 다시 승인해 주세요.'

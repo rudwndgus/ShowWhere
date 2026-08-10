@@ -144,9 +144,10 @@ export const TeachingInputSchema = z.object({
   context: z.object({
     platform: z.string().trim().min(1),
     applicationName: z.string().trim().min(1),
-    windowTitle: z.string().trim().optional(),
-    locale: z.string().trim().optional(),
-  }).strict().optional(),
+    windowTitle: z.string().trim().nullable().optional(),
+    url: z.string().trim().nullable().optional(),
+    locale: z.string().trim().nullable().optional(),
+  }).strict().nullable().optional(),
   candidates: z.array(z.object({
     label: z.string().trim().min(1),
     role: z.string().trim().min(1),
