@@ -1,0 +1,44 @@
+{
+  "playbookVersion": "0.1.0",
+  "playbooks": [
+    {
+      "id": "printer_not_printing",
+      "riskLevel": "low",
+      "completionCondition": "A test print or requested job succeeds",
+      "branches": [
+        {"condition":"Printer is not registered","next":"Guide to Settings > Bluetooth & devices > Printers & scanners > Add device"},
+        {"condition":"Wrong printer is selected","next":"Guide to the intended printer before changing drivers"},
+        {"condition":"Queue contains stuck jobs","next":"Open print queue and inspect the failed job"},
+        {"condition":"Printer is offline","next":"Check USB/network connection and printer power"},
+        {"condition":"Network printer is unreachable","next":"Compare printer/computer network and test reachability"},
+        {"condition":"Spooler is stopped after prior checks","next":"Guide a safe Print Spooler restart"},
+        {"condition":"All prior checks pass","next":"Only then inspect driver and advanced diagnostics"}
+      ]
+    },
+    {
+      "id": "internet_connection_issue",
+      "riskLevel": "low",
+      "completionCondition": "Windows reports working internet and a known page loads",
+      "branches": [
+        {"condition":"Already connected and internet works","next":"Complete"},
+        {"condition":"Airplane mode is enabled","next":"Disable airplane mode"},
+        {"condition":"Wi-Fi is disabled","next":"Enable Wi-Fi"},
+        {"condition":"Wi-Fi is enabled but disconnected","next":"Open network list"},
+        {"condition":"Connected without internet","next":"Run low-risk network diagnostics"},
+        {"condition":"Expected network is absent","next":"Check adapter/router visibility without requesting or storing passwords"}
+      ]
+    },
+    {
+      "id": "file_not_visible",
+      "riskLevel": "low",
+      "completionCondition": "The requested file is visible and selectable",
+      "branches": [
+        {"condition":"File picker type filter excludes requested extension","next":"Open the file-type selector"},
+        {"condition":"Wrong folder is open","next":"Guide to the likely known folder without claiming the file exists"},
+        {"condition":"Search query is active","next":"Clear or correct the query"},
+        {"condition":"Extension is hidden","next":"Use file details/type rather than guessing from the name"},
+        {"condition":"Context remains ambiguous","next":"Ask the user for filename or last known location"}
+      ]
+    }
+  ]
+}

@@ -16,5 +16,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "services", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "services", "learning", "vite.config.ts", "vitest.config.ts"]
 }

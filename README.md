@@ -1,5 +1,7 @@
 # ShowWhere
 
+The developer-feedback workflow lives in [`training/`](training/README.md). The synthetic generation, independent judging, human review, dataset splitting, and benchmark tools live in [`learning/`](learning/README.md).
+
 화면을 설명하지 않아도 하고 싶은 일만 말하면, Windows 전체 화면에서 다음에 눌러야 할 위치를 직접 표시하는 내비게이션 도우미입니다.
 
 ShowWhere는 Windows 10/11용 .NET 8 WPF 프로그램입니다. Microsoft UI Automation으로 실제 버튼을 찾고, 필요한 경우 Featherless 비전 모델이 전체 화면을 분석합니다. 버튼은 자동으로 누르지 않으며 사용자가 표시된 위치를 직접 선택합니다.

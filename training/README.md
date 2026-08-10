@@ -15,3 +15,5 @@ Kept local and ignored by Git:
 After collecting records on one computer, review the JSONL diff and commit/push it on `ai-learning`. Pull `ai-learning` on the other computer before starting ShowWhere so its correction memory loads the shared records.
 
 Set `SHOWWHERE_TRAINING_DIR` only when an alternate dataset directory is intentionally required.
+
+This folder contains feedback captured from the Windows developer UI. The separate [`learning`](../learning/README.md) pipeline validates and expands approved seed examples, builds review queues, and runs benchmarks. Synthetic output is never written into this human-feedback folder.
