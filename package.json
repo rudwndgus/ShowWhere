@@ -18,6 +18,7 @@
     "publish:windows": "dotnet publish apps/windows/ShowWhere.Desktop/ShowWhere.Desktop.csproj -c Release -r win-x64 --self-contained false -o build/windows",
     "export:corrections": "node scripts/export-developer-corrections.mjs",
     "learning:validate": "tsx learning/cli.ts validate",
+    "learning:bootstrap": "tsx learning/cli.ts bootstrap",
     "learning:generate": "tsx learning/cli.ts generate",
     "learning:judge": "tsx learning/cli.ts judge",
     "learning:review-queue": "tsx learning/cli.ts review-queue",

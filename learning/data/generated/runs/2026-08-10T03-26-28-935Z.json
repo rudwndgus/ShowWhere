@@ -1,0 +1,11 @@
+{
+  "datasetVersion": "showwhere-v0.1",
+  "generatedAt": "2026-08-10T03:26:28.935Z",
+  "generatorModel": "deepseek-ai/DeepSeek-V3.2",
+  "requested": 2,
+  "previous": 0,
+  "privacyRejected": 0,
+  "failures": [{"seedId":"file_attach_pdf_filter","error":"This operation was aborted"}],
+  "acceptedBySchemaAndDedup": 0,
+  "output": "learning/data/generated/scenarios.jsonl"
+}

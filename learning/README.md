@@ -19,6 +19,7 @@ This directory turns a small human-approved seed library into synthetic UI-state
 
 ```powershell
 npm.cmd run learning:validate
+npm.cmd run learning:bootstrap
 npm.cmd run learning:generate -- --seed windows_default_printer --count 5 --dry-run
 npm.cmd run learning:generate -- --seed windows_default_printer --count 5
 npm.cmd run learning:judge
@@ -31,11 +32,17 @@ npm.cmd run eval
 
 `npm.cmd` is shown because some Windows PowerShell execution policies block `npm.ps1`. Plain `npm` is fine in terminals without that restriction.
 
+`learning:bootstrap` performs a deterministic one-to-one conversion of the runtime-validated human seed library into canonical scenario records. It calls no model and writes `provenance: human`; it does not invent variations or claim model validation.
+
+`learning:build-dataset` combines those human-seed records with separately labeled auto-accepted synthetic records. Every output record retains its source. Permanent benchmark task families are routed only to evaluation so closely related cases cannot leak into training.
+
 Configure `LEARNING_GENERATOR_MODEL`, `LEARNING_JUDGE_A_MODEL`, and `LEARNING_JUDGE_B_MODEL` in the untracked root `.env`. Judges should be genuinely independent models where possible. The judge request never contains the generator's proposed action/target, and benchmark requests never contain expected answers.
 
 Reviewer actions are `accept`, `reject`, `correct`, and `mark_ambiguous`. A correction cannot be saved with a target outside the scenario candidate list. Re-reviewing the same scenario replaces its prior decision instead of duplicating it.
 
 Defaults are deliberately small: at most 10 variants per seed, 50 examples per run, concurrency 2, and bounded output tokens. Increase limits explicitly only after reviewing a dry run. Generation resumes by merging valid prior output and removing exact structural duplicates.
+
+`data/generated/manifest.json` is the latest run summary. Every attempt is also preserved under `data/generated/runs/`, so sequential tests do not erase earlier success or failure history.
 
 ## Trust levels
 

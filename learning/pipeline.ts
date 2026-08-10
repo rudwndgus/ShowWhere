@@ -61,6 +61,60 @@ export async function validateLearningData(): Promise<{ seeds: number; benchmark
   return { seeds: seeds.seeds.length, benchmark: benchmark.cases.length };
 }
 
+export async function bootstrapSeedScenarios(): Promise<Scenario[]> {
+  const library = await loadSeeds();
+  const scenarios = library.seeds.map((seed) => {
+    const candidates = seed.possibleCandidates.map((label, index) => ({
+      id: `candidate_${index + 1}`,
+      label,
+      role: inferRole(label),
+      enabled: true,
+      visible: true,
+      description: `Human-authored candidate from seed ${seed.id}`,
+    }));
+    const targetIndex = seed.correctNextAction.target === null
+      ? -1
+      : seed.possibleCandidates.indexOf(seed.correctNextAction.target);
+    return ScenarioSchema.parse({
+      schemaVersion: 'showwhere-scenario-v1',
+      scenarioId: `${seed.id}_canonical_v1`,
+      seedId: seed.id,
+      goal: seed.goal,
+      userMessage: seed.exampleUserMessages[0],
+      context: {
+        platform: seed.initialContext.platform,
+        application: seed.initialContext.application,
+        screenState: seed.initialContext.screenState,
+        locale: /[가-힣]/u.test(seed.exampleUserMessages[0]) ? 'ko-KR' : 'en-US',
+        previousSteps: [],
+      },
+      candidates,
+      proposedAction: seed.correctNextAction.mode,
+      proposedCorrectTargetId: targetIndex >= 0 ? candidates[targetIndex].id : null,
+      instruction: seed.correctNextAction.instruction,
+      expectedChange: seed.expectedChange,
+      successCondition: seed.successCondition,
+      difficulty: seed.correctNextAction.mode === 'clarify' ? 'hard' : 'medium',
+      ambiguity: seed.correctNextAction.mode === 'clarify' ? 0.8 : 0.05,
+      riskLevel: seed.riskLevel,
+      requiresConfirmation: seed.requiresConfirmation,
+      generatorModel: 'human-seed-bootstrap-v1',
+      generationTimestamp: new Date().toISOString(),
+      provenance: 'human',
+    });
+  });
+  await writeJsonl(path.join(dataRoot, 'human-reviewed', 'seed-scenarios.jsonl'), scenarios);
+  await writeJson(path.join(dataRoot, 'human-reviewed', 'seed-scenarios-manifest.json'), {
+    datasetVersion: library.datasetVersion,
+    seedVersion: library.seedVersion,
+    provenance: 'human',
+    transformation: 'Deterministic one-to-one conversion of runtime-validated human seed examples; no model generation.',
+    count: scenarios.length,
+    generatedAt: new Date().toISOString(),
+  });
+  return scenarios;
+}
+
 const GENERATOR_PROMPT = `You generate diverse ShowWhere UI guidance scenarios from one human-approved seed.
 Return JSON {"scenarios":[...]}. Follow the supplied schema example exactly. Generate meaningful screen-state variations, not mere paraphrases. Candidate IDs must be local stable IDs. For highlight, the proposed target ID must exist. For clarify/complete/explain, target must be null. Preserve decision rules, confirmation requirements, risk, expected change, and success condition. Never include credentials, personal data, screenshots, chain-of-thought, or invented claims. provenance must be synthetic and schemaVersion showwhere-scenario-v1.`;
 
@@ -103,15 +157,18 @@ export async function generateScenarios(config: PipelineConfig, options: Generat
   const fresh = generated.filter(isPrivacySafeScenario);
   const unique = deduplicate([...previous, ...fresh]);
   await writeJsonl(output, unique);
-  await writeJson(path.join(dataRoot, 'generated', 'manifest.json'), {
+  const manifest = {
     datasetVersion: library.datasetVersion,
     generatedAt: new Date().toISOString(),
     generatorModel: config.generatorModel,
     requested, previous: previous.length, privacyRejected: generated.length - fresh.length,
     failures: batches.filter((batch) => batch.error).map((batch) => ({ seedId: batch.seedId, error: batch.error })),
     acceptedBySchemaAndDedup: unique.length,
-    output,
-  });
+    output: 'learning/data/generated/scenarios.jsonl',
+  };
+  await writeJson(path.join(dataRoot, 'generated', 'manifest.json'), manifest);
+  const runId = manifest.generatedAt.replace(/[:.]/gu, '-');
+  await writeJson(path.join(dataRoot, 'generated', 'runs', `${runId}.json`), manifest);
   if (fresh.length === 0 && batches.some((batch) => batch.error)) {
     throw new Error(`Generation produced no valid scenarios. ${batches.filter((batch) => batch.error).map((batch) => `${batch.seedId}: ${batch.error}`).join('; ')}`);
   }
@@ -196,22 +253,28 @@ export async function recordHumanReview(input: Omit<HumanReviewDecision, 'review
 
 export async function buildDatasets(): Promise<Record<string, number>> {
   const accepted = await readJsonl(path.join(dataRoot, 'accepted', 'scenarios.jsonl'), JudgedScenarioSchema);
+  const humanSeeds = await readJsonl(path.join(dataRoot, 'human-reviewed', 'seed-scenarios.jsonl'), ScenarioSchema);
   const benchmark = await readJson(path.join(dataRoot, 'evaluation', 'benchmark.json'), benchmarkSchema);
   const heldOutSeedIds = new Set(benchmark.cases.map((item) => item.seedId));
-  const partitions: Record<'training' | 'validation' | 'evaluation', JudgedScenario[]> = { training: [], validation: [], evaluation: [] };
-  for (const item of accepted) {
-    const bucket = Number.parseInt(stableHash(item.scenario.seedId).slice(0, 8), 16) % 100;
-    const partition = heldOutSeedIds.has(item.scenario.seedId)
+  const records = [
+    ...humanSeeds.map((scenario) => ({ scenario, source: 'human_seed' as const, judgments: [] })),
+    ...accepted.map((item) => ({ scenario: item.scenario, source: 'auto_accepted_synthetic' as const, judgments: item.judgments })),
+  ];
+  type DatasetRecord = typeof records[number];
+  const partitions: Record<'training' | 'validation' | 'evaluation', DatasetRecord[]> = { training: [], validation: [], evaluation: [] };
+  for (const record of records) {
+    const bucket = Number.parseInt(stableHash(record.scenario.seedId).slice(0, 8), 16) % 100;
+    const partition = heldOutSeedIds.has(record.scenario.seedId)
       ? 'evaluation'
       : bucket < 82 ? 'training' : 'validation';
-    partitions[partition].push(item);
+    partitions[partition].push(record);
   }
   for (const [name, records] of Object.entries(partitions)) {
     await writeJsonl(path.join(dataRoot, name, 'scenarios.jsonl'), records);
   }
   const summary = Object.fromEntries(Object.entries(partitions).map(([key, value]) => [key, value.length]));
   await writeJson(path.join(dataRoot, 'dataset-manifest.json'), {
-    datasetVersion: 'showwhere-v0.1', splitMethod: 'permanent benchmark seed families held out; remaining sha256(seedId), 82/18 training/validation', familyLeakagePrevented: true, heldOutSeedIds: [...heldOutSeedIds].sort(), ...summary,
+    datasetVersion: 'showwhere-v0.1', splitMethod: 'permanent benchmark seed families held out; remaining sha256(seedId), 82/18 training/validation', familyLeakagePrevented: true, sources: { humanSeed: humanSeeds.length, autoAcceptedSynthetic: accepted.length }, heldOutSeedIds: [...heldOutSeedIds].sort(), ...summary,
   });
   return summary;
 }
@@ -304,6 +367,14 @@ function scenarioShape(): Record<string, unknown> {
     candidates: [{ id: 'candidate_1', label: 'visible label', role: 'button', enabled: true, visible: true, description: 'optional' }],
     proposedAction: 'highlight', proposedCorrectTargetId: 'candidate_1', instruction: 'string', expectedChange: 'string', successCondition: 'string', difficulty: 'medium', ambiguity: 0.1, riskLevel: 'low', requiresConfirmation: false, generatorModel: 'overwritten', generationTimestamp: new Date(0).toISOString(), provenance: 'synthetic',
   };
+}
+
+function inferRole(label: string): string {
+  if (/search|검색/iu.test(label)) return 'searchbox';
+  if (/file name|phone number|주소|이름/iu.test(label)) return 'textbox';
+  if (/image files|file type|파일 형식/iu.test(label)) return 'combobox';
+  if (/home|downloads|documents|settings|devices|camera|microphone|wifi|wi-fi|network|printer/iu.test(label)) return 'navigation';
+  return 'button';
 }
 
 async function mapLimited<T, R>(items: readonly T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {

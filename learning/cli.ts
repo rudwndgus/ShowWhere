@@ -3,6 +3,7 @@ import { LearningProvider } from './provider';
 import {
   buildDatasets,
   buildReviewQueue,
+  bootstrapSeedScenarios,
   generateScenarios,
   judgeScenarios,
   readLatestReport,
@@ -66,6 +67,9 @@ async function main(): Promise<void> {
     case 'validate':
       console.log(JSON.stringify(await validateLearningData(), null, 2));
       break;
+    case 'bootstrap':
+      console.log(JSON.stringify({ humanSeedScenarios: (await bootstrapSeedScenarios()).length }, null, 2));
+      break;
     case 'generate':
       if (!dryRun) requireProviderConfig(config);
       console.log(JSON.stringify({ generated: (await generateScenarios(config, {
@@ -115,7 +119,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(await readLatestReport(), null, 2));
       break;
     default:
-      console.log('Commands: validate | generate | judge | review-queue | review | build-dataset | run | eval | report');
+      console.log('Commands: validate | bootstrap | generate | judge | review-queue | review | build-dataset | run | eval | report');
       console.log('Options: --seed <id> --category <name> --count 1..10 --model <id> --dry-run');
   }
 }
