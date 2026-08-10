@@ -5,7 +5,7 @@ ShowWhere separates production behavior from data collection:
 - `window-back-kyung` is the production Windows application. It contains no developer rating or correction UI.
 - `ai-learning` is based on `window-back-kyung` and adds O/X answer feedback, correction drafts, verified saves, and dataset export.
 
-Use `ai-learning` during development to collect local examples and improve deterministic rules, prompts, candidate validation, and model selection. Raw data stays under `%LOCALAPPDATA%\ShowWhere\training` and must not be committed automatically because screenshots can contain private information.
+Use `ai-learning` during development to collect examples under the repository `training` directory and improve deterministic rules, prompts, candidate validation, and model selection. Commit reviewed JSONL records to synchronize correction memory between development computers. Full-screen screenshots and generated exports remain ignored because they can contain private information.
 
 After an improvement passes the untouched evaluation split:
 

@@ -20,7 +20,7 @@ The next exact request first applies the saved intent. A saved target is reused 
 ## Dataset location
 
 ```text
-%LOCALAPPDATA%\ShowWhere\training\
+ShowWhere\training\
 ├─ answer-feedback.jsonl
 ├─ corrections.jsonl
 └─ screenshots\
@@ -28,6 +28,8 @@ The next exact request first applies the saved intent. A saved target is reused 
 ```
 
 Each JSONL line is an independent schema-versioned record. `answer-feedback.jsonl` is append-only and records every explicit O/X choice even when an X correction draft is later cancelled. The screenshot path in `corrections.jsonl` is relative to the training directory, which makes the directory portable as one dataset.
+
+The JSONL records are intentionally stored inside the repository for cross-computer Git synchronization on `ai-learning`. Full-screen `screenshots/` and reproducible `exports/` remain ignored because the GitHub repository is public and captures can contain private information. The runtime performs a one-time non-destructive copy from the older `%LOCALAPPDATA%\ShowWhere\training` location when the repository dataset is first created.
 
 Create model-oriented exports at any time:
 

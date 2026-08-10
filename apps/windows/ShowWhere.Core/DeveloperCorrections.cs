@@ -91,10 +91,8 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
-        DataDirectory = dataDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ShowWhere",
-            "training");
+        DataDirectory = dataDirectory ?? ResolveDefaultDataDirectory();
+        if (dataDirectory is null) MigrateLegacyTrainingData(DataDirectory);
         _recordsPath = Path.Combine(DataDirectory, "corrections.jsonl");
         _feedbackPath = Path.Combine(DataDirectory, "answer-feedback.jsonl");
         Directory.CreateDirectory(DataDirectory);
@@ -217,6 +215,51 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             catch (JsonException) { }
         }
         return records;
+    }
+
+    private static string ResolveDefaultDataDirectory()
+    {
+        var configured = Environment.GetEnvironmentVariable("SHOWWHERE_TRAINING_DIR");
+        if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured.Trim());
+
+        foreach (var start in new[] { Environment.CurrentDirectory, AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(start);
+            while (directory is not null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "package.json"))
+                    && Directory.Exists(Path.Combine(directory.FullName, "apps", "windows")))
+                    return Path.Combine(directory.FullName, "training");
+                directory = directory.Parent;
+            }
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ShowWhere",
+            "training");
+    }
+
+    private static void MigrateLegacyTrainingData(string destination)
+    {
+        var legacy = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ShowWhere",
+            "training");
+        if (!Directory.Exists(legacy)
+            || string.Equals(
+                Path.GetFullPath(legacy).TrimEnd(Path.DirectorySeparatorChar),
+                Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase)) return;
+
+        foreach (var sourcePath in Directory.EnumerateFiles(legacy, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(legacy, sourcePath);
+            var destinationPath = Path.Combine(destination, relativePath);
+            if (File.Exists(destinationPath)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+            File.Copy(sourcePath, destinationPath, overwrite: false);
+        }
     }
 
     private static int ScoreTarget(

@@ -27,3 +27,9 @@ Thumbs.db
 .vscode/
 .smoke-profile/
 .search-profile/
+
+# Learning records stay in the repository for cross-computer Git sync.
+# Full-screen images can contain private data and exports are reproducible.
+training/screenshots/
+training/exports/
+training/*.tmp

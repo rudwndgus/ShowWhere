@@ -2,10 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
-const localAppData = process.env.LOCALAPPDATA;
-if (!localAppData) throw new Error('LOCALAPPDATA is required on Windows.');
-
-const trainingDirectory = path.join(localAppData, 'ShowWhere', 'training');
+const trainingDirectory = process.env.SHOWWHERE_TRAINING_DIR
+  ? path.resolve(process.env.SHOWWHERE_TRAINING_DIR)
+  : path.resolve(process.cwd(), 'training');
 const readJsonl = async (fileName) => {
   try {
     return (await readFile(path.join(trainingDirectory, fileName), 'utf8'))
