@@ -27,3 +27,20 @@ Thumbs.db
 .vscode/
 .smoke-profile/
 .search-profile/
+
+# Learning records stay in the repository for cross-computer Git sync.
+# Full-screen images can contain private data and exports are reproducible.
+training/screenshots/
+training/exports/
+training/*.tmp
+training/evidence/screenshots/*
+!training/evidence/screenshots/.gitkeep
+training/evidence/ui-snapshots/*
+!training/evidence/ui-snapshots/.gitkeep
+training/raw/*
+!training/raw/.gitkeep
+training/drafts/*
+!training/drafts/.gitkeep
+training/legacy/v1/*.jsonl
+training/legacy/v1/*.json
+!training/legacy/v1/migration-manifest.json

@@ -8,9 +8,9 @@ export default tseslint.config(
       'dist/**',
       'services/api/dist/**',
       'node_modules/**',
-      'public/**',
       '.search-profile/**',
-      'test-site/**',
+      'learning/data/**',
+      'training/legacy/**',
     ],
   },
   eslint.configs.recommended,
@@ -19,7 +19,6 @@ export default tseslint.config(
     files: ['**/*.{ts,tsx,js,mjs}'],
     languageOptions: {
       globals: {
-        ...globals.browser,
         ...globals.node,
       },
     },

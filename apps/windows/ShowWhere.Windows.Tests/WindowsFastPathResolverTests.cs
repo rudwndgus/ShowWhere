@@ -121,6 +121,30 @@ public sealed class WindowsFastPathResolverTests
         Assert.Contains("눌러보시겠어요", decision.Message);
     }
 
+    [Fact]
+    public void Printer_goal_ignores_an_occluded_settings_window_and_uses_visible_start()
+    {
+        var request = Request("프린터 연결은 어디서 확인해?", [
+            Candidate("hidden-settings", "Settings", "SystemSettings", "windows_window_overview", false),
+            Candidate("start", "Start", "explorer", "windows_taskbar", true),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("start", decision.TargetId);
+    }
+
+    [Fact]
+    public void Printer_goal_ignores_offscreen_start_duplicates()
+    {
+        var request = Request("프린터 연결은 어디서 확인해?", [
+            Candidate("offscreen-start", "Start", "explorer", "windows_taskbar", false),
+            Candidate("visible-start", "Start", "explorer", "windows_taskbar", true),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("visible-start", decision.TargetId);
+    }
+
     [Theory]
     [InlineData("settings", "Settings", "start")]
     [InlineData("devices", "Bluetooth & devices", "settings")]
@@ -227,6 +251,8 @@ public sealed class WindowsFastPathResolverTests
     [InlineData("게임 모드를 켜고 싶어", "Game Mode")]
     [InlineData("작업 표시줄 설정을 열고 싶어", "Taskbar")]
     [InlineData("웹캠 설정을 확인하고 싶어", "Cameras")]
+    [InlineData("윈도우 이메일 계정 설정 어디야", "내 계정")]
+    [InlineData("청각 자막 설정 어디야", "캡션")]
     public void Windows_settings_catalog_selects_the_specific_visible_destination(
         string goal,
         string destination)
@@ -270,21 +296,67 @@ public sealed class WindowsFastPathResolverTests
     }
 
     [Fact]
+    public void Wifi_settings_goal_selects_the_page_row_instead_of_the_toggle()
+    {
+        var request = Request("와이파이 설정 어디야", [
+            Candidate("row", "Wi-Fi", "SystemSettings"),
+            Candidate("toggle", "Wi-Fi", "SystemSettings", "SystemSettings_Network_WiFi_ToggleSwitch"),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("row", decision.TargetId);
+    }
+
+    [Fact]
+    public void Notification_settings_ignores_unrelated_taskbar_app_notifications()
+    {
+        var request = Request("윈도우 알림 설정은 어디서 바꿔", [
+            Candidate("discord", "Discord", "explorer", "windows_taskbar"),
+            Candidate("system", "시스템", "ApplicationFrameHost"),
+        ]);
+        request = request with
+        {
+            Candidates =
+            [
+                request.Candidates[0] with { Description = "9 notifications" },
+                request.Candidates[1],
+            ],
+        };
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("system", decision.TargetId);
+    }
+
+    [Fact]
+    public void About_settings_does_not_match_the_info_substring_in_privacy_category()
+    {
+        var request = Request("내 컴퓨터 사양과 장치 정보 어디서 봐", [
+            Candidate("privacy", "개인 정보 및 보안", "ApplicationFrameHost"),
+            Candidate("system", "시스템", "ApplicationFrameHost"),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("system", decision.TargetId);
+    }
+
+    [Fact]
+    public void Settings_route_keeps_an_offscreen_destination_for_scroll_guidance()
+    {
+        var request = Request("프린터 설정 어디야", [
+            Candidate("breadcrumb", "Bluetooth 및 장치", "ApplicationFrameHost"),
+            Candidate("printers", "프린터 및 스캐너", "ApplicationFrameHost", inViewport: false),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("printers", decision.TargetId);
+    }
+
+    [Fact]
     public void Unknown_windows_goal_falls_back_to_ai()
     {
         var request = Request("내 티켓을 확인하고 싶어", [
             Candidate("tickets", "My Tickets", "chrome"),
         ]);
-
-        Assert.False(WindowsFastPathResolver.TryResolve(request, out _));
-    }
-
-    [Fact]
-    public void Browser_requests_never_use_the_windows_fast_path()
-    {
-        var request = Request("인터넷 상태 확인", [
-            Candidate("network", "Network Internet access", "explorer", "windows_taskbar"),
-        ]) with { Context = new ApplicationContext(Platforms.Browser, "chrome") };
 
         Assert.False(WindowsFastPathResolver.TryResolve(request, out _));
     }
@@ -297,10 +369,16 @@ public sealed class WindowsFastPathResolverTests
         new ApplicationContext(Platforms.Windows, "explorer"),
         candidates);
 
-    private static UiCandidate Candidate(string id, string label, string processName, string? scope = null)
+    private static UiCandidate Candidate(
+        string id,
+        string label,
+        string processName,
+        string? scope = null,
+        bool? inViewport = null)
     {
         var attributes = new Dictionary<string, object?> { ["processName"] = processName };
         if (scope is not null) attributes["sourceScope"] = scope;
+        if (inViewport is not null) attributes["inViewport"] = inViewport.Value;
         return new UiCandidate(
             id,
             label,

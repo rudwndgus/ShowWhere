@@ -1,0 +1,22 @@
+{
+  "datasetVersion": "showwhere-v0.1",
+  "splitMethod": "permanent benchmark seed families held out; remaining sha256(seedId), 82/18 training/validation",
+  "familyLeakagePrevented": true,
+  "sources": {
+    "humanSeed": 24,
+    "autoAcceptedSynthetic": 0
+  },
+  "heldOutSeedIds": [
+    "accessibility_disabled_required",
+    "browser_site_search",
+    "file_attach_pdf_filter",
+    "recovery_wrong_settings_page",
+    "shopping_duplicate_ambiguity",
+    "shopping_place_order",
+    "windows_default_printer",
+    "windows_wifi_airplane"
+  ],
+  "training": 12,
+  "validation": 4,
+  "evaluation": 8
+}

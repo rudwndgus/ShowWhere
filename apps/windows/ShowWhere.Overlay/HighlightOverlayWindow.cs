@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ShowWhere.Core;
 
 namespace ShowWhere.Overlay;
@@ -21,10 +22,20 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
     private const uint MonitorDefaultToNearest = 2;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpShowWindow = 0x0040;
+    private const uint SwpNoOwnerZOrder = 0x0200;
+    private const int SwShowNoActivate = 4;
+    private const int SmXVirtualScreen = 76;
+    private const int SmYVirtualScreen = 77;
+    private const int SmCxVirtualScreen = 78;
+    private const int SmCyVirtualScreen = 79;
     private readonly Canvas _canvas = new();
     private readonly Border _highlightBorder;
     private readonly Border _tooltip;
     private readonly TextBlock _message;
+    private readonly DispatcherTimer _visibilityTimer;
+    private NativeWindowPlacement? _lastPlacement;
 
     public HighlightOverlayWindow()
     {
@@ -38,10 +49,10 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         Topmost = true;
         _highlightBorder = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(255, 180, 0)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(202, 44, 52)),
             BorderThickness = new Thickness(4),
             CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Color.FromArgb(26, 255, 190, 0)),
+            Background = new SolidColorBrush(Color.FromArgb(24, 202, 44, 52)),
         };
         _message = new TextBlock
         {
@@ -54,7 +65,7 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         _tooltip = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(244, 28, 31, 38)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(255, 180, 0)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(202, 44, 52)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(14, 10, 14, 10),
@@ -63,6 +74,12 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         _canvas.Children.Add(_highlightBorder);
         _canvas.Children.Add(_tooltip);
         Content = _canvas;
+        _visibilityTimer = new DispatcherTimer(DispatcherPriority.Send)
+        {
+            Interval = TimeSpan.FromMilliseconds(75),
+        };
+        _visibilityTimer.Tick += (_, _) => ReassertNativeTopmost();
+        Closed += (_, _) => _visibilityTimer.Stop();
     }
 
     protected override void OnSourceInitialized(EventArgs eventArgs)
@@ -89,16 +106,24 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
             monitorArea,
             tooltipSize.Width,
             tooltipSize.Height);
-        Left = placement.Window.X / scale;
-        Top = placement.Window.Y / scale;
-        Width = placement.Window.Width / scale;
-        Height = placement.Window.Height / scale;
+        PlaceWindow(placement.Window, scale);
+        var windowScale = MonitorUtilities.GetWindowScale(new WindowInteropHelper(this).Handle, scale);
+        if (Math.Abs(windowScale - scale) > 0.001)
+        {
+            scale = windowScale;
+            tooltipSize = MeasureTooltip(monitorArea, scale);
+            placement = OverlayPlacementCalculator.Calculate(
+                target,
+                monitorArea,
+                tooltipSize.Width,
+                tooltipSize.Height);
+            PlaceWindow(placement.Window, scale);
+        }
         SetElementBounds(_highlightBorder, placement.Highlight, scale);
         SetElementBounds(_tooltip, placement.Tooltip, scale);
         _highlightBorder.Visibility = Visibility.Visible;
-        if (!IsVisible) Show();
-        Topmost = false;
-        Topmost = true;
+        UpdateLayout();
+        StartVisibilityGuard();
     }
 
     public void ShowScrollHint(UiBounds target, string message)
@@ -113,22 +138,33 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         var top = down
             ? workingArea.Bottom - tooltipSize.Height - 24 * scale
             : workingArea.Y + 24 * scale;
-        Left = left / scale;
-        Top = top / scale;
-        Width = tooltipSize.Width / scale;
-        Height = tooltipSize.Height / scale;
+        var window = new PhysicalRectangle(left, top, tooltipSize.Width, tooltipSize.Height);
+        PlaceWindow(window, scale);
+        var windowScale = MonitorUtilities.GetWindowScale(new WindowInteropHelper(this).Handle, scale);
+        if (Math.Abs(windowScale - scale) > 0.001)
+        {
+            scale = windowScale;
+            tooltipSize = MeasureTooltip(workingArea, scale);
+            left = workingArea.X + (workingArea.Width - tooltipSize.Width) / 2;
+            top = down
+                ? workingArea.Bottom - tooltipSize.Height - 24 * scale
+                : workingArea.Y + 24 * scale;
+            window = new PhysicalRectangle(left, top, tooltipSize.Width, tooltipSize.Height);
+            PlaceWindow(window, scale);
+        }
         _highlightBorder.Visibility = Visibility.Collapsed;
         Canvas.SetLeft(_tooltip, 0);
         Canvas.SetTop(_tooltip, 0);
         _tooltip.Width = tooltipSize.Width / scale;
         _tooltip.Height = tooltipSize.Height / scale;
-        if (!IsVisible) Show();
-        Topmost = false;
-        Topmost = true;
+        UpdateLayout();
+        StartVisibilityGuard();
     }
 
     public void Clear()
     {
+        _visibilityTimer.Stop();
+        _lastPlacement = null;
         if (IsVisible) Hide();
         _message.Text = string.Empty;
     }
@@ -139,6 +175,52 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         Canvas.SetTop(element, rectangle.Y / scale);
         element.Width = rectangle.Width / scale;
         element.Height = rectangle.Height / scale;
+    }
+
+    private void PlaceWindow(PhysicalRectangle rectangle, double scale)
+    {
+        // UI Automation bounds and Win32 monitor rectangles are physical pixels. WPF's
+        // Left/Top are DIPs whose virtual-screen origin changes with each monitor's DPI,
+        // so dividing absolute coordinates by a scale shifts mixed-DPI secondary monitors.
+        // Keep only the WPF size in DIPs and position the HWND in physical pixels.
+        Width = Math.Max(1, rectangle.Width / scale);
+        Height = Math.Max(1, rectangle.Height / scale);
+        if (!IsVisible) Show();
+
+        var handle = new WindowInteropHelper(this).Handle;
+        var native = OverlayPlacementCalculator.ToNativeWindowPlacement(rectangle);
+        _lastPlacement = native;
+        _ = ShowWindow(handle, SwShowNoActivate);
+        _ = SetWindowPos(
+            handle,
+            HwndTopmost,
+            native.X,
+            native.Y,
+            native.Width,
+            native.Height,
+            SwpNoActivate | SwpShowWindow | SwpNoOwnerZOrder);
+    }
+
+    private void StartVisibilityGuard()
+    {
+        ReassertNativeTopmost();
+        if (!_visibilityTimer.IsEnabled) _visibilityTimer.Start();
+    }
+
+    private void ReassertNativeTopmost()
+    {
+        if (!IsVisible || _lastPlacement is not { } native) return;
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero) return;
+        _ = ShowWindow(handle, SwShowNoActivate);
+        _ = SetWindowPos(
+            handle,
+            HwndTopmost,
+            native.X,
+            native.Y,
+            native.Width,
+            native.Height,
+            SwpNoActivate | SwpShowWindow | SwpNoOwnerZOrder);
     }
 
     private (double Width, double Height) MeasureTooltip(PhysicalRectangle availableArea, double scale)
@@ -186,10 +268,10 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
             rectangle.Bottom - rectangle.Top);
 
         private static PhysicalRectangle VirtualScreenArea() => new(
-                SystemParameters.VirtualScreenLeft,
-                SystemParameters.VirtualScreenTop,
-                SystemParameters.VirtualScreenWidth,
-                SystemParameters.VirtualScreenHeight);
+            GetSystemMetrics(SmXVirtualScreen),
+            GetSystemMetrics(SmYVirtualScreen),
+            GetSystemMetrics(SmCxVirtualScreen),
+            GetSystemMetrics(SmCyVirtualScreen));
 
         public static double GetScale(UiBounds target)
         {
@@ -198,6 +280,13 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
             if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, 0, out var dpiX, out _) == 0)
                 return Math.Max(1, dpiX / 96d);
             return 1;
+        }
+
+        public static double GetWindowScale(IntPtr windowHandle, double fallback)
+        {
+            if (windowHandle == IntPtr.Zero) return fallback;
+            var dpi = GetDpiForWindow(windowHandle);
+            return dpi == 0 ? fallback : Math.Max(1, dpi / 96d);
         }
 
         private static NativeRectangle ToNativeRectangle(UiBounds target) => new()
@@ -230,6 +319,27 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromRect(ref NativeRectangle rectangle, uint flags);
 
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr windowHandle,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr windowHandle, int command);
+
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo information);
@@ -254,4 +364,6 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
 
     private static IntPtr SetWindowLongPtr(IntPtr handle, int index, IntPtr value) =>
         IntPtr.Size == 8 ? SetWindowLongPtr64(handle, index, value) : SetWindowLong32(handle, index, value);
+
+    private static readonly IntPtr HwndTopmost = new(-1);
 }

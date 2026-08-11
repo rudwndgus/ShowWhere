@@ -20,6 +20,7 @@ public sealed class WindowsGoalClarificationResolverTests
     [InlineData("스크린샷을 보고 싶어")]
     [InlineData("다운로드한 사진을 찾아줘")]
     [InlineData("인터넷 상태를 확인하고 싶어")]
+    [InlineData("계정 사진과 사용자 정보 어디서 바꿔?")]
     public void Explicit_or_unrelated_request_does_not_interrupt_with_choices(string goal)
     {
         Assert.False(WindowsGoalClarificationResolver.TryCreate(goal, out _));

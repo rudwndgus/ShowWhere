@@ -92,6 +92,39 @@ public sealed class CandidateNormalizerTests
     }
 
     [Fact]
+    public void Browser_scope_distinguishes_page_content_from_browser_chrome()
+    {
+        var content = BrowserCandidateScopeClassifier.Classify("chrome", [
+            new AutomationScopeDescriptor("edit", "", "Search"),
+            new AutomationScopeDescriptor("document", "Chrome_RenderWidgetHostHWND", "YouTube Music"),
+        ]);
+        var chrome = BrowserCandidateScopeClassifier.Classify("chrome", [
+            new AutomationScopeDescriptor("edit", "OmniboxViewViews", "Address and search bar"),
+            new AutomationScopeDescriptor("toolbar", "", "Toolbar"),
+        ]);
+
+        Assert.Equal("browser_content", content.SourceScope);
+        Assert.Equal("YouTube Music", content.ContainerLabel);
+        Assert.Equal("browser_chrome", chrome.SourceScope);
+    }
+
+    [Fact]
+    public void Normalize_preserves_browser_scope_and_container()
+    {
+        var candidate = Candidate("search", "search", true, true, new UiBounds(10, 10, 100, 30)) with
+        {
+            Role = "edit",
+            SourceScope = "browser_content",
+            ContainerLabel = "YouTube Music",
+        };
+
+        var normalized = CandidateNormalizer.Normalize([candidate])[0].Candidate;
+
+        Assert.Equal("browser_content", normalized.Attributes!["sourceScope"]);
+        Assert.Equal("YouTube Music", normalized.Attributes["containerLabel"]);
+    }
+
+    [Fact]
     public void Merge_reserves_space_for_global_taskbar_candidates()
     {
         var primary = Enumerable.Range(0, 100)

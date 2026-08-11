@@ -50,6 +50,30 @@ public sealed class CoreContractTests
     }
 
     [Fact]
+    public void Visual_target_requires_a_matching_screenshot_and_normalized_bounds()
+    {
+        var request = CreateRequest() with
+        {
+            Screenshot = "data:image/jpeg;base64,abc",
+            ScreenshotBounds = new UiBounds(0, 0, 1920, 1080),
+        };
+        var decision = new GuideDecision(
+            GuideStatuses.InProgress,
+            GuideActions.HighlightVisual,
+            "Select Settings.",
+            0.9,
+            VisualTarget: new VisualTarget(0.5, 0.2, 0.08, 0.06, "Settings"));
+
+        Assert.Equal(GuideActions.HighlightVisual, ContractValidator.ValidateDecision(decision, request).Action);
+        Assert.Throws<ContractValidationException>(() => ContractValidator.ValidateDecision(
+            decision with { VisualTarget = new VisualTarget(0.98, 0.2, 0.08, 0.06, "Settings") },
+            request));
+        Assert.Throws<ContractValidationException>(() => ContractValidator.ValidateDecision(
+            decision,
+            CreateRequest()));
+    }
+
+    [Fact]
     public void Task_session_transitions_preserve_completed_steps()
     {
         var session = TaskSessionStateMachine.Create("Open settings", () => "session-1");

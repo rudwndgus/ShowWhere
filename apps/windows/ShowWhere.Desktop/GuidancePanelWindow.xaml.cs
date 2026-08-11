@@ -2,6 +2,9 @@ using System.ComponentModel;
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using ShowWhere.Core;
 
@@ -16,6 +19,12 @@ public partial class GuidancePanelWindow : Window
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+    }
+
+    protected override void OnSourceInitialized(EventArgs eventArgs)
+    {
+        base.OnSourceInitialized(eventArgs);
+        WindowCaptureProtection.Apply(new WindowInteropHelper(this).Handle);
     }
 
     public void PositionNear(double assistantLeft, double assistantTop, double assistantWidth, double assistantHeight)
@@ -57,6 +66,30 @@ public partial class GuidancePanelWindow : Window
     }
 
     private void OnMinimize(object sender, RoutedEventArgs eventArgs) => WindowState = WindowState.Minimized;
+
+    private void OnHide(object sender, RoutedEventArgs eventArgs) => Hide();
+
+    private void OnHeaderMouseLeftButtonDown(object sender, MouseButtonEventArgs eventArgs)
+    {
+        if (eventArgs.LeftButton != MouseButtonState.Pressed
+            || FindAncestor<ButtonBase>(eventArgs.OriginalSource as DependencyObject) is not null) return;
+        try
+        {
+            DragMove();
+            eventArgs.Handled = true;
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? element) where T : DependencyObject
+    {
+        while (element is not null)
+        {
+            if (element is T match) return match;
+            element = VisualTreeHelper.GetParent(element);
+        }
+        return null;
+    }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs eventArgs)
     {

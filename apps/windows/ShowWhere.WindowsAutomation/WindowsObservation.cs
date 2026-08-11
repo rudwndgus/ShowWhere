@@ -6,6 +6,28 @@ using ShowWhere.Core;
 
 namespace ShowWhere.WindowsAutomation;
 
+internal static class WindowsScreenGeometry
+{
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativePoint(int x, int y)
+    {
+        public readonly int X = x;
+        public readonly int Y = y;
+    }
+
+    public static bool ContainsCenter(UiBounds bounds)
+    {
+        if (bounds.Width <= 1 || bounds.Height <= 1) return false;
+        var center = new NativePoint(
+            (int)Math.Round(bounds.X + bounds.Width / 2),
+            (int)Math.Round(bounds.Y + bounds.Height / 2));
+        return MonitorFromPoint(center, 0) != IntPtr.Zero;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(NativePoint point, uint flags);
+}
+
 public sealed class CandidateRegistry
 {
     private readonly IReadOnlyDictionary<string, AutomationElement> _elements;
@@ -34,10 +56,10 @@ public sealed class CandidateRegistry
             var rectangle = element.Current.BoundingRectangle;
             if (rectangle.IsEmpty || rectangle.Width <= 1 || rectangle.Height <= 1)
                 return false;
-            isOffscreen = element.Current.IsOffscreen;
             bounds = _windowTitleBarIds.Contains(candidateId)
                 ? new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, Math.Min(48, rectangle.Height))
                 : new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
+            isOffscreen = element.Current.IsOffscreen || !WindowsScreenGeometry.ContainsCenter(bounds);
             return true;
         }
         catch (ElementNotAvailableException)

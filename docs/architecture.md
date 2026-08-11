@@ -1,60 +1,75 @@
 # ShowWhere architecture
 
-ShowWhere is now Windows-first, with the Chrome extension retained as an optional browser adapter. Both clients use the same normalized guidance contract and the same secure backend.
+## Semantic knowledge architecture
 
-## Windows guidance loop
+Runtime guidance and learning share semantic identifiers instead of persisted coordinates:
 
 ```text
-Floating assistant / compact panel
-  -> foreground non-ShowWhere window
-  -> bounded Microsoft UI Automation observation
-  -> normalized Windows UiCandidate list + local element registry
-  -> known Windows goal? taskbar/settings fast-path decision
-  -> otherwise GuideRequest { platform: "windows" }
-  -> ShowWhere backend POST /api/guide
-  -> MockAiProvider or server-only FeatherlessProvider
-  -> runtime-validated GuideDecision
-  -> targetId lookup in the current Windows registry
-  -> DPI-aware, click-through highlight overlay
-  -> user performs the action
-  -> debounced UIA events + bounded low-frequency observation
-  -> next guidance step
+live UIA candidates
+  -> normalized labels and concepts
+  -> task/concept/Gold retrieval
+  -> purpose-based model router
+  -> semantic target decision
+  -> resolve semantic target against the current live candidate list
+  -> highlight only a request-owned targetId
 ```
 
-The model never receives an `AutomationElement`, selector, window handle, or authority to click. It can select only a candidate ID supplied by the current observation.
+The source of truth consists of a multilingual concept dictionary, explicit task state graphs, and human-approved Semantic v2 Gold records. AI teaching output remains a draft until deterministic validation and developer approval. Screenshots, UI snapshots, raw feedback, and unapproved drafts remain local and are ignored by Git.
 
-Known Windows goals such as Network, Volume, Bluetooth, Display/Brightness, Clock, Battery, Notifications, Windows Update, Accessibility, and Settings use a deterministic fast path before any provider request. When the foreground application is unrelated, the observer initially scans only the small Windows taskbar tree. It expands to the complete foreground tree and Featherless only when the fast path cannot resolve a real visible candidate. The fast path never uses fixed coordinates; it still highlights only a validated candidate ID from the current machine.
+Model routing is role-based: guide, fast, reasoning, vision, embedding, learning generator, and independent judge. Every provider response is runtime validated; unavailable or malformed models use a bounded fallback, and raw provider errors never reach the desktop client.
 
-The Windows observer also contributes a bounded overview of other open top-level windows. These overview candidates contain only application/title-bar context, not every descendant control. This lets the decision layer switch from an unrelated foreground app to an already open Photos, File Explorer, browser, or other relevant window before performing a deep scan. Photo, screenshot, Downloads, and Documents goals have deterministic shell routes; unknown goals can still use the validated window overview through the AI decision layer.
+ShowWhere is a Windows-only desktop guidance application with a local Node backend.
 
-Camera-photo and screenshot routes are intentionally separate, and conflicting window titles are excluded from each route. UI Automation source keys include the owning process ID so a runtime ID reused by Chrome and File Explorer cannot resolve to the wrong application. Generic photo requests are clarified with source choices before observation. AI decisions may also return two to four validated `alternativeTargetIds`; both clients render these as buttons and guide only the option explicitly selected by the user.
+## Runtime flow
 
-Printer goals use a deterministic Windows route through Start, Settings, Bluetooth & devices, and Printers & scanners. The resolver emits only the deepest currently visible next target, excludes unrelated Network/Wi-Fi controls, and consults session facts so a control already selected during the task is not highlighted again.
-
-The initial product scope is deliberately Windows-first. Built-in applications and standard Settings destinations are represented by an offline navigation catalog of multilingual intent aliases and visible UI labels. Known Windows goals do not fall through to the remote provider when a transient shell surface is still loading. The client detects visible Start/Search shell windows independently of ShowWhere's own foreground panel, retries local observation briefly, and either resolves a validated UIA target or reports a local observation problem without exposing a provider failure.
+```text
+Floating WPF assistant
+  -> GuidanceViewModel
+  -> WindowsUiObserver
+  -> normalized UiCandidate list + local CandidateRegistry
+  -> Windows Settings catalog and WindowsFastPathResolver when possible
+  -> verified developer correction memory before normal resolution
+  -> otherwise POST /api/guide
+  -> DeepSeek candidate decision
+  -> full-screen capture when semantic candidates fail
+  -> UI-TARS native click-coordinate grounding
+  -> validated targetId or normalized visualTarget
+  -> DPI-aware physical-pixel overlay
+  -> user click monitoring
+  -> next observation and guidance step
+```
 
 ## Windows projects
 
-- `ShowWhere.Desktop`: WPF application composition, floating assistant, panel, commands, and multi-step session orchestration.
-- `ShowWhere.Core`: browser-compatible contracts, runtime validation, confidence policy, unknown-target rejection, and task transitions.
-- `ShowWhere.WindowsAutomation`: foreground-window discovery, bounded UIA traversal, candidate filtering/normalization, local registry, and meaningful-change monitoring.
-- `ShowWhere.Overlay`: transparent topmost click-through overlay, monitor working-area placement, and DPI conversion.
-- `ShowWhere.ApiClient`: backend-only HTTP client with serialization, validation, cancellation, timeout, bounded retry, and safe errors.
+- `ShowWhere.Desktop`: WPF composition, extension-inspired floating UI, chat, session loop, and diagnostics.
+- `ShowWhere.Core`: C# contracts, validation, confidence policy, and task state transitions.
+- `ShowWhere.WindowsAutomation`: foreground discovery, UIA traversal, candidate registry, browser scope classification, screen capture, and click monitoring.
+- `ShowWhere.Overlay`: transparent click-through topmost overlay and multi-monitor DPI placement.
+- `ShowWhere.ApiClient`: validated HTTP access to the local backend.
+- `ShowWhere.Windows.Tests`: contract, navigation, observation, and native overlay tests.
 
-## Browser adapter
+Chrome and Edge are handled as ordinary Windows applications. Native UI Automation distinguishes browser chrome from document content, and full-screen vision is used when browser accessibility data is insufficient.
 
-The React/Manifest V3 extension remains under `src/content`, `src/background`, and `public`. Its content script owns DOM observation and highlighting. Cross-origin backend traffic is sent through the extension service worker using a fixed endpoint; the content script cannot request arbitrary URLs.
+## Windows Settings guidance
 
-Native Messaging is intentionally deferred. A later browser/desktop bridge can prefer DOM candidates for web content while the Windows adapter remains responsible for browser chrome and other native applications.
+`WindowsSettingsCatalog` maps common Windows 10/11 goals to the official Settings category hierarchy and documented `ms-settings:` page identifiers. It contains Korean and English UI aliases, but never highlights a catalog coordinate directly: every step must match a visible UI Automation candidate collected from the current computer. `WindowsCandidatePrioritizer` removes title-bar caption controls such as minimize, maximize, restore, and close before either the deterministic resolver or AI sees a Settings request.
 
-## Backend and secrets
+The catalog provides stable navigation knowledge while the live-candidate requirement accounts for Windows version, edition, device, language, and policy differences. When no unique visible target exists, ShowWhere asks the user or falls back to full-screen visual grounding instead of fabricating a location.
+
+## Developer correction memory
+
+`JsonlDeveloperCorrectionStore` appends every explicit answer O/X rating and persists separately confirmed intent and target corrections under the user's local application-data directory. An X rating and its correction are linked but saved as separate records: selection remains an in-memory preview until the developer presses Save. The runtime applies an exact intent correction before observation and then attempts to match a verified target against the new observation. A match requires compatible process and source scope plus a stable label or Automation ID; recorded coordinates are never replayed directly. `DeveloperRegionSelectionService` provides the full-virtual-desktop drag surface used to generate visual grounding labels. See [developer corrections](developer-corrections.md) for the dataset schema and privacy rules.
+
+## Backend
 
 ```text
-Windows app or extension -> ShowWhere backend -> Featherless
+Windows app -> local ShowWhere backend -> Featherless
 ```
 
-Only the Node backend reads `FEATHERLESS_API_KEY`. The Windows executable and extension contain a non-secret backend URL only. Both clients reject malformed decisions and target IDs absent from the current request.
+The backend owns all provider credentials. DeepSeek handles semantic candidate decisions. UI-TARS uses its native action protocol for screenshot grounding, with Qwen VL models as fallbacks.
 
-## Contract ownership
+All requests and decisions are runtime validated. A semantic highlight can reference only a candidate ID from the current observation. A visual highlight requires a matching screenshot and normalized in-bounds coordinates.
 
-The current TypeScript Zod schemas live in `src/contracts`; the Windows-compatible C# representation and validators live in `ShowWhere.Core`. Compatibility is verified through serialization and validation tests. A later phase can generate both representations from one versioned schema package without changing the adapter boundaries.
+## Contracts
+
+TypeScript Zod contracts live in `src/contracts`. Their C# representation lives in `ShowWhere.Core`. Both currently accept only the `windows` platform.
