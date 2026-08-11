@@ -17,6 +17,7 @@ public static class WindowsGoalClarificationResolver
         "스크린샷", "화면 캡처", "화면캡처", "screenshot", "screen capture",
         "다운로드", "download", "문서", "document",
         "사진 폴더", "pictures folder", "photos folder",
+        "계정 사진", "프로필 사진", "account picture", "profile picture",
     ];
 
     public static bool TryCreate(string goal, out GoalClarificationPrompt prompt)

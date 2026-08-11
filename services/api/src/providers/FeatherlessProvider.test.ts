@@ -23,6 +23,7 @@ function options(overrides: Partial<FeatherlessProviderOptions> = {}): Featherle
     apiKey: 'test-key',
     baseUrl: 'https://provider.example/v1',
     model: 'configured-guide-model',
+    guideFallbackModel: undefined,
     visionModels: ['configured-vision-model'],
     requestTimeoutMs: 1_000,
     maxRetries: 1,
@@ -207,6 +208,25 @@ describe('FeatherlessProvider', () => {
     await expect(provider.decideNextAction(guideRequestFixture)).resolves.toEqual(validDecision);
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
     expect(delay).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back from a busy primary guide model to the configured guide fallback', async () => {
+    const busyResponse = new Response(JSON.stringify({
+      error: { message: 'This model is busy, please try again later.' },
+    }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    const fetchImplementation = vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: RequestInit) =>
+      completion(JSON.stringify(validDecision)))
+      .mockResolvedValueOnce(busyResponse);
+    const provider = new FeatherlessProvider(options({
+      fetchImplementation,
+      model: 'primary-guide',
+      guideFallbackModel: 'fallback-guide',
+      maxRetries: 0,
+    }));
+
+    await expect(provider.decideNextAction(guideRequestFixture)).resolves.toEqual(validDecision);
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0][1]?.body)).model).toBe('primary-guide');
+    expect(JSON.parse(String(fetchImplementation.mock.calls[1][1]?.body)).model).toBe('fallback-guide');
   });
 
   it('makes one repair request after malformed model output', async () => {

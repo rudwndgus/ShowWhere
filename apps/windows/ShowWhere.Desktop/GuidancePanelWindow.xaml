@@ -1,7 +1,7 @@
 <Window x:Class="ShowWhere.Desktop.GuidancePanelWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ShowWhere" Width="340" Height="590" MinWidth="320" MinHeight="480"
+        Title="ShowWhere" Width="370" Height="700" MinWidth="350" MinHeight="560"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         Closing="OnClosing">
@@ -54,6 +54,7 @@
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <Grid Grid.Row="0" Background="White" Margin="18,16,12,13"
@@ -67,6 +68,11 @@
                      FontSize="11" FontWeight="Bold" />
           <TextBlock Text="무엇을 하고 싶으세요?" Foreground="{StaticResource TextBrush}"
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
+          <Button Content="{Binding DeveloperModeButtonText}"
+                  Command="{Binding ToggleDeveloperModeCommand}"
+                  HorizontalAlignment="Left" Margin="0,8,0,0" Padding="9,4"
+                  FontSize="10" Style="{StaticResource QuietButton}"
+                  ToolTip="개발자용 답변 평가, 교정, AI 라벨링과 Gold 저장 기능을 켜거나 끕니다." />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
           <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
@@ -101,6 +107,10 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate>
                 <Grid Margin="1,4">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
                   <Border x:Name="Bubble" HorizontalAlignment="Left" MaxWidth="274"
                           Background="{StaticResource SurfaceBrush}"
                           BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
@@ -108,6 +118,27 @@
                     <TextBlock x:Name="BubbleText" Text="{Binding Text}" TextWrapping="Wrap"
                                FontSize="13" LineHeight="19" Foreground="{StaticResource TextBrush}" />
                   </Border>
+                  <Grid Grid.Row="1" Margin="2,4,2,0"
+                        Visibility="{Binding DataContext.IsDeveloperMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding CanEvaluate, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <Button Content="O 정답" Margin="0,0,5,0" Padding="8,4" FontSize="10"
+                              Style="{StaticResource QuietButton}"
+                              Command="{Binding DataContext.MarkAnswerCorrectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="X 수정" Margin="0,0,5,0" Padding="8,4" FontSize="10"
+                              Style="{StaticResource QuietButton}"
+                              Command="{Binding DataContext.MarkAnswerIncorrectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="✓ 완성 · 끝내기" Padding="8,4" FontSize="10"
+                              Style="{StaticResource QuietButton}"
+                              ToolTip="현재 화면을 이 질문의 완료 지점으로 저장하고 안내를 끝냅니다."
+                              Command="{Binding DataContext.MarkTaskCompletedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding EvaluationLabel}" FontSize="10" Foreground="{StaticResource MutedBrush}"
+                               Visibility="{Binding IsEvaluated, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  </Grid>
                 </Grid>
                 <DataTemplate.Triggers>
                   <DataTrigger Binding="{Binding Role}" Value="user">
@@ -155,7 +186,50 @@
         </Grid>
       </Border>
 
-      <Grid Grid.Row="4" Margin="17,9,17,12">
+      <Border Grid.Row="4" Margin="17,9,17,0" Padding="12"
+              Background="#FFFFF9E8" BorderBrush="#FFFFD778" BorderThickness="1"
+              CornerRadius="9"
+              Visibility="{Binding IsCorrectionEditorVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <StackPanel>
+          <TextBlock Text="개발자 교정 모드" FontSize="13" FontWeight="Bold"
+                     Foreground="{StaticResource TextBrush}" />
+          <TextBlock Text="X로 선택한 답변을 수정합니다. 질문의 정확한 뜻이 다르면 아래에 적어 주세요."
+                     TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                     Margin="0,4,0,7" />
+          <TextBox Text="{Binding CorrectionIntentText, UpdateSourceTrigger=PropertyChanged}"
+                   MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
+                   ToolTip="예: 유튜브 뮤직 웹페이지 안에서 음악을 검색한다" />
+          <TextBlock Text="개발자 코멘트" FontSize="11" FontWeight="SemiBold"
+                     Foreground="{StaticResource TextBrush}" Margin="0,8,0,4" />
+          <TextBox Text="{Binding CorrectionCommentText, UpdateSourceTrigger=PropertyChanged}"
+                   MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
+                   ToolTip="무엇이 틀렸고 어떻게 고쳐야 하는지 자유롭게 적으세요" />
+          <TextBlock Text="{Binding CorrectionSelectionSummary}" TextWrapping="Wrap"
+                     FontSize="10" Foreground="#FF7A5A16" Margin="0,7,0,0" />
+          <CheckBox IsChecked="{Binding SaveCorrectionScreenshot}" Margin="0,8,0,7"
+                    FontSize="11" Foreground="{StaticResource TextBrush}"
+                    Content="학습용 전체 화면을 로컬에 저장" />
+          <TextBlock Text="드래그는 미리보기일 뿐 저장되지 않습니다. 확인 후 저장을 누르세요."
+                     FontSize="10" Foreground="#FF9B5D12" Margin="0,0,0,8" />
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="6" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="6" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Content="정답 영역 선택" Command="{Binding CaptureCorrectionCommand}"
+                    Style="{StaticResource QuietButton}" FontSize="11" />
+            <Button Grid.Column="2" Content="저장" Command="{Binding SaveCorrectionCommand}"
+                    Style="{StaticResource QuietButton}" FontSize="11" />
+            <Button Grid.Column="4" Content="취소" Command="{Binding CancelCorrectionEditCommand}"
+                    Style="{StaticResource QuietButton}" FontSize="11" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Row="5" Margin="17,9,17,12">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />

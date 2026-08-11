@@ -11,7 +11,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
     private const uint GwHwndNext = 2;
     private const uint GaRoot = 2;
     private const int MaximumTreeNodes = 1_500;
-    private const int MaximumForegroundCandidates = 100;
+    private const int MaximumForegroundCandidates = 180;
     private const int ReservedTaskbarCandidates = 30;
     private const int ReservedWindowOverviewCandidates = 10;
     private const int ReservedGlobalCandidates = ReservedTaskbarCandidates + ReservedWindowOverviewCandidates;
@@ -55,6 +55,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         }
 
         var processName = GetProcessName(root);
+        TryBringSettingsDestinationIntoView(root, processName, goal);
         var windowTitle = Read(() => root.Current.Name);
         var context = new ApplicationContext(
             Platforms.Windows,
@@ -279,6 +280,43 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         }
 
         return result;
+    }
+
+    private static void TryBringSettingsDestinationIntoView(
+        AutomationElement root,
+        string processName,
+        string? goal)
+    {
+        if (processName is not ("ApplicationFrameHost" or "SystemSettings")
+            || !WindowsSettingsCatalog.TryFind(goal, out var route))
+            return;
+
+        try
+        {
+            var descendants = root.FindAll(
+                TreeScope.Descendants,
+                Condition.TrueCondition).Cast<AutomationElement>().ToArray();
+            foreach (var stepAliases in route.PageAliases.Reverse())
+            {
+                var matches = descendants.Where(element =>
+                    stepAliases.Any(alias => string.Equals(
+                        Read(() => element.Current.Name)?.Trim(),
+                        alias,
+                        StringComparison.OrdinalIgnoreCase))).ToArray();
+                if (matches.Length == 0) continue;
+                var offscreen = matches.FirstOrDefault(element => Read(() => element.Current.IsOffscreen));
+                if (offscreen is not null
+                    && offscreen.TryGetCurrentPattern(ScrollItemPattern.Pattern, out var pattern))
+                {
+                    ((ScrollItemPattern)pattern).ScrollIntoView();
+                    Thread.Sleep(100);
+                }
+                return;
+            }
+        }
+        catch (ElementNotAvailableException) { }
+        catch (InvalidOperationException) { }
+        catch (COMException) { }
     }
 
     private static BrowserCandidateScope ClassifyCandidateScope(

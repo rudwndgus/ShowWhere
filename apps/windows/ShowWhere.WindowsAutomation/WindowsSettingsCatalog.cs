@@ -46,6 +46,8 @@ public static class WindowsSettingsCatalog
         Route("about", ["장치 정보", "pc 정보", "내 컴퓨터 사양", "시스템 정보", "about pc", "device specifications", "system information"],
             ["설정", "시스템", "정보"], [["system", "시스템"], ["about", "정보"]], "ms-settings:about"),
 
+        Route("bluetooth-pair", ["블루투스 이어폰", "블루투스 헤드폰", "장치 연결", "기기 연결", "페어링", "pair bluetooth", "connect bluetooth"],
+            ["설정", "Bluetooth 및 장치", "장치 추가"], [["bluetooth & devices", "bluetooth and devices", "bluetooth 및 장치", "블루투스 및 장치"], ["devices", "장치", "bluetooth"], ["add device", "장치 추가", "디바이스 추가"]], "ms-settings:bluetooth"),
         Route("bluetooth", ["블루투스", "bluetooth", "장치 추가", "add device"],
             ["설정", "Bluetooth 및 장치", "장치"], [["bluetooth & devices", "bluetooth and devices", "bluetooth 및 장치", "블루투스 및 장치"], ["devices", "장치", "bluetooth"]], "ms-settings:bluetooth"),
         Route("printers", ["프린터", "프린트", "스캐너", "printer", "printers", "printing", "scanner"],
@@ -91,7 +93,7 @@ public static class WindowsSettingsCatalog
         Route("fonts", ["글꼴", "폰트 설정", "font settings", "fonts"],
             ["설정", "개인 설정", "글꼴"], [["personalization", "개인 설정"], ["fonts", "글꼴"]], "ms-settings:fonts"),
 
-        Route("installed-apps", ["설치된 앱", "앱 제거", "프로그램 제거", "installed apps", "uninstall app", "uninstall program"],
+        Route("installed-apps", ["설치된 앱", "설치된 프로그램", "앱 제거", "앱 삭제", "프로그램 제거", "프로그램 삭제", "installed apps", "uninstall app", "uninstall program"],
             ["설정", "앱", "설치된 앱"], [["apps", "앱"], ["installed apps", "설치된 앱", "apps & features", "앱 및 기능"]], "ms-settings:appsfeatures"),
         Route("default-apps", ["기본 앱", "기본 프로그램", "파일 연결", "default apps", "default program", "file association"],
             ["설정", "앱", "기본 앱"], [["apps", "앱"], ["default apps", "기본 앱"]], "ms-settings:defaultapps"),
@@ -105,7 +107,7 @@ public static class WindowsSettingsCatalog
         Route("your-info", ["내 정보", "계정 사진", "your info", "account picture"],
             ["설정", "계정", "사용자 정보"], [["accounts", "계정"], ["your info", "사용자 정보", "내 정보"]], "ms-settings:yourinfo"),
         Route("email-accounts", ["이메일 계정", "앱 계정", "email accounts", "email & accounts"],
-            ["설정", "계정", "이메일 및 계정"], [["accounts", "계정"], ["email & accounts", "email and accounts", "이메일 및 계정"]], "ms-settings:emailandaccounts"),
+            ["설정", "계정", "내 계정"], [["accounts", "계정"], ["my account", "내 계정", "email & accounts", "email and accounts", "이메일 및 계정"]], "ms-settings:emailandaccounts"),
         Route("family", ["가족 계정", "다른 사용자", "family", "other users"],
             ["설정", "계정", "가족 및 다른 사용자"], [["accounts", "계정"], ["family", "other users", "가족", "다른 사용자"]], "ms-settings:otherusers"),
         Route("backup", ["윈도우 백업", "설정 동기화", "windows backup", "sync settings", "remember my preferences"],
@@ -129,8 +131,10 @@ public static class WindowsSettingsCatalog
 
         Route("accessibility-vision", ["텍스트 크기", "마우스 포인터 크기", "색 필터", "고대비", "내레이터", "돋보기", "text size", "mouse pointer size", "color filters", "contrast themes", "narrator", "magnifier"],
             ["설정", "접근성", "시각"], [["accessibility", "접근성"], ["vision", "시각", "text size", "텍스트 크기", "magnifier", "돋보기", "narrator", "내레이터"]], "ms-settings:easeofaccess-display"),
-        Route("accessibility-hearing", ["자막", "청각", "오디오 접근성", "captions", "hearing", "audio accessibility"],
-            ["설정", "접근성", "청각"], [["accessibility", "접근성"], ["hearing", "청각", "captions", "자막", "audio", "오디오"]], "ms-settings:easeofaccess-audio"),
+        Route("accessibility-captions", ["자막", "캡션", "captions"],
+            ["설정", "접근성", "캡션"], [["accessibility", "접근성"], ["captions", "캡션", "자막"]], "ms-settings:easeofaccess-closedcaptioning"),
+        Route("accessibility-hearing", ["청각 장치", "오디오 접근성", "hearing devices", "audio accessibility"],
+            ["설정", "접근성", "오디오"], [["accessibility", "접근성"], ["hearing", "청각", "audio", "오디오"]], "ms-settings:easeofaccess-audio"),
         Route("accessibility-input", ["고정 키", "화상 키보드", "음성 액세스", "눈 제어", "sticky keys", "on-screen keyboard", "voice access", "eye control"],
             ["설정", "접근성", "상호 작용"], [["accessibility", "접근성"], ["interaction", "상호 작용", "keyboard", "키보드", "speech", "음성", "eye control", "눈 제어"]], "ms-settings:easeofaccess-keyboard"),
 
@@ -165,8 +169,10 @@ public static class WindowsSettingsCatalog
                 {
                     Route = candidate,
                     Score = candidate.PageAliases.Length * 100 + term.Length,
+                    GoalIndex = normalized.IndexOf(term, StringComparison.Ordinal),
                 }))
             .OrderByDescending(match => match.Score)
+            .ThenBy(match => match.GoalIndex)
             .Select(match => match.Route)
             .FirstOrDefault()!;
         return route is not null;
@@ -188,19 +194,27 @@ public static class WindowsWindowChromeFilter
     {
         "minimize", "최소화", "maximize", "최대화", "restore", "복원", "restore down", "이전 크기로 복원",
         "close", "닫기", "system menu", "시스템 메뉴",
+        "system menu bar", "시스템 메뉴 모음",
     };
 
     public static bool IsCaptionControl(ShowWhere.Core.UiCandidate candidate)
     {
         var label = candidate.Label?.Trim();
         if (label is not null && CaptionLabels.Contains(label)) return true;
+        if (string.Equals(candidate.Role, "menubar", StringComparison.OrdinalIgnoreCase)
+            && label?.StartsWith("system menu", StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        if (string.Equals(candidate.Role, "menuitem", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(label, "system", StringComparison.OrdinalIgnoreCase))
+            return true;
         var automationId = StringAttribute(candidate, "automationId");
         if (automationId is null) return false;
         return automationId.Contains("minimize", StringComparison.OrdinalIgnoreCase)
             || automationId.Contains("maximize", StringComparison.OrdinalIgnoreCase)
             || automationId.Contains("restore", StringComparison.OrdinalIgnoreCase)
             || automationId.Contains("close", StringComparison.OrdinalIgnoreCase)
-            || automationId.Contains("caption", StringComparison.OrdinalIgnoreCase);
+            || automationId.Contains("caption", StringComparison.OrdinalIgnoreCase)
+            || automationId.Contains("NavigationViewBackButton", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? StringAttribute(ShowWhere.Core.UiCandidate candidate, string name) =>

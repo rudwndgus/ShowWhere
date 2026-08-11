@@ -3,6 +3,7 @@ import { GuideDecisionSchema, type GuideRequest } from '../../../../src/contract
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import { createGuideMessages } from './guidePrompt';
 import { createUiTarsMessages, isUiTarsModel, parseUiTarsDecision } from './uiTarsAdapter';
+import { ModelRouter } from './ModelRouter';
 
 const completionResponseSchema = z.object({
   choices: z.array(z.object({
@@ -16,7 +17,13 @@ export interface FeatherlessProviderOptions {
   apiKey: string;
   baseUrl: string;
   model: string;
+  guideFallbackModel?: string;
   visionModels: readonly string[];
+  fastModel?: string;
+  reasoningModel?: string;
+  embeddingModel?: string;
+  learningGeneratorModel?: string;
+  learningJudgeModels?: readonly string[];
   requestTimeoutMs: number;
   maxRetries: number;
   retryBaseDelayMs: number;
@@ -27,24 +34,38 @@ export interface FeatherlessProviderOptions {
   delay?: (milliseconds: number) => Promise<void>;
 }
 
+export type ProviderErrorCategory =
+  | 'timeout'
+  | 'rate_limit'
+  | 'busy'
+  | 'provider_5xx'
+  | 'malformed_output'
+  | 'unavailable_model'
+  | 'network'
+  | 'unknown';
+
 class ProviderRequestError extends Error {
-  constructor(readonly retryable: boolean) {
+  constructor(readonly category: ProviderErrorCategory, readonly retryable: boolean) {
     super('Featherless provider request failed.');
   }
 }
 
-async function isRetryableProviderResponse(response: Response): Promise<boolean> {
-  if (response.status === 408 || response.status === 429 || response.status >= 500) return true;
-  if (response.status !== 400) return false;
+async function classifyProviderResponse(response: Response): Promise<ProviderRequestError> {
+  if (response.status === 408) return new ProviderRequestError('timeout', true);
+  if (response.status === 429) return new ProviderRequestError('rate_limit', true);
+  if (response.status === 404) return new ProviderRequestError('unavailable_model', false);
+  if (response.status >= 500) return new ProviderRequestError('provider_5xx', true);
+  if (response.status !== 400) return new ProviderRequestError('unknown', false);
 
   try {
     const body = (await response.text()).toLowerCase();
-    return body.includes('model is busy')
+    const busy = body.includes('model is busy')
       || body.includes('try again later')
       || body.includes('temporarily unavailable')
       || body.includes('overloaded');
+    return new ProviderRequestError(busy ? 'busy' : 'unknown', busy);
   } catch {
-    return false;
+    return new ProviderRequestError('unknown', false);
   }
 }
 
@@ -147,21 +168,32 @@ export class FeatherlessProvider implements AiProvider {
   readonly #options: FeatherlessProviderOptions;
   readonly #fetch: typeof fetch;
   readonly #delay: (milliseconds: number) => Promise<void>;
+  readonly #router: ModelRouter;
 
   constructor(options: FeatherlessProviderOptions) {
     this.#options = options;
     this.#fetch = options.fetchImplementation ?? fetch;
     this.#delay = options.delay ?? defaultDelay;
+    this.#router = new ModelRouter({
+      guideModel: options.model,
+      guideFallbackModel: options.guideFallbackModel,
+      reasoningModel: options.reasoningModel,
+      visionModels: options.visionModels,
+      fastModel: options.fastModel,
+      embeddingModel: options.embeddingModel,
+      learningGeneratorModel: options.learningGeneratorModel,
+      learningJudgeModels: options.learningJudgeModels,
+    });
   }
 
   async decideNextAction(request: GuideRequest): Promise<unknown> {
-    const models = request.screenshot ? this.#options.visionModels : [this.#options.model];
+    const models = request.screenshot ? this.#router.vision() : this.#router.guide();
     for (const model of models) {
       try {
         const nativeUiTars = Boolean(request.screenshot) && isUiTarsModel(model);
         const responseAttempts = nativeUiTars ? 1 : 2;
         for (let responseAttempt = 0; responseAttempt < responseAttempts; responseAttempt += 1) {
-          const retryLimit = model === models.at(-1) ? this.#options.maxRetries : 0;
+          const retryLimit = this.#options.maxRetries;
           const content = await this.#requestCompletion(
             request,
             responseAttempt === 1,
@@ -196,11 +228,12 @@ export class FeatherlessProvider implements AiProvider {
         }
       } catch (error) {
         if (model === models.at(-1)) throw error;
-        this.#log(`model_unavailable model=${model} trying_fallback=true`);
+        const category = error instanceof ProviderRequestError ? error.category : 'unknown';
+        this.#log(`model_failed model=${model} category=${category} fallback_used=true`);
       }
     }
 
-    throw new ProviderRequestError(false);
+    throw new ProviderRequestError('malformed_output', false);
   }
 
   async #requestCompletion(
@@ -225,6 +258,7 @@ export class FeatherlessProvider implements AiProvider {
             'Content-Type': 'application/json',
             'HTTP-Referer': 'https://github.com/rudwndgus/ShowWhere',
             'X-Title': 'ShowWhere',
+            'User-Agent': 'ShowWhere/0.2',
           },
           body: JSON.stringify({
             model,
@@ -244,18 +278,22 @@ export class FeatherlessProvider implements AiProvider {
         });
 
         if (!response.ok) {
-          throw new ProviderRequestError(await isRetryableProviderResponse(response));
+          throw await classifyProviderResponse(response);
         }
 
         const body = completionResponseSchema.safeParse(await response.json());
-        if (!body.success) throw new ProviderRequestError(false);
+        if (!body.success) throw new ProviderRequestError('malformed_output', false);
         this.#log(`completed model=${model} attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)}`);
         return body.data.choices[0].message.content;
       } catch (error) {
-        const retryable = error instanceof ProviderRequestError ? error.retryable : true;
-        this.#log(`failed attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)} retryable=${retryable}`);
+        const aborted = controller.signal.aborted;
+        const category: ProviderErrorCategory = aborted
+          ? 'timeout'
+          : error instanceof ProviderRequestError ? error.category : 'network';
+        const retryable = aborted || (error instanceof ProviderRequestError ? error.retryable : true);
+        this.#log(`failed model=${model} attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)} category=${category} retryable=${retryable}`);
         if (!retryable || attempt >= retryLimit) {
-          throw new ProviderRequestError(false);
+          throw new ProviderRequestError(category, false);
         }
         await this.#delay(this.#options.retryBaseDelayMs * (2 ** attempt));
       } finally {
@@ -263,11 +301,11 @@ export class FeatherlessProvider implements AiProvider {
       }
     }
 
-    throw new ProviderRequestError(false);
+    throw new ProviderRequestError('unknown', false);
   }
 
   #log(message: string): void {
     if (!this.#options.debug) return;
-    console.log(`[showwhere:ai] model=${this.#options.model} ${message}`);
+    console.log(`[showwhere:ai] ${message}`);
   }
 }
