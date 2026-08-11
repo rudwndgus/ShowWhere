@@ -14,6 +14,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
 {
     private readonly IWindowsUiObserver _observer;
     private readonly IWindowsChangeMonitor _changeMonitor;
+    private readonly IWindowsScreenCaptureService _screenCapture;
     private readonly IGuideApiClient _apiClient;
     private readonly IHighlightOverlay _overlay;
     private readonly Action _exit;
@@ -31,12 +32,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public GuidanceViewModel(
         IWindowsUiObserver observer,
         IWindowsChangeMonitor changeMonitor,
+        IWindowsScreenCaptureService screenCapture,
         IGuideApiClient apiClient,
         IHighlightOverlay overlay,
         Action exit)
     {
         _observer = observer;
         _changeMonitor = changeMonitor;
+        _screenCapture = screenCapture;
         _apiClient = apiClient;
         _overlay = overlay;
         _exit = exit;
@@ -230,16 +233,21 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                                 localDecision = ContractValidator.ValidateDecision(fastDecision, request);
                         }
 
-                        decision = localDecision ?? new GuideDecision(
-                            GuideStatuses.NeedsClarification,
-                            GuideActions.AskUser,
-                            "Windows 메뉴에서 다음 항목을 아직 읽지 못했어요. 시작 메뉴나 설정 창을 열린 상태로 두고 ‘찾을 수 없어요’를 눌러주시겠어요?",
-                            0);
+                        if (localDecision is not null)
+                        {
+                            decision = localDecision;
+                        }
+                        else
+                        {
+                            (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
+                        }
                     }
                     else
                     {
                         StatusText = $"후보 {prioritizedCandidates.Count}개 AI 분석 중";
                         decision = await _apiClient.DecideNextActionAsync(request, cancellationToken);
+                        if (decision.Action == GuideActions.RequestVision)
+                            (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
                     }
                 }
                 pendingMessage.Text = decision.Message;
@@ -253,8 +261,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         .Select(id => prioritizedCandidates.FirstOrDefault(candidate => candidate.Id == id))
                         .Where(candidate => candidate is not null)
                         .Select(candidate => new ClarificationChoiceItem(
-                            candidate!.Label ?? candidate.Description ?? candidate.Role,
-                            TargetId: candidate.Id))
+                            DescribeClarificationChoice(candidate!),
+                            TargetId: candidate!.Id))
                         .ToArray();
                     if (choices.Length >= 2)
                     {
@@ -277,15 +285,40 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     return;
                 }
 
-                if (decision.Action == GuideActions.Highlight && decision.TargetId is not null)
+                if ((decision.Action == GuideActions.Highlight && decision.TargetId is not null)
+                    || (decision.Action == GuideActions.HighlightVisual && decision.VisualTarget is not null))
                 {
-                    var selectedCandidate = currentObservation.Candidates.FirstOrDefault(candidate =>
-                        string.Equals(candidate.Id, decision.TargetId, StringComparison.Ordinal));
-                    if (!currentObservation.Registry.TryResolveState(
-                            decision.TargetId,
-                            out var bounds,
-                            out var isOffscreen))
-                        throw new ContractValidationException("The selected Windows element is stale.");
+                    DesktopDiagnostics.WriteEvent(
+                        "highlight_decision",
+                        ("action", decision.Action),
+                        ("confidence", decision.Confidence));
+                    UiCandidate? selectedCandidate = null;
+                    UiBounds bounds;
+                    var isOffscreen = false;
+                    var selectedLabel = decision.VisualTarget?.Label ?? decision.TargetId ?? "화면 항목";
+                    if (decision.Action == GuideActions.HighlightVisual)
+                    {
+                        if (request.ScreenshotBounds is null || decision.VisualTarget is null)
+                            throw new ContractValidationException("The visual target has no screenshot bounds.");
+                        bounds = MapVisualTarget(request.ScreenshotBounds, decision.VisualTarget);
+                        DesktopDiagnostics.WriteEvent(
+                            "visual_target_mapped",
+                            ("x", Math.Round(bounds.X)),
+                            ("y", Math.Round(bounds.Y)),
+                            ("width", Math.Round(bounds.Width)),
+                            ("height", Math.Round(bounds.Height)));
+                    }
+                    else
+                    {
+                        selectedCandidate = currentObservation.Candidates.FirstOrDefault(candidate =>
+                            string.Equals(candidate.Id, decision.TargetId, StringComparison.Ordinal));
+                        if (!currentObservation.Registry.TryResolveState(
+                                decision.TargetId!,
+                                out bounds,
+                                out isOffscreen))
+                            throw new ContractValidationException("The selected Windows element is stale.");
+                        selectedLabel = selectedCandidate?.Label ?? decision.TargetId!;
+                    }
                     _session = TaskSessionStateMachine.GuidanceReady(_session, decision.Message, decision.ExpectedChange);
                     if (isOffscreen)
                     {
@@ -294,7 +327,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                             ? "아래로 스크롤해 주세요"
                             : "위로 스크롤해 주세요";
                         var visibleBounds = await currentObservation.Registry.WaitForVisibleBoundsAsync(
-                            decision.TargetId,
+                            decision.TargetId!,
                             TimeSpan.FromSeconds(60),
                             cancellationToken);
                         if (visibleBounds is null)
@@ -310,6 +343,12 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     else
                     {
                         _overlay.ShowTarget(bounds, decision.Message);
+                        DesktopDiagnostics.WriteEvent(
+                            "overlay_show_target",
+                            ("x", Math.Round(bounds.X)),
+                            ("y", Math.Round(bounds.Y)),
+                            ("width", Math.Round(bounds.Width)),
+                            ("height", Math.Round(bounds.Height)));
                         TargetHighlighted?.Invoke(bounds);
                     }
                     StatusText = "표시된 위치에서 직접 작업해 주세요";
@@ -326,7 +365,6 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         return;
                     }
                     _overlay.Clear();
-                    var selectedLabel = selectedCandidate?.Label ?? decision.TargetId;
                     _session = TaskSessionStateMachine.StepCompleted(
                         _session,
                         $"사용자가 '{selectedLabel}' 컨트롤을 클릭함. 이전 안내: {decision.Message}");
@@ -393,6 +431,54 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             IsLoading = false;
             RaiseCommandStates();
         }
+    }
+
+    private async Task<(GuideDecision Decision, GuideRequest Request)> RequestVisionDecisionAsync(
+        GuideRequest request,
+        CancellationToken cancellationToken)
+    {
+        _overlay.Clear();
+        StatusText = "화면을 보고 정확한 위치를 찾는 중";
+        var capture = await _screenCapture.CaptureAsync(cancellationToken);
+        var visionRequest = request with
+        {
+            // Reaching this path means UI Automation did not find the requested
+            // control. Do not let a generic candidate such as Search distract the
+            // vision model from a more direct control that is visible in pixels.
+            Candidates = [],
+            Screenshot = capture.DataUrl,
+            ScreenshotBounds = capture.Bounds,
+        };
+        var decision = await _apiClient.DecideNextActionAsync(visionRequest, cancellationToken);
+        return (decision, visionRequest);
+    }
+
+    private static UiBounds MapVisualTarget(UiBounds screenshotBounds, VisualTarget target)
+    {
+        var width = Math.Min(screenshotBounds.Width, Math.Max(8, target.Width * screenshotBounds.Width));
+        var height = Math.Min(screenshotBounds.Height, Math.Max(8, target.Height * screenshotBounds.Height));
+        var x = Math.Clamp(
+            screenshotBounds.X + target.X * screenshotBounds.Width,
+            screenshotBounds.X,
+            screenshotBounds.X + screenshotBounds.Width - width);
+        var y = Math.Clamp(
+            screenshotBounds.Y + target.Y * screenshotBounds.Height,
+            screenshotBounds.Y,
+            screenshotBounds.Y + screenshotBounds.Height - height);
+        return new UiBounds(x, y, width, height);
+    }
+
+    private static string DescribeClarificationChoice(UiCandidate candidate)
+    {
+        var label = candidate.Label ?? candidate.Description ?? candidate.Role;
+        if (candidate.Attributes?.TryGetValue("sourceScope", out var scopeValue) != true)
+            return label;
+        return Convert.ToString(scopeValue) switch
+        {
+            "browser_content" => $"웹사이트 안의 {label}",
+            "browser_chrome" => $"브라우저 주소창의 {label}",
+            _ => label,
+        };
     }
 
     private void CancelCurrentTask()

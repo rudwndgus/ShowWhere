@@ -121,6 +121,30 @@ public sealed class WindowsFastPathResolverTests
         Assert.Contains("눌러보시겠어요", decision.Message);
     }
 
+    [Fact]
+    public void Printer_goal_ignores_an_occluded_settings_window_and_uses_visible_start()
+    {
+        var request = Request("프린터 연결은 어디서 확인해?", [
+            Candidate("hidden-settings", "Settings", "SystemSettings", "windows_window_overview", false),
+            Candidate("start", "Start", "explorer", "windows_taskbar", true),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("start", decision.TargetId);
+    }
+
+    [Fact]
+    public void Printer_goal_ignores_offscreen_start_duplicates()
+    {
+        var request = Request("프린터 연결은 어디서 확인해?", [
+            Candidate("offscreen-start", "Start", "explorer", "windows_taskbar", false),
+            Candidate("visible-start", "Start", "explorer", "windows_taskbar", true),
+        ]);
+
+        Assert.True(WindowsFastPathResolver.TryResolve(request, out var decision));
+        Assert.Equal("visible-start", decision.TargetId);
+    }
+
     [Theory]
     [InlineData("settings", "Settings", "start")]
     [InlineData("devices", "Bluetooth & devices", "settings")]
@@ -279,16 +303,6 @@ public sealed class WindowsFastPathResolverTests
         Assert.False(WindowsFastPathResolver.TryResolve(request, out _));
     }
 
-    [Fact]
-    public void Browser_requests_never_use_the_windows_fast_path()
-    {
-        var request = Request("인터넷 상태 확인", [
-            Candidate("network", "Network Internet access", "explorer", "windows_taskbar"),
-        ]) with { Context = new ApplicationContext(Platforms.Browser, "chrome") };
-
-        Assert.False(WindowsFastPathResolver.TryResolve(request, out _));
-    }
-
     private static GuideRequest Request(
         string goal,
         IReadOnlyList<UiCandidate> candidates,
@@ -297,10 +311,16 @@ public sealed class WindowsFastPathResolverTests
         new ApplicationContext(Platforms.Windows, "explorer"),
         candidates);
 
-    private static UiCandidate Candidate(string id, string label, string processName, string? scope = null)
+    private static UiCandidate Candidate(
+        string id,
+        string label,
+        string processName,
+        string? scope = null,
+        bool? inViewport = null)
     {
         var attributes = new Dictionary<string, object?> { ["processName"] = processName };
         if (scope is not null) attributes["sourceScope"] = scope;
+        if (inViewport is not null) attributes["inViewport"] = inViewport.Value;
         return new UiCandidate(
             id,
             label,

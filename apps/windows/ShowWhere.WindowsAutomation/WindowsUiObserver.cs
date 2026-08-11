@@ -9,6 +9,7 @@ namespace ShowWhere.WindowsAutomation;
 public sealed class WindowsUiObserver : IWindowsUiObserver
 {
     private const uint GwHwndNext = 2;
+    private const uint GaRoot = 2;
     private const int MaximumTreeNodes = 1_500;
     private const int MaximumForegroundCandidates = 100;
     private const int ReservedTaskbarCandidates = 30;
@@ -76,30 +77,32 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         var overviewCandidates = CandidateNormalizer.Normalize(overviewRaw, ReservedWindowOverviewCandidates)
             .Select(MarkAsWindowOverviewCandidate)
             .ToArray();
-        IReadOnlyList<NormalizedAutomationCandidate> taskbarCandidates = [];
+        var taskbarRawCandidates = new List<RawAutomationCandidate>();
 
-        var taskbarHandle = FindWindow("Shell_TrayWnd", null);
-        if (taskbarHandle != IntPtr.Zero && taskbarHandle != windowHandle && IsExternalWindow(taskbarHandle))
+        foreach (var taskbarHandle in FindTaskbarWindows())
         {
+            if (taskbarHandle == windowHandle || !IsExternalWindow(taskbarHandle)) continue;
             try
             {
                 var taskbarRoot = AutomationElement.FromHandle(taskbarHandle);
                 roots.Add(taskbarRoot);
                 var taskbarProcessName = GetProcessName(taskbarRoot);
-                var taskbarRaw = CollectRawCandidates(
+                taskbarRawCandidates.AddRange(CollectRawCandidates(
                     taskbarRoot,
                     taskbarProcessName,
                     elementsBySource,
-                    cancellationToken);
-                taskbarCandidates = CandidateNormalizer.Normalize(taskbarRaw, ReservedTaskbarCandidates)
-                    .Select(MarkAsTaskbarCandidate)
-                    .ToArray();
+                    cancellationToken));
             }
             catch (ElementNotAvailableException) { }
             catch (InvalidOperationException) { }
             catch (ArgumentException) { }
             catch (COMException) { }
         }
+        var taskbarCandidates = CandidateNormalizer.Normalize(
+                taskbarRawCandidates,
+                ReservedTaskbarCandidates)
+            .Select(MarkAsTaskbarCandidate)
+            .ToArray();
 
         var globalCandidates = overviewCandidates.Concat(taskbarCandidates).ToArray();
         var normalized = CandidateNormalizer.MergeWithReservedSecondaryScope(
@@ -140,7 +143,8 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         {
             if (result.Count >= 40) return false;
             cancellationToken.ThrowIfCancellationRequested();
-            if (!IsExternalWindow(handle) || GetWindow(handle, 4) != IntPtr.Zero) return true;
+            if (!IsExternalWindow(handle) || GetWindow(handle, 4) != IntPtr.Zero
+                || IsIconic(handle) || IsCloaked(handle)) return true;
             try
             {
                 var element = AutomationElement.FromHandle(handle);
@@ -148,6 +152,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                 var rectangle = Read(() => element.Current.BoundingRectangle);
                 if (string.IsNullOrWhiteSpace(title) || rectangle.IsEmpty
                     || rectangle.Width < 120 || rectangle.Height < 80) return true;
+                if (!IsTitleBarFullyVisible(handle, rectangle)) return true;
                 var sourceKey = GetSourceKey(element);
                 if (string.IsNullOrEmpty(sourceKey)) return true;
                 var processName = GetProcessName(element);
@@ -178,6 +183,45 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         return result;
     }
 
+    private static IReadOnlyList<IntPtr> FindTaskbarWindows()
+    {
+        var result = new List<IntPtr>();
+        _ = EnumWindows((handle, _) =>
+        {
+            var className = new char[256];
+            var length = GetClassName(handle, className, className.Length);
+            if (length <= 0) return true;
+            var value = new string(className, 0, length);
+            if (value is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") result.Add(handle);
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+
+    private static bool IsTitleBarFullyVisible(IntPtr windowHandle, System.Windows.Rect rectangle)
+    {
+        var inset = Math.Min(16d, rectangle.Width / 10);
+        var left = rectangle.Left + inset;
+        var right = rectangle.Right - inset;
+        var y = rectangle.Top + Math.Min(24d, Math.Max(4d, rectangle.Height / 4));
+        var samplePoints = new[]
+        {
+            left,
+            left + (right - left) * 0.25,
+            left + (right - left) * 0.5,
+            left + (right - left) * 0.75,
+            right,
+        };
+
+        foreach (var x in samplePoints)
+        {
+            var point = new NativePoint((int)Math.Round(x), (int)Math.Round(y));
+            var hit = WindowFromPoint(point);
+            if (hit == IntPtr.Zero || GetAncestor(hit, GaRoot) != windowHandle) return false;
+        }
+        return true;
+    }
+
     private List<RawAutomationCandidate> CollectRawCandidates(
         AutomationElement root,
         string processName,
@@ -203,9 +247,11 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                 if (string.IsNullOrEmpty(sourceKey)) continue;
                 var role = MapRole(target.Current.ControlType);
                 var rectangle = target.Current.BoundingRectangle;
-                var isOffscreen = target.Current.IsOffscreen;
+                var bounds = new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
+                var isOffscreen = target.Current.IsOffscreen || !WindowsScreenGeometry.ContainsCenter(bounds);
                 var visible = !rectangle.IsEmpty;
                 var clickable = IsActionable(target, role);
+                var candidateScope = ClassifyCandidateScope(target, walker, processName);
                 elementsBySource[sourceKey] = target;
                 result.Add(new RawAutomationCandidate(
                     sourceKey,
@@ -216,13 +262,15 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                     target.Current.IsEnabled,
                     visible,
                     clickable,
-                    new UiBounds(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height),
+                    bounds,
                     Read(() => target.Current.IsPassword),
                     Read(() => target.Current.AutomationId),
                     Read(() => target.Current.ClassName),
                     Read(() => target.Current.ControlType?.ProgrammaticName),
                     processName,
-                    isOffscreen));
+                    isOffscreen,
+                    candidateScope.SourceScope,
+                    candidateScope.ContainerLabel));
             }
             catch (ElementNotAvailableException) { }
             catch (InvalidOperationException) { }
@@ -231,6 +279,28 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         }
 
         return result;
+    }
+
+    private static BrowserCandidateScope ClassifyCandidateScope(
+        AutomationElement element,
+        TreeWalker walker,
+        string processName)
+    {
+        var descriptors = new List<AutomationScopeDescriptor>();
+        var current = element;
+        for (var depth = 0; depth < 16 && current is not null; depth++)
+        {
+            var role = MapRole(Read(() => current.Current.ControlType));
+            descriptors.Add(new AutomationScopeDescriptor(
+                role,
+                Read(() => current.Current.ClassName),
+                Read(() => current.Current.Name)));
+            try { current = walker.GetParent(current); }
+            catch (ElementNotAvailableException) { break; }
+            catch (InvalidOperationException) { break; }
+            catch (COMException) { break; }
+        }
+        return BrowserCandidateScopeClassifier.Classify(processName, descriptors);
     }
 
     private AutomationElement? ResolveClickableElement(AutomationElement element, TreeWalker walker)
@@ -439,6 +509,13 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
 
     private delegate bool EnumWindowsCallback(IntPtr windowHandle, IntPtr parameter);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativePoint(int x, int y)
+    {
+        public readonly int X = x;
+        public readonly int Y = y;
+    }
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
@@ -450,7 +527,17 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
     private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr FindWindow(string? className, string? windowName);
+    private static extern int GetClassName(IntPtr windowHandle, [Out] char[] className, int maximumCount);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr windowHandle, uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr windowHandle);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

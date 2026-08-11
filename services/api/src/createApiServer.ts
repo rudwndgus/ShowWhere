@@ -26,38 +26,10 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(JSON.stringify(body));
 }
 
-function setCorsHeaders(
-  request: IncomingMessage,
-  response: ServerResponse,
-  allowedOrigins: ReadonlySet<string>,
-): boolean {
-  const origin = request.headers.origin;
-  if (!origin) return true;
-  if (!allowedOrigins.has(origin)) return false;
-
-  response.setHeader('Access-Control-Allow-Origin', origin);
-  response.setHeader('Vary', 'Origin');
-  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  response.setHeader('Access-Control-Max-Age', '600');
-  return true;
-}
-
 export function createApiServer(config: ApiConfig, provider: AiProvider) {
   return createServer(async (request, response) => {
     const requestStartedAt = performance.now();
-    if (!setCorsHeaders(request, response, config.allowedOrigins)) {
-      sendJson(response, 403, { message: '요청이 허용되지 않았어요.' });
-      return;
-    }
-
     const url = new URL(request.url ?? '/', 'http://localhost');
-    if (request.method === 'OPTIONS' && url.pathname === GUIDE_API_PATH) {
-      response.writeHead(204);
-      response.end();
-      return;
-    }
-
     if (request.method !== 'POST' || url.pathname !== GUIDE_API_PATH) {
       sendJson(response, 404, { message: '안내 경로를 찾을 수 없어요.' });
       return;

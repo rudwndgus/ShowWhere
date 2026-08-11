@@ -20,9 +20,10 @@ public partial class App : Application
         _httpClient = new HttpClient();
         var observer = new WindowsUiObserver();
         var monitor = new WindowsChangeMonitor(observer);
+        var screenCapture = new WindowsScreenCaptureService();
         _overlay = new HighlightOverlayWindow();
         var apiClient = new GuideApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
-        var viewModel = new GuidanceViewModel(observer, monitor, apiClient, _overlay, Shutdown);
+        var viewModel = new GuidanceViewModel(observer, monitor, screenCapture, apiClient, _overlay, Shutdown);
         _panel = new GuidancePanelWindow { DataContext = viewModel };
         _panel.Deactivated += (_, _) => _panel.Dispatcher.BeginInvoke(
             observer.RememberCurrentForegroundWindow,

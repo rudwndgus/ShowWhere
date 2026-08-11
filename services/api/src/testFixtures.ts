@@ -12,9 +12,9 @@ export const guideRequestFixture: GuideRequest = {
     failureCount: 0,
   },
   context: {
-    platform: 'browser',
-    applicationName: 'Example',
-    url: 'https://example.com/',
+    platform: 'windows',
+    applicationName: 'SystemSettings',
+    windowTitle: 'Settings',
   },
   candidates: [{
     id: 'candidate-settings',

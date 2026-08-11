@@ -12,6 +12,7 @@ public static class ContractValidator
     private static readonly HashSet<string> AllowedActions =
     [
         GuideActions.Highlight,
+        GuideActions.HighlightVisual,
         GuideActions.AskUser,
         GuideActions.Explain,
         GuideActions.RequestNewObservation,
@@ -30,7 +31,7 @@ public static class ContractValidator
     public static void Validate(GuideRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.Context.Platform is not (Platforms.Browser or Platforms.Windows or Platforms.Android))
+        if (request.Context.Platform != Platforms.Windows)
             throw new ContractValidationException("Unsupported application platform.");
         if (string.IsNullOrWhiteSpace(request.Context.ApplicationName) || request.Context.ApplicationName.Length > 300)
             throw new ContractValidationException("Application name is invalid.");
@@ -42,6 +43,8 @@ public static class ContractValidator
             throw new ContractValidationException("Too many UI candidates.");
         if (request.Screenshot?.Length > 8_000_000)
             throw new ContractValidationException("Screenshot payload is too large.");
+        if ((request.Screenshot is null) != (request.ScreenshotBounds is null))
+            throw new ContractValidationException("Screenshot data and bounds must be supplied together.");
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var candidate in request.Candidates)
@@ -83,6 +86,23 @@ public static class ContractValidator
                     "어느 항목인지 확실하지 않아요. 화면에 보이는 이름을 조금 더 알려주세요.",
                     0);
             }
+        }
+        if (decision.Action == GuideActions.HighlightVisual)
+        {
+            var target = decision.VisualTarget;
+            if (request.Screenshot is null || request.ScreenshotBounds is null || target is null
+                || !double.IsFinite(target.X) || !double.IsFinite(target.Y)
+                || !double.IsFinite(target.Width) || !double.IsFinite(target.Height)
+                || target.X < 0 || target.Y < 0 || target.Width < 0.005 || target.Height < 0.005
+                || target.X + target.Width > 1 || target.Y + target.Height > 1
+                || string.IsNullOrWhiteSpace(target.Label))
+                throw new ContractValidationException("Visual target is invalid or has no matching screenshot.");
+            if (decision.Confidence < confidenceThreshold)
+                return new GuideDecision(
+                    GuideStatuses.NeedsClarification,
+                    GuideActions.AskUser,
+                    "화면에서 정확한 위치를 확신할 수 없어요. 원하는 항목의 이름을 조금 더 알려주세요.",
+                    0);
         }
         if (decision.Action == GuideActions.RequestSafeTool && string.IsNullOrWhiteSpace(decision.SafeToolId))
             throw new ContractValidationException("Safe tool decision did not include a tool ID.");

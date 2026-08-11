@@ -20,7 +20,9 @@ public sealed record RawAutomationCandidate(
     string? ClassName,
     string? ControlType,
     string? ProcessName,
-    bool IsOffscreen = false);
+    bool IsOffscreen = false,
+    string? SourceScope = null,
+    string? ContainerLabel = null);
 
 public sealed record NormalizedAutomationCandidate(UiCandidate Candidate, string SourceKey);
 
@@ -69,6 +71,8 @@ public static class CandidateNormalizer
             AddAttribute(attributes, "className", raw.ClassName);
             AddAttribute(attributes, "controlType", raw.ControlType);
             AddAttribute(attributes, "processName", raw.ProcessName);
+            AddAttribute(attributes, "sourceScope", raw.SourceScope);
+            AddAttribute(attributes, "containerLabel", raw.ContainerLabel);
             attributes["inViewport"] = !raw.IsOffscreen;
             if (raw.IsPassword) attributes["isPassword"] = true;
 

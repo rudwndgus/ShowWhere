@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GuideDecisionSchema, type GuideRequest } from '../../../../src/contracts';
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import { createGuideMessages } from './guidePrompt';
+import { createUiTarsMessages, isUiTarsModel, parseUiTarsDecision } from './uiTarsAdapter';
 
 const completionResponseSchema = z.object({
   choices: z.array(z.object({
@@ -15,6 +16,7 @@ export interface FeatherlessProviderOptions {
   apiKey: string;
   baseUrl: string;
   model: string;
+  visionModels: readonly string[];
   requestTimeoutMs: number;
   maxRetries: number;
   retryBaseDelayMs: number;
@@ -67,6 +69,76 @@ function parseJsonObject(content: string): unknown {
   }
 }
 
+function applySafeDecisionDefaults(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const decision = { ...(value as Record<string, unknown>) };
+  const rawVisualTarget = decision.visualTarget;
+  for (const field of ['targetId', 'visualTarget', 'safeToolId', 'alternativeTargetIds', 'expectedChange']) {
+    if (decision[field] === null) delete decision[field];
+  }
+  const normalizedVisualTarget = normalizeVisualTarget(rawVisualTarget);
+  const confidence = Number(decision.confidence);
+  const hasAlternatives = Array.isArray(decision.alternativeTargetIds)
+    && decision.alternativeTargetIds.length >= 2;
+  if (decision.action === 'ask_user'
+      && normalizedVisualTarget
+      && !hasAlternatives
+      && (!Number.isFinite(confidence) || confidence >= 0.65)) {
+    decision.status = 'in_progress';
+    decision.action = 'highlight_visual';
+    decision.visualTarget = normalizedVisualTarget;
+    decision.confidence = Number.isFinite(confidence) ? confidence : 0.72;
+  }
+  if (decision.confidence === undefined
+      && ['ask_user', 'explain', 'request_new_observation', 'request_vision'].includes(String(decision.action))) {
+    decision.confidence = 0;
+  }
+  if (decision.action !== 'highlight') delete decision.targetId;
+  if (decision.action !== 'highlight_visual') delete decision.visualTarget;
+  if (decision.action !== 'request_safe_tool') delete decision.safeToolId;
+  if (decision.action !== 'ask_user') delete decision.alternativeTargetIds;
+  if (decision.alternativeTargetIds !== undefined
+      && (!Array.isArray(decision.alternativeTargetIds)
+        || decision.alternativeTargetIds.length < 2
+        || decision.alternativeTargetIds.length > 4)) {
+    delete decision.alternativeTargetIds;
+  }
+  if (decision.expectedChange !== undefined && typeof decision.expectedChange !== 'string') {
+    delete decision.expectedChange;
+  }
+  if (decision.action === 'highlight_visual'
+      && normalizedVisualTarget) decision.visualTarget = normalizedVisualTarget;
+  return decision;
+}
+
+function normalizeVisualTarget(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  let x = Number(source.x);
+  let y = Number(source.y);
+  let width = Number(source.width);
+  let height = Number(source.height);
+  const label = typeof source.label === 'string' ? source.label.trim() : '';
+  if (![x, y, width, height].every(Number.isFinite) || !label || x < 0 || y < 0 || x > 1 || y > 1) {
+    return undefined;
+  }
+
+  if (width < 0.005) {
+    width = 0.03;
+    x = Math.max(0, Math.min(1 - width, x - width / 2));
+  } else {
+    width = Math.min(width, 1 - x);
+  }
+  if (height < 0.005) {
+    height = 0.04;
+    y = Math.max(0, Math.min(1 - height, y - height / 2));
+  } else {
+    height = Math.min(height, 1 - y);
+  }
+  if (width < 0.005 || height < 0.005) return undefined;
+  return { x, y, width, height, label };
+}
+
 function defaultDelay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -83,19 +155,64 @@ export class FeatherlessProvider implements AiProvider {
   }
 
   async decideNextAction(request: GuideRequest): Promise<unknown> {
-    for (let responseAttempt = 0; responseAttempt < 2; responseAttempt += 1) {
-      const content = await this.#requestCompletion(request, responseAttempt === 1);
-      const parsed = GuideDecisionSchema.safeParse(parseJsonObject(content));
-      if (parsed.success) return parsed.data;
+    const models = request.screenshot ? this.#options.visionModels : [this.#options.model];
+    for (const model of models) {
+      try {
+        const nativeUiTars = Boolean(request.screenshot) && isUiTarsModel(model);
+        const responseAttempts = nativeUiTars ? 1 : 2;
+        for (let responseAttempt = 0; responseAttempt < responseAttempts; responseAttempt += 1) {
+          const retryLimit = model === models.at(-1) ? this.#options.maxRetries : 0;
+          const content = await this.#requestCompletion(
+            request,
+            responseAttempt === 1,
+            model,
+            retryLimit,
+            nativeUiTars,
+          );
+          if (nativeUiTars) {
+            const nativeDecision = parseUiTarsDecision(content, request);
+            if (nativeDecision) {
+              this.#log(`native_grounding model=${model} action=${nativeDecision.action}`);
+              return nativeDecision;
+            }
+            this.#log(`native_grounding_invalid model=${model} trying_fallback=${model !== models.at(-1)}`);
+            break;
+          }
+          const normalized = applySafeDecisionDefaults(parseJsonObject(content));
+          const parsed = GuideDecisionSchema.safeParse(normalized);
+          if (parsed.success) {
+            const isInconclusiveVisionDecision = request.screenshot
+              && ['ask_user', 'request_vision', 'request_new_observation'].includes(parsed.data.action);
+            if (isInconclusiveVisionDecision && model !== models.at(-1)) {
+              this.#log(`vision_inconclusive model=${model} action=${parsed.data.action} trying_fallback=true`);
+              break;
+            }
+            return parsed.data;
+          }
+          const action = normalized && typeof normalized === 'object' && !Array.isArray(normalized)
+            ? String((normalized as Record<string, unknown>).action ?? 'missing')
+            : 'missing';
+          this.#log(`invalid_decision model=${model} action=${action} issues=${parsed.error.issues.map((issue) => issue.path.join('.') || 'root').join(',')}`);
+        }
+      } catch (error) {
+        if (model === models.at(-1)) throw error;
+        this.#log(`model_unavailable model=${model} trying_fallback=true`);
+      }
     }
 
     throw new ProviderRequestError(false);
   }
 
-  async #requestCompletion(request: GuideRequest, repairMalformedResponse: boolean): Promise<string> {
+  async #requestCompletion(
+    request: GuideRequest,
+    repairMalformedResponse: boolean,
+    model: string,
+    retryLimit: number,
+    nativeUiTars: boolean,
+  ): Promise<string> {
     const endpoint = `${this.#options.baseUrl.replace(/\/$/u, '')}/chat/completions`;
 
-    for (let attempt = 0; attempt <= this.#options.maxRetries; attempt += 1) {
+    for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
       const startedAt = performance.now();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.#options.requestTimeoutMs);
@@ -110,14 +227,18 @@ export class FeatherlessProvider implements AiProvider {
             'X-Title': 'ShowWhere',
           },
           body: JSON.stringify({
-            model: this.#options.model,
-            messages: createGuideMessages(request, repairMalformedResponse),
+            model,
+            messages: nativeUiTars
+              ? createUiTarsMessages(request)
+              : createGuideMessages(request, repairMalformedResponse),
             temperature: 0,
             max_tokens: this.#options.maxTokens,
-            chat_template_kwargs: {
-              enable_thinking: this.#options.enableThinking,
-            },
-            response_format: { type: 'json_object' },
+            ...(!nativeUiTars ? {
+              chat_template_kwargs: {
+                enable_thinking: this.#options.enableThinking,
+              },
+              response_format: { type: 'json_object' },
+            } : {}),
           }),
           signal: controller.signal,
         });
@@ -128,12 +249,12 @@ export class FeatherlessProvider implements AiProvider {
 
         const body = completionResponseSchema.safeParse(await response.json());
         if (!body.success) throw new ProviderRequestError(false);
-        this.#log(`completed attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)}`);
+        this.#log(`completed model=${model} attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)}`);
         return body.data.choices[0].message.content;
       } catch (error) {
         const retryable = error instanceof ProviderRequestError ? error.retryable : true;
         this.#log(`failed attempt=${attempt + 1} duration_ms=${Math.round(performance.now() - startedAt)} retryable=${retryable}`);
-        if (!retryable || attempt >= this.#options.maxRetries) {
+        if (!retryable || attempt >= retryLimit) {
           throw new ProviderRequestError(false);
         }
         await this.#delay(this.#options.retryBaseDelayMs * (2 ** attempt));

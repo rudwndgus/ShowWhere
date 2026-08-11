@@ -39,6 +39,7 @@ public partial class FloatingAssistantWindow : Window
     {
         base.OnSourceInitialized(eventArgs);
         var handle = new WindowInteropHelper(this).Handle;
+        WindowCaptureProtection.Apply(handle);
         var style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
         _ = SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExToolWindow | WsExNoActivate));
         ConstrainToNearestMonitor(handle);

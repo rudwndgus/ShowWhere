@@ -32,9 +32,9 @@ describe('guide contracts', () => {
     const parsed = GuideRequestSchema.parse({
       session,
       context: {
-        platform: 'browser',
-        applicationName: 'example.com',
-        url: 'https://example.com/login',
+        platform: 'windows',
+        applicationName: 'SystemSettings',
+        windowTitle: 'Settings',
       },
       candidates: [candidate],
     });
@@ -49,6 +49,23 @@ describe('guide contracts', () => {
       confidence: 0.9,
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it('requires normalized visual bounds for visual highlight decisions', () => {
+    expect(GuideDecisionSchema.safeParse({
+      status: 'in_progress',
+      action: 'highlight_visual',
+      message: '설정을 누르세요.',
+      confidence: 0.9,
+      visualTarget: { x: 0.5, y: 0.2, width: 0.08, height: 0.06, label: '설정' },
+    }).success).toBe(true);
+    expect(GuideDecisionSchema.safeParse({
+      status: 'in_progress',
+      action: 'highlight_visual',
+      message: '설정을 누르세요.',
+      confidence: 0.9,
+      visualTarget: { x: 1.1, y: 0.2, width: 0.08, height: 0.06, label: '설정' },
+    }).success).toBe(false);
   });
 
   it('rejects confidence values outside zero and one', () => {
