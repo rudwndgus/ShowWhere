@@ -29,6 +29,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private string _errorMessage = string.Empty;
     private bool _isLoading;
     private bool _isPaused;
+    private bool _isDeveloperMode;
     private WindowsObservation? _clarificationObservation;
     private GuideDecision? _forcedDecision;
     private WindowsScreenCapture? _forcedVisualCapture;
@@ -90,6 +91,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         MarkAnswerCorrectCommand = new AsyncParameterRelayCommand(MarkAnswerCorrectAsync, CanEvaluateAnswer);
         MarkAnswerIncorrectCommand = new AsyncParameterRelayCommand(MarkAnswerIncorrectAsync, CanEvaluateAnswer);
         MarkTaskCompletedCommand = new AsyncParameterRelayCommand(MarkTaskCompletedAsync, CanMarkTaskCompleted);
+        ToggleDeveloperModeCommand = new RelayCommand(ToggleDeveloperMode);
         TogglePauseCommand = new RelayCommand(TogglePause);
         ExitCommand = new RelayCommand(_exit);
         Messages.Add(CreateAssistantMessage(
@@ -116,6 +118,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand MarkAnswerCorrectCommand { get; }
     public ICommand MarkAnswerIncorrectCommand { get; }
     public ICommand MarkTaskCompletedCommand { get; }
+    public ICommand ToggleDeveloperModeCommand { get; }
     public ICommand TogglePauseCommand { get; }
     public ICommand ExitCommand { get; }
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
@@ -131,6 +134,16 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public string ErrorMessage { get => _errorMessage; private set => Set(ref _errorMessage, value); }
     public bool IsLoading { get => _isLoading; private set { if (Set(ref _isLoading, value)) RaiseCommandStates(); } }
     public bool IsPaused { get => _isPaused; private set { if (Set(ref _isPaused, value)) OnPropertyChanged(nameof(PauseMenuText)); } }
+    public bool IsDeveloperMode
+    {
+        get => _isDeveloperMode;
+        private set
+        {
+            if (!Set(ref _isDeveloperMode, value)) return;
+            OnPropertyChanged(nameof(DeveloperModeButtonText));
+            RaiseCommandStates();
+        }
+    }
     public bool IsCorrectionEditorVisible
     {
         get => _isCorrectionEditorVisible;
@@ -187,6 +200,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _teachingValidationPassed;
         private set { if (Set(ref _teachingValidationPassed, value)) RaiseCommandStates(); }
     }
+    public string DeveloperModeButtonText => IsDeveloperMode ? "개발자 모드 ON" : "개발자 모드";
     public string PauseMenuText => IsPaused ? "다시 시작" : "일시 정지";
 
     private bool CanSubmit() => !IsPaused && !IsLoading && !string.IsNullOrWhiteSpace(GoalText);
@@ -686,38 +700,38 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     }
 
     private bool CanCaptureCorrection() =>
-        _session is not null && _lastObservation is not null
+        IsDeveloperMode && _session is not null && _lastObservation is not null
         && _correctionAnswer is not null && IsCorrectionEditorVisible;
 
     private bool CanSaveCorrection() =>
-        _session is not null && _correctionAnswer is not null
+        IsDeveloperMode && _session is not null && _correctionAnswer is not null
         && IsCorrectionEditorVisible
         && (_pendingCorrectionSelection is not null
             || !string.IsNullOrWhiteSpace(CorrectionIntentText)
             || !string.IsNullOrWhiteSpace(CorrectionCommentText));
 
-    private bool CanAnalyzeTeaching() => IsCorrectionEditorVisible && !IsLoading
+    private bool CanAnalyzeTeaching() => IsDeveloperMode && IsCorrectionEditorVisible && !IsLoading
         && !string.IsNullOrWhiteSpace(TeachingUserQuestion)
         && !string.IsNullOrWhiteSpace(TeachingCurrentStage)
         && !string.IsNullOrWhiteSpace(TeachingDeveloperCorrection);
 
-    private bool CanValidateTeaching() => IsCorrectionEditorVisible && !IsLoading
+    private bool CanValidateTeaching() => IsDeveloperMode && IsCorrectionEditorVisible && !IsLoading
         && !string.IsNullOrWhiteSpace(TeachingPreviewJson);
 
-    private bool CanSaveApprovedGold() => IsCorrectionEditorVisible && !IsLoading
+    private bool CanSaveApprovedGold() => IsDeveloperMode && IsCorrectionEditorVisible && !IsLoading
         && TeachingValidationPassed && !_teachingGoldSaved;
 
-    private static bool CanEvaluateAnswer(object? parameter) =>
-        parameter is ChatMessageItem { CanEvaluate: true };
+    private bool CanEvaluateAnswer(object? parameter) =>
+        IsDeveloperMode && parameter is ChatMessageItem { CanEvaluate: true };
 
     private bool CanMarkTaskCompleted(object? parameter) =>
-        parameter is ChatMessageItem { CanEvaluate: true }
+        IsDeveloperMode && parameter is ChatMessageItem { CanEvaluate: true }
         && _session is not null
         && _lastObservation is not null;
 
     private async Task MarkAnswerCorrectAsync(object? parameter)
     {
-        if (parameter is not ChatMessageItem message || !message.CanEvaluate) return;
+        if (!CanEvaluateAnswer(parameter) || parameter is not ChatMessageItem message) return;
         try
         {
             await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "correct"));
@@ -733,7 +747,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
 
     private async Task MarkAnswerIncorrectAsync(object? parameter)
     {
-        if (parameter is not ChatMessageItem message || !message.CanEvaluate) return;
+        if (!CanEvaluateAnswer(parameter) || parameter is not ChatMessageItem message) return;
         try
         {
             var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "incorrect"));
@@ -817,6 +831,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
 
     private void BeginCorrectionDraft(ChatMessageItem answer, AnswerFeedbackRecord? feedback)
     {
+        if (!IsDeveloperMode) return;
         CancelRunningWork(markCancelled: false);
         _overlay.Clear();
         _correctionAnswer = answer;
@@ -1170,6 +1185,24 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ClearClarificationChoices();
         StatusText = "작업 취소됨";
         Messages.Add(CreateAssistantMessage("assistant", "안내를 취소했어요. 새로운 목표를 입력해 주세요."));
+    }
+
+    private void ToggleDeveloperMode()
+    {
+        if (IsDeveloperMode)
+        {
+            if (IsCorrectionEditorVisible)
+            {
+                ResetCorrectionDraft();
+                TeachingEditorClosed?.Invoke();
+            }
+            IsDeveloperMode = false;
+            StatusText = "일반 사용자 모드";
+            return;
+        }
+
+        IsDeveloperMode = true;
+        StatusText = "개발자 모드 · 답변 평가와 Teaching 사용 가능";
     }
 
     private void TogglePause()

@@ -68,6 +68,11 @@
                      FontSize="11" FontWeight="Bold" />
           <TextBlock Text="무엇을 하고 싶으세요?" Foreground="{StaticResource TextBrush}"
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
+          <Button Content="{Binding DeveloperModeButtonText}"
+                  Command="{Binding ToggleDeveloperModeCommand}"
+                  HorizontalAlignment="Left" Margin="0,8,0,0" Padding="9,4"
+                  FontSize="10" Style="{StaticResource QuietButton}"
+                  ToolTip="개발자용 답변 평가, 교정, AI 라벨링과 Gold 저장 기능을 켜거나 끕니다." />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
           <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
@@ -113,7 +118,8 @@
                     <TextBlock x:Name="BubbleText" Text="{Binding Text}" TextWrapping="Wrap"
                                FontSize="13" LineHeight="19" Foreground="{StaticResource TextBrush}" />
                   </Border>
-                  <Grid Grid.Row="1" Margin="2,4,2,0">
+                  <Grid Grid.Row="1" Margin="2,4,2,0"
+                        Visibility="{Binding DataContext.IsDeveloperMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel Orientation="Horizontal"
                                 Visibility="{Binding CanEvaluate, Converter={StaticResource BooleanToVisibilityConverter}}">
                       <Button Content="O 정답" Margin="0,0,5,0" Padding="8,4" FontSize="10"
