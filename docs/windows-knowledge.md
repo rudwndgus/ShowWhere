@@ -13,6 +13,11 @@ Runtime resolution is entirely local:
 5. revalidate the candidate in the Windows client before drawing the overlay;
 6. use Hugging Face or GPT only when the local catalog cannot safely resolve the current screen.
 
+For settings navigation, the direct destination or an already visible Settings app always outranks Start,
+and Start always outranks Windows Search. Search is used only after Start has been opened and no direct Settings
+control is present in the live UI candidates. The foreground Start surface is preferred over unrelated larger shell
+surfaces so pinned Settings icons are not lost during observation.
+
 Canonical sources:
 
 - Microsoft Learn, Launch the Windows Settings app (`ms-settings:` URI reference)

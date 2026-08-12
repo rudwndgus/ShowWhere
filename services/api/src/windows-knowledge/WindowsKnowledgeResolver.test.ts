@@ -35,6 +35,31 @@ describe('Windows knowledge catalog', () => {
       candidate('start', '시작', 'windows_taskbar'), candidate('settings', '설정', 'windows_taskbar'),
     ]));
     expect(decision?.targetId).toBe('settings');
+    expect(decision?.message).toContain("'설정' 항목");
+    expect(decision?.message).not.toContain('고정됨');
+  });
+
+  it('always prefers Settings over Search when both are visible', () => {
+    const decision = resolveWindowsKnowledge(request('프린터 설정 어디야?', [
+      candidate('search', '검색 상자', 'windows_taskbar'),
+      candidate('settings', '설정 - 1개의 실행 중인 창 고정됨', 'windows_taskbar'),
+    ]));
+    expect(decision?.targetId).toBe('settings');
+  });
+
+  it('prefers Start over taskbar Search before the Start menu is opened', () => {
+    const decision = resolveWindowsKnowledge(request('프린터 설정 어디야?', [
+      candidate('search', '검색 상자', 'windows_taskbar'),
+      candidate('start', '시작', 'windows_taskbar'),
+    ]));
+    expect(decision?.targetId).toBe('start');
+  });
+
+  it('uses Search only after Start was opened and no direct Settings control exists', () => {
+    const decision = resolveWindowsKnowledge(request('프린터 설정 어디야?', [
+      candidate('search', '검색 상자', 'windows_start'),
+    ], ["사용자가 '시작' 컨트롤을 클릭함."]));
+    expect(decision?.targetId).toBe('search');
   });
 
   it('chooses the final printer row when Settings is already open', () => {

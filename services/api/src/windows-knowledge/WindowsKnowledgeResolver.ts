@@ -7,6 +7,14 @@ export interface WindowsKnowledgeMatch {
   score: number;
 }
 
+function displayLabel(value: string): string {
+  const cleaned = value
+    .replace(/\s*[-–—]\s*\d+개의?\s+실행\s+중인\s+창\s+고정됨.*$/iu, '')
+    .replace(/\s*[-–—]\s*\d+\s+running\s+windows?.*$/iu, '')
+    .trim();
+  return cleaned || value;
+}
+
 const problemPattern = /안\s*(나|돼|되|됨)|못\s|문제|오류|실패|이상|부족|not working|failed|error|cannot|can t|no internet|no sound/u;
 
 function intentScore(goal: string, entry: WindowsKnowledgeEntry): number {
@@ -45,9 +53,11 @@ function candidateMatchScore(candidate: UiCandidate, aliases: string[]): number 
   let score = 0;
   for (const aliasValue of aliases) {
     const alias = normalizeText(aliasValue);
+    const aliasMinimum = /[가-힣]/u.test(alias) ? 2 : 3;
+    const labelMinimum = /[가-힣]/u.test(label) ? 2 : 3;
     if (label === alias) score = Math.max(score, 1_000 + alias.length);
-    else if (alias.length >= 3 && label.includes(alias)) score = Math.max(score, 800 + alias.length);
-    else if (label.length >= 3 && alias.includes(label)) score = Math.max(score, 650 + label.length);
+    else if (alias.length >= aliasMinimum && label.includes(alias)) score = Math.max(score, 800 + alias.length);
+    else if (label.length >= labelMinimum && alias.includes(label)) score = Math.max(score, 650 + label.length);
     if (container === alias) score = Math.max(score, 500 + alias.length);
   }
   return score;
@@ -85,6 +95,18 @@ function nextCandidate(request: GuideRequest, entry: WindowsKnowledgeEntry): UiC
     const candidate = bestCandidate(candidates, entry.route[index]);
     if (candidate) return candidate;
   }
+  const startWasOpened = stepWasCompleted(request, ['시작', '시작 메뉴', 'start'])
+    || /startmenuexperiencehost|searchhost|start menu/u.test(normalizeText(
+      `${request.context.applicationName} ${request.context.windowTitle ?? ''}`,
+    ));
+  if (startWasOpened) {
+    // Search is a last-resort entry path only after the direct destination,
+    // Settings app, and Start controls were all absent from the live candidates.
+    return bestCandidate(candidates, [
+      '검색 상자', '검색창', '앱, 설정 및 문서 검색',
+      'Search box', 'Type here to search', 'Search for apps, settings, and documents',
+    ]);
+  }
   return undefined;
 }
 
@@ -94,7 +116,7 @@ export function resolveWindowsKnowledge(request: GuideRequest): GuideDecision | 
   if (!match) return undefined;
   const candidate = nextCandidate(request, match.entry);
   if (!candidate) return undefined;
-  const label = candidate.label ?? candidate.description ?? candidate.role;
+  const label = displayLabel(candidate.label ?? candidate.description ?? candidate.role);
   const diagnostic = match.entry.kind === 'troubleshooting'
     && match.entry.route.slice(match.entry.navigationDepth).some((step) => step.includes(label));
   return {
@@ -103,6 +125,8 @@ export function resolveWindowsKnowledge(request: GuideRequest): GuideDecision | 
     targetId: candidate.id,
     message: diagnostic
       ? `원인을 확인하려면 '${label}' 항목을 눌러주세요.`
+      : /검색|search/iu.test(label)
+        ? `'${label}'을 누른 다음 찾을 설정 이름을 입력해 주세요.`
       : `Windows에서 '${label}' 항목을 눌러주세요.`,
     expectedChange: diagnostic
       ? `${match.entry.id} 문제 해결을 위한 다음 상태를 확인합니다.`

@@ -435,6 +435,9 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
 
     private IntPtr FindVisibleTransientShellSurface()
     {
+        var foreground = GetForegroundWindow();
+        if (IsVisibleTransientShellSurface(foreground)) return foreground;
+
         var bestHandle = IntPtr.Zero;
         var bestArea = 0d;
         _ = EnumWindows((handle, parameter) =>
@@ -463,6 +466,27 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             return true;
         }, IntPtr.Zero);
         return bestHandle;
+    }
+
+    private bool IsVisibleTransientShellSurface(IntPtr handle)
+    {
+        if (!IsExternalWindow(handle) || IsCloaked(handle)) return false;
+        _ = GetWindowThreadProcessId(handle, out var processId);
+        string processName;
+        try { processName = Process.GetProcessById(processId).ProcessName; }
+        catch { return false; }
+        if (!TransientShellProcesses.Contains(processName)) return false;
+        try
+        {
+            var element = AutomationElement.FromHandle(handle);
+            var rectangle = element.Current.BoundingRectangle;
+            return !element.Current.IsOffscreen && !rectangle.IsEmpty
+                && rectangle.Width >= 240 && rectangle.Height >= 180;
+        }
+        catch (ElementNotAvailableException) { return false; }
+        catch (InvalidOperationException) { return false; }
+        catch (ArgumentException) { return false; }
+        catch (COMException) { return false; }
     }
 
     private static bool IsCloaked(IntPtr handle)

@@ -52,6 +52,8 @@ Rules:
 - Never repeat a control recorded in completedSteps unless the screen proves the previous click did not take effect.
 - First decide whether the user's goal is already complete from visible evidence. If complete: status=completed, action=explain, no target.
 - Understand the destination and scope. A website search belongs inside that website, never in the browser address bar unless the user explicitly asks for web/navigation search.
+- For Windows settings tasks, navigation priority is mandatory: (1) the final settings control if visible, (2) a visible/running Settings app or Settings icon, (3) Start, and only then (4) Windows Search. Never choose or instruct typing into Search while a direct Settings control/icon is visible anywhere in the screenshot.
+- When a direct Windows Settings icon/control is clearly visible in pixels but absent from candidates, use highlight_visual around that icon instead of choosing a Search candidate.
 - Select the most direct visible control that advances the goal. Do not select window chrome (back/minimize/maximize/close) unless explicitly requested.
 - Prefer action=highlight with a candidate targetId only when the candidate label, role, app/scope, and screenshot all agree.
 - If the right control is visible in pixels but absent/unsafe in candidates, use highlight_visual with one tight normalized box around only that clickable control.
