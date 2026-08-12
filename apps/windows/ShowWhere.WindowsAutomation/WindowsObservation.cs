@@ -31,13 +31,16 @@ internal static class WindowsScreenGeometry
 public sealed class CandidateRegistry
 {
     private readonly IReadOnlyDictionary<string, AutomationElement> _elements;
+    private readonly IReadOnlyDictionary<string, UiCandidate> _observedCandidates;
     private readonly IReadOnlySet<string> _windowTitleBarIds;
 
     internal CandidateRegistry(
         IReadOnlyDictionary<string, AutomationElement> elements,
+        IReadOnlyDictionary<string, UiCandidate> observedCandidates,
         IReadOnlySet<string>? windowTitleBarIds = null)
     {
         _elements = elements;
+        _observedCandidates = observedCandidates;
         _windowTitleBarIds = windowTitleBarIds ?? new HashSet<string>();
     }
 
@@ -51,8 +54,20 @@ public sealed class CandidateRegistry
         bounds = new UiBounds(0, 0, 0, 0);
         isOffscreen = false;
         if (!_elements.TryGetValue(candidateId, out var element)) return false;
+        if (!_observedCandidates.TryGetValue(candidateId, out var observed)) return false;
         try
         {
+            var liveName = element.Current.Name?.Trim();
+            var liveAutomationId = element.Current.AutomationId?.Trim();
+            var observedAutomationId = observed.Attributes?.TryGetValue("automationId", out var value) == true
+                ? Convert.ToString(value)?.Trim()
+                : null;
+            if (!string.IsNullOrWhiteSpace(observed.Label)
+                && !string.Equals(observed.Label.Trim(), liveName, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (!string.IsNullOrWhiteSpace(observedAutomationId)
+                && !string.Equals(observedAutomationId, liveAutomationId, StringComparison.OrdinalIgnoreCase))
+                return false;
             var rectangle = element.Current.BoundingRectangle;
             if (rectangle.IsEmpty || rectangle.Width <= 1 || rectangle.Height <= 1)
                 return false;

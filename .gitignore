@@ -33,14 +33,7 @@ Thumbs.db
 training/screenshots/
 training/exports/
 training/*.tmp
-training/evidence/screenshots/*
-!training/evidence/screenshots/.gitkeep
-training/evidence/ui-snapshots/*
-!training/evidence/ui-snapshots/.gitkeep
-training/raw/*
-!training/raw/.gitkeep
-training/drafts/*
-!training/drafts/.gitkeep
-training/legacy/v1/*.jsonl
-training/legacy/v1/*.json
-!training/legacy/v1/migration-manifest.json
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]

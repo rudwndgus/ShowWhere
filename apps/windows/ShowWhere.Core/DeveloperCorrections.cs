@@ -14,6 +14,29 @@ public sealed record CorrectionTargetSignature(
     string? SourceScope,
     string? ContainerLabel);
 
+public sealed record DeveloperLearningLabels(
+    string TaskId,
+    string StateId,
+    string TargetConcept,
+    string ExpectedNextState,
+    IReadOnlyList<string> ExpectedEvidence,
+    string OutcomeLabel,
+    string Authority = "human_gold");
+
+public sealed record DeveloperCompletionRecord(
+    int SchemaVersion,
+    string Id,
+    DateTimeOffset CreatedAtUtc,
+    string OriginalGoal,
+    string EffectiveGoal,
+    ApplicationContext Context,
+    string? SnapshotHash,
+    IReadOnlyList<string> VisibleEvidence,
+    DeveloperLearningLabels LearningLabels,
+    bool DeveloperVerified = true,
+    string? FeedbackId = null,
+    string? DeveloperComment = null);
+
 public sealed record DeveloperCorrectionRecord(
     int SchemaVersion,
     string Id,
@@ -35,7 +58,8 @@ public sealed record DeveloperCorrectionRecord(
     string? FeedbackId = null,
     string? DeveloperComment = null,
     string? RefinedComment = null,
-    IReadOnlyList<string>? IssueTags = null);
+    IReadOnlyList<string>? IssueTags = null,
+    DeveloperLearningLabels? LearningLabels = null);
 
 public sealed record AnswerFeedbackRecord(
     int SchemaVersion,
@@ -53,61 +77,204 @@ public sealed record AnswerFeedbackRecord(
     string? TargetLabel,
     UiBounds? TargetBounds);
 
-public sealed record CompletionSemanticEvidence(
-    string Label,
-    string Role,
-    string? AutomationId,
-    string? SourceScope);
-
-public sealed record DeveloperCompletionRecord(
+public sealed record DeveloperLearningStatusRecord(
     int SchemaVersion,
     string Id,
     DateTimeOffset CreatedAtUtc,
-    string OriginalGoal,
-    string EffectiveGoal,
-    ApplicationContext Context,
-    string? SnapshotHash,
-    IReadOnlyList<string> CompletedSteps,
-    IReadOnlyList<CompletionSemanticEvidence> VisibleSemantics,
-    string? CompletionMessage,
-    bool DeveloperVerified = true);
+    string FeedbackId,
+    bool Active,
+    string? Reason = null);
+
+public sealed record DeveloperLearningEditRecord(
+    int SchemaVersion,
+    string Id,
+    DateTimeOffset CreatedAtUtc,
+    string FeedbackId,
+    string Rating,
+    string Goal,
+    string Answer,
+    string? TargetLabel,
+    string? Comment);
+
+public sealed record DeveloperLearningHistoryRecord(
+    string FeedbackId,
+    DateTimeOffset CreatedAtUtc,
+    string Rating,
+    string Goal,
+    string Answer,
+    string? TargetLabel,
+    string? Comment,
+    bool Active,
+    bool HasEdits = false);
 
 public sealed record RefinedDeveloperComment(
     string Raw,
     string Normalized,
     IReadOnlyList<string> IssueTags);
 
-public static class DeveloperCorrectionApplication
+public static class DeveloperCompletionEvidence
 {
-    public static GuideDecision? CreateImmediateDecision(
-        UiCandidate? selectedCandidate,
-        VisualTarget? normalizedVisualTarget,
-        string selectedLabel)
+    private static readonly HashSet<string> GenericValues = new(StringComparer.OrdinalIgnoreCase)
     {
-        var message = $"수정한 내용을 바로 반영했어요. 표시한 '{selectedLabel}'을 눌러보세요.";
-        if (selectedCandidate is not null)
-        {
-            return new GuideDecision(
-                GuideStatuses.InProgress,
-                GuideActions.Highlight,
-                message,
-                1,
-                TargetId: selectedCandidate.Id,
-                ExpectedChange: "사용자가 수정된 대상과 상호작용합니다.");
-        }
+        "설정", "settings", "홈", "home", "뒤로", "back", "닫기", "close", "최소화", "최대화",
+        "windows", "systemsettings", "chrome", "edge", "button", "window",
+    };
 
-        if (normalizedVisualTarget is not null)
+    public static IReadOnlyList<string> Build(
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        var values = new List<string>();
+        Add(values, context.Url);
+        Add(values, context.WindowTitle);
+        foreach (var candidate in candidates.Where(item => item.Visible)
+                     .OrderBy(item => item.Bounds.Y).ThenBy(item => item.Bounds.X))
         {
-            return new GuideDecision(
-                GuideStatuses.InProgress,
-                GuideActions.HighlightVisual,
-                message,
-                1,
-                ExpectedChange: "사용자가 수정된 화면 영역과 상호작용합니다.",
-                VisualTarget: normalizedVisualTarget);
+            Add(values, candidate.Label);
+            if (values.Count >= 24) break;
         }
+        if (values.Count == 0) Add(values, context.ApplicationName, allowGeneric: true);
+        return values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
 
-        return null;
+    public static bool IsPresent(
+        string evidence,
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        if (!IsStrong(evidence)) return false;
+        var state = string.Join(' ', new[] { context.ApplicationName, context.WindowTitle, context.Url }
+            .Concat(candidates.Where(item => item.Visible).SelectMany(item => new[] { item.Label, item.Description }))
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+        return state.Contains(evidence.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void Add(List<string> values, string? value, bool allowGeneric = false)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed) || trimmed.Length < 2) return;
+        if (!allowGeneric && !IsStrong(trimmed)) return;
+        values.Add(trimmed);
+    }
+
+    private static bool IsStrong(string value) => value.Trim().Length >= 3
+        && !GenericValues.Contains(value.Trim());
+}
+
+public static class DeveloperPositiveFeedback
+{
+    public static DeveloperCorrectionRecord? Create(
+        AnswerFeedbackRecord feedback,
+        CorrectionTargetSignature? targetSignature,
+        VisualTarget? normalizedVisualTarget = null)
+    {
+        if (!string.Equals(feedback.Rating, "correct", StringComparison.OrdinalIgnoreCase)
+            || (feedback.Action != GuideActions.Highlight && feedback.Action != GuideActions.HighlightVisual)
+            || (targetSignature is null && normalizedVisualTarget is null)
+            || feedback.Context is null
+            || string.IsNullOrWhiteSpace(feedback.OriginalGoal)) return null;
+
+        var targetConcept = targetSignature?.Label
+            ?? targetSignature?.Description
+            ?? targetSignature?.AutomationId
+            ?? normalizedVisualTarget?.Label
+            ?? targetSignature?.Role
+            ?? "visual target";
+        return new DeveloperCorrectionRecord(
+            1,
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow,
+            feedback.OriginalGoal,
+            string.IsNullOrWhiteSpace(feedback.EffectiveGoal) ? feedback.OriginalGoal : feedback.EffectiveGoal,
+            null,
+            feedback.Context,
+            feedback.SnapshotHash,
+            feedback.Action,
+            feedback.TargetId,
+            feedback.TargetLabel,
+            feedback.TargetBounds,
+            feedback.TargetBounds,
+            normalizedVisualTarget,
+            targetSignature,
+            null,
+            true,
+            feedback.Id,
+            null,
+            "Developer explicitly marked this answer correct.",
+            ["positive_feedback", "human_gold"],
+            DeveloperLabeling.CreatePositiveLabels(feedback, targetConcept));
+    }
+}
+
+public static class DeveloperLabeling
+{
+    public static readonly string[] OutcomeLabels =
+    [
+        "correct_target",
+        "wrong_intent",
+        "wrong_application",
+        "wrong_scope",
+        "wrong_target",
+        "overlay_missing",
+        "missing_detail",
+        "ambiguous_request",
+        "visual_grounding_error",
+        "task_completed",
+    ];
+
+    public static DeveloperLearningLabels CreatePositiveLabels(
+        AnswerFeedbackRecord feedback,
+        string targetConcept) => new(
+            StableLabel("task", feedback.EffectiveGoal ?? feedback.OriginalGoal ?? "unknown"),
+            StableLabel("state", $"{feedback.Context?.ApplicationName}.{feedback.Context?.WindowTitle}"),
+            NormalizeConcept(targetConcept),
+            StableLabel("state", $"after.{targetConcept}"),
+            [targetConcept],
+            "correct_target");
+
+    public static DeveloperLearningLabels CreateCorrectionLabels(
+        string originalGoal,
+        ApplicationContext context,
+        string targetConcept,
+        string? taskId,
+        string? stateId,
+        string? expectedNextState,
+        string? expectedEvidence,
+        string? outcomeLabel)
+    {
+        var evidence = (expectedEvidence ?? string.Empty)
+            .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (evidence.Length == 0 && !string.IsNullOrWhiteSpace(targetConcept)) evidence = [targetConcept];
+        return new DeveloperLearningLabels(
+            NormalizeProvided(taskId) ?? StableLabel("task", originalGoal),
+            NormalizeProvided(stateId) ?? StableLabel("state", $"{context.ApplicationName}.{context.WindowTitle}"),
+            NormalizeProvided(targetConcept) ?? "unknown.target",
+            NormalizeProvided(expectedNextState) ?? StableLabel("state", $"after.{targetConcept}"),
+            evidence,
+            OutcomeLabels.Contains(outcomeLabel, StringComparer.Ordinal) ? outcomeLabel! : "wrong_target");
+    }
+
+    private static string NormalizeConcept(string value) =>
+        NormalizeProvided(value) ?? "unknown.target";
+
+    private static string StableLabel(string prefix, string value)
+    {
+        var normalized = NormalizeProvided(value) ?? "unknown";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant()[..10];
+        return $"{prefix}.{normalized[..Math.Min(normalized.Length, 48)]}.{hash}";
+    }
+
+    private static string? NormalizeProvided(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var output = new string(value.Trim().ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '.')
+            .ToArray());
+        while (output.Contains("..", StringComparison.Ordinal)) output = output.Replace("..", ".", StringComparison.Ordinal);
+        return output.Trim('.');
     }
 }
 
@@ -121,12 +288,30 @@ public interface IDeveloperCorrectionStore
         IReadOnlyList<UiCandidate> candidates,
         out UiCandidate target,
         out DeveloperCorrectionRecord correction);
+    bool TryResolveVisualTarget(
+        string goal,
+        ApplicationContext context,
+        string snapshotHash,
+        out VisualTarget target,
+        out DeveloperCorrectionRecord correction);
     bool TryResolveCompletion(
         string goal,
         ApplicationContext context,
-        string? snapshotHash,
         IReadOnlyList<UiCandidate> candidates,
         out DeveloperCompletionRecord completion);
+    IReadOnlyList<UiCandidate> FilterRejectedCandidates(
+        string goal,
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates);
+    IReadOnlyList<DeveloperLearningHistoryRecord> GetHistory();
+    Task SetFeedbackActiveAsync(
+        string feedbackId,
+        bool active,
+        string? reason = null,
+        CancellationToken cancellationToken = default);
+    Task<DeveloperLearningEditRecord> SaveHistoryEditAsync(
+        DeveloperLearningEditRecord edit,
+        CancellationToken cancellationToken = default);
     Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
         string? screenshotDataUrl,
@@ -149,33 +334,41 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     private readonly object _gate = new();
     private readonly string _recordsPath;
     private readonly string _feedbackPath;
-    private readonly string _completionPath;
+    private readonly string _completionsPath;
+    private readonly string _statusPath;
+    private readonly string _editsPath;
     private List<DeveloperCorrectionRecord> _records;
-    private List<DeveloperCompletionRecord> _completionRecords;
+    private List<DeveloperCompletionRecord> _completions;
+    private List<AnswerFeedbackRecord> _feedback;
+    private List<DeveloperLearningStatusRecord> _statusChanges;
+    private List<DeveloperLearningEditRecord> _edits;
 
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
         DataDirectory = dataDirectory ?? ResolveDefaultDataDirectory();
-        if (dataDirectory is null) MigrateLegacyTrainingData(DataDirectory);
         _recordsPath = Path.Combine(DataDirectory, "corrections.jsonl");
-        _feedbackPath = Path.Combine(DataDirectory, "raw", "feedback-events.jsonl");
-        _completionPath = Path.Combine(DataDirectory, "raw", "completion-events.jsonl");
+        _feedbackPath = Path.Combine(DataDirectory, "answer-feedback.jsonl");
+        _completionsPath = Path.Combine(DataDirectory, "completions.jsonl");
+        _statusPath = Path.Combine(DataDirectory, "learning-status.jsonl");
+        _editsPath = Path.Combine(DataDirectory, "learning-edits.jsonl");
         Directory.CreateDirectory(DataDirectory);
-        Directory.CreateDirectory(Path.GetDirectoryName(_feedbackPath)!);
         _records = LoadRecords(_recordsPath);
-        _completionRecords = LoadCompletionRecords(_completionPath);
+        _completions = LoadCompletionRecords(_completionsPath);
+        _feedback = LoadFeedbackRecords(_feedbackPath);
+        _statusChanges = LoadStatusRecords(_statusPath);
+        _edits = LoadEditRecords(_editsPath);
     }
 
     public string DataDirectory { get; }
 
     public string ResolveIntent(string originalGoal)
     {
-        var normalized = Normalize(originalGoal);
-        if (normalized.Length == 0) return originalGoal.Trim();
+        if (string.IsNullOrWhiteSpace(originalGoal)) return originalGoal.Trim();
         lock (_gate)
         {
             return _records
-                .Where(record => Normalize(record.OriginalGoal) == normalized)
+                .Where(IsCorrectionUsable)
+                .Where(record => RecordMatchesGoal(originalGoal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .Select(record => record.CorrectedIntent)
                 .FirstOrDefault(intent => !string.IsNullOrWhiteSpace(intent))
@@ -192,15 +385,13 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     {
         target = null!;
         correction = null!;
-        var normalizedGoal = Normalize(goal);
         List<DeveloperCorrectionRecord> matchingRecords;
         lock (_gate)
         {
             matchingRecords = _records
+                .Where(IsCorrectionUsable)
                 .Where(record => record.CorrectTarget is not null)
-                .Where(record => Normalize(record.OriginalGoal) == normalizedGoal
-                    || Normalize(record.EffectiveGoal) == normalizedGoal
-                    || Normalize(record.CorrectedIntent) == normalizedGoal)
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .ToList();
         }
@@ -223,33 +414,58 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return false;
     }
 
+    public bool TryResolveVisualTarget(
+        string goal,
+        ApplicationContext context,
+        string snapshotHash,
+        out VisualTarget target,
+        out DeveloperCorrectionRecord correction)
+    {
+        target = null!;
+        correction = null!;
+        lock (_gate)
+        {
+            var match = _records
+                .Where(IsCorrectionUsable)
+                .Where(record => record.NormalizedVisualTarget is not null)
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
+                .Where(record => string.Equals(record.SnapshotHash, snapshotHash, StringComparison.Ordinal)
+                    && string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(record.Context.WindowTitle, context.WindowTitle, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(record => record.CreatedAtUtc)
+                .FirstOrDefault();
+            if (match is null) return false;
+            target = match.NormalizedVisualTarget!;
+            correction = match;
+            return true;
+        }
+    }
+
     public bool TryResolveCompletion(
         string goal,
         ApplicationContext context,
-        string? snapshotHash,
         IReadOnlyList<UiCandidate> candidates,
         out DeveloperCompletionRecord completion)
     {
         completion = null!;
-        List<DeveloperCompletionRecord> matchingRecords;
         lock (_gate)
         {
-            matchingRecords = _completionRecords
-                .Where(record => record.DeveloperVerified)
-                .Where(record => Normalize(record.OriginalGoal) == Normalize(goal)
-                    || Normalize(record.EffectiveGoal) == Normalize(goal))
-                .Where(record => EqualsText(record.Context.ApplicationName, context.ApplicationName))
+            var match = _completions
+                .Where(record => IsFeedbackActive(record.FeedbackId))
+                .Where(record => string.Equals(GetEffectiveRating(record.FeedbackId, "completed"), "completed", StringComparison.OrdinalIgnoreCase))
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, null))
+                .Where(record => string.Equals(
+                    record.Context.ApplicationName,
+                    context.ApplicationName,
+                    StringComparison.OrdinalIgnoreCase))
+                .Where(record => record.LearningLabels.ExpectedEvidence.Any(evidence =>
+                    DeveloperCompletionEvidence.IsPresent(evidence, context, candidates)))
                 .OrderByDescending(record => record.CreatedAtUtc)
-                .ToList();
-        }
-
-        foreach (var record in matchingRecords)
-        {
-            if (!DeveloperCompletionMatcher.IsMatch(record, context, snapshotHash, candidates)) continue;
-            completion = record;
+                .FirstOrDefault();
+            if (match is null) return false;
+            completion = match;
             return true;
         }
-        return false;
     }
 
     public async Task<DeveloperCorrectionRecord> SaveAsync(
@@ -292,8 +508,158 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(DataDirectory);
         var line = JsonSerializer.Serialize(feedback, JsonOptions) + Environment.NewLine;
-        lock (_gate) File.AppendAllText(_feedbackPath, line);
+        lock (_gate)
+        {
+            File.AppendAllText(_feedbackPath, line);
+            _feedback.Add(feedback);
+        }
         return Task.FromResult(feedback);
+    }
+
+    public IReadOnlyList<UiCandidate> FilterRejectedCandidates(
+        string goal,
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        HashSet<string> rejectedIds;
+        lock (_gate)
+        {
+            rejectedIds = _feedback
+                .Where(item => IsFeedbackActive(item.Id))
+                .Where(item => !string.IsNullOrWhiteSpace(item.TargetId)
+                    && item.Context is not null
+                    && DeveloperIntentMatcher.IsSameIntent(goal, GetEffectiveGoal(item.Id, item.OriginalGoal ?? item.EffectiveGoal))
+                    && string.Equals(item.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(item => item.TargetId!, StringComparer.Ordinal)
+                .Select(group => group.OrderByDescending(item => item.CreatedAtUtc).First())
+                .Where(item => string.Equals(GetEffectiveRating(item.Id, item.Rating), "incorrect", StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.TargetId!)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        if (rejectedIds.Count == 0) return candidates;
+        var filtered = candidates.Where(candidate => !rejectedIds.Contains(candidate.Id)).ToArray();
+        return filtered.Length == 0 ? candidates : filtered;
+    }
+
+    public IReadOnlyList<DeveloperLearningHistoryRecord> GetHistory()
+    {
+        lock (_gate)
+        {
+            return _feedback.OrderByDescending(item => item.CreatedAtUtc).Select(item =>
+            {
+                var correction = _records.LastOrDefault(record =>
+                    string.Equals(record.FeedbackId, item.Id, StringComparison.Ordinal));
+                var completion = _completions.LastOrDefault(record =>
+                    string.Equals(record.FeedbackId, item.Id, StringComparison.Ordinal));
+                var edit = GetLatestEdit(item.Id);
+                return new DeveloperLearningHistoryRecord(
+                    item.Id,
+                    item.CreatedAtUtc,
+                    edit?.Rating ?? item.Rating,
+                    edit?.Goal ?? item.OriginalGoal ?? item.EffectiveGoal ?? "질문 정보 없음",
+                    edit?.Answer ?? item.AnswerText,
+                    edit?.TargetLabel ?? correction?.CorrectTarget?.Label ?? item.TargetLabel,
+                    edit?.Comment ?? correction?.DeveloperComment ?? correction?.RefinedComment ?? completion?.DeveloperComment,
+                    IsFeedbackActive(item.Id),
+                    edit is not null);
+            }).ToArray();
+        }
+    }
+
+    public Task SetFeedbackActiveAsync(
+        string feedbackId,
+        bool active,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!_feedback.Any(item => string.Equals(item.Id, feedbackId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("학습 기록을 찾을 수 없습니다.");
+            var record = new DeveloperLearningStatusRecord(
+                1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+                feedbackId, active, string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());
+            File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+            _statusChanges.Add(record);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<DeveloperLearningEditRecord> SaveHistoryEditAsync(
+        DeveloperLearningEditRecord edit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(edit.Goal)) throw new ArgumentException("질문은 비워둘 수 없습니다.", nameof(edit));
+        if (string.IsNullOrWhiteSpace(edit.Answer)) throw new ArgumentException("답안은 비워둘 수 없습니다.", nameof(edit));
+        if (!new[] { "correct", "incorrect", "completed" }.Contains(edit.Rating, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException("판정은 O, X 또는 끝이어야 합니다.", nameof(edit));
+
+        var normalized = edit with
+        {
+            SchemaVersion = 1,
+            Id = string.IsNullOrWhiteSpace(edit.Id) ? Guid.NewGuid().ToString("D") : edit.Id,
+            CreatedAtUtc = edit.CreatedAtUtc == default ? DateTimeOffset.UtcNow : edit.CreatedAtUtc,
+            Rating = edit.Rating.Trim().ToLowerInvariant(),
+            Goal = edit.Goal.Trim(),
+            Answer = edit.Answer.Trim(),
+            TargetLabel = string.IsNullOrWhiteSpace(edit.TargetLabel) ? null : edit.TargetLabel.Trim(),
+            Comment = string.IsNullOrWhiteSpace(edit.Comment) ? null : edit.Comment.Trim(),
+        };
+        lock (_gate)
+        {
+            if (!_feedback.Any(item => string.Equals(item.Id, normalized.FeedbackId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("학습 기록을 찾을 수 없습니다.");
+            File.AppendAllText(_editsPath, JsonSerializer.Serialize(normalized, JsonOptions) + Environment.NewLine);
+            _edits.Add(normalized);
+        }
+        return Task.FromResult(normalized);
+    }
+
+    private bool IsFeedbackActive(string? feedbackId)
+    {
+        if (string.IsNullOrWhiteSpace(feedbackId)) return true;
+        return _statusChanges.LastOrDefault(item =>
+            string.Equals(item.FeedbackId, feedbackId, StringComparison.Ordinal))?.Active ?? true;
+    }
+
+    private DeveloperLearningEditRecord? GetLatestEdit(string? feedbackId) =>
+        string.IsNullOrWhiteSpace(feedbackId) ? null : _edits.LastOrDefault(item =>
+            string.Equals(item.FeedbackId, feedbackId, StringComparison.Ordinal));
+
+    private string GetEffectiveRating(string? feedbackId, string fallback) =>
+        GetLatestEdit(feedbackId)?.Rating ?? fallback;
+
+    private string GetEffectiveGoal(string? feedbackId, string? fallback) =>
+        GetLatestEdit(feedbackId)?.Goal ?? fallback ?? string.Empty;
+
+    private bool IsCorrectionUsable(DeveloperCorrectionRecord record)
+    {
+        if (!IsFeedbackActive(record.FeedbackId)) return false;
+        if (string.IsNullOrWhiteSpace(record.FeedbackId)) return true;
+        var feedback = _feedback.LastOrDefault(item => string.Equals(item.Id, record.FeedbackId, StringComparison.Ordinal));
+        if (feedback is null) return true;
+        var requiredRating = record.IssueTags?.Contains("positive_feedback", StringComparer.OrdinalIgnoreCase) == true
+            ? "correct"
+            : "incorrect";
+        return string.Equals(GetEffectiveRating(record.FeedbackId, feedback.Rating), requiredRating, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool RecordMatchesGoal(
+        string goal,
+        string? feedbackId,
+        string? originalGoal,
+        string? effectiveGoal,
+        string? correctedIntent)
+    {
+        var edit = GetLatestEdit(feedbackId);
+        if (edit is not null)
+            return DeveloperIntentMatcher.IsSameIntent(goal, edit.Goal)
+                || DeveloperIntentMatcher.IsSameIntent(goal, correctedIntent);
+        return DeveloperIntentMatcher.IsSameIntent(goal, originalGoal)
+            || DeveloperIntentMatcher.IsSameIntent(goal, effectiveGoal)
+            || DeveloperIntentMatcher.IsSameIntent(goal, correctedIntent);
     }
 
     public Task<DeveloperCompletionRecord> SaveCompletionAsync(
@@ -301,14 +667,12 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!completion.DeveloperVerified)
-            throw new ArgumentException("Completion records must be developer verified.", nameof(completion));
-        Directory.CreateDirectory(Path.GetDirectoryName(_completionPath)!);
+        Directory.CreateDirectory(DataDirectory);
         var line = JsonSerializer.Serialize(completion, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
-            File.AppendAllText(_completionPath, line);
-            _completionRecords.Add(completion);
+            File.AppendAllText(_completionsPath, line);
+            _completions.Add(completion);
         }
         return Task.FromResult(completion);
     }
@@ -340,6 +704,57 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             try
             {
                 var record = JsonSerializer.Deserialize<DeveloperCompletionRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1 && record.DeveloperVerified) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<AnswerFeedbackRecord> LoadFeedbackRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<AnswerFeedbackRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<AnswerFeedbackRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<DeveloperLearningStatusRecord> LoadStatusRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<DeveloperLearningStatusRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<DeveloperLearningStatusRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<DeveloperLearningEditRecord> LoadEditRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<DeveloperLearningEditRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<DeveloperLearningEditRecord>(line, JsonOptions);
                 if (record is not null && record.SchemaVersion == 1) records.Add(record);
             }
             catch (JsonException) { }
@@ -368,28 +783,6 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ShowWhere",
             "training");
-    }
-
-    private static void MigrateLegacyTrainingData(string destination)
-    {
-        var legacy = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ShowWhere",
-            "training");
-        if (!Directory.Exists(legacy)
-            || string.Equals(
-                Path.GetFullPath(legacy).TrimEnd(Path.DirectorySeparatorChar),
-                Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase)) return;
-
-        foreach (var sourcePath in Directory.EnumerateFiles(legacy, "*", SearchOption.AllDirectories))
-        {
-            var relativePath = Path.GetRelativePath(legacy, sourcePath);
-            var destinationPath = Path.Combine(destination, relativePath);
-            if (File.Exists(destinationPath)) continue;
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-            File.Copy(sourcePath, destinationPath, overwrite: false);
-        }
     }
 
     private static int ScoreTarget(
@@ -428,59 +821,102 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         && !string.IsNullOrWhiteSpace(right)
         && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
 
-    private static string Normalize(string? value) => string.Concat(
-        (value ?? string.Empty).Trim().ToLowerInvariant().Where(character => !char.IsWhiteSpace(character)));
 }
 
-public static class DeveloperCompletionMatcher
+public static class DeveloperIntentMatcher
 {
-    public static IReadOnlyList<CompletionSemanticEvidence> CaptureEvidence(
-        IReadOnlyList<UiCandidate> candidates) => candidates
-        .Where(candidate => candidate.Visible)
-        .Select(candidate => new CompletionSemanticEvidence(
-            (candidate.Label ?? candidate.Description ?? string.Empty).Trim(),
-            candidate.Role.Trim(),
-            Attribute(candidate, "automationId"),
-            Attribute(candidate, "sourceScope")))
-        .Where(evidence => evidence.Label.Length > 0)
-        .DistinctBy(EvidenceKey)
-        .Take(100)
-        .ToArray();
+    public static string CreateIntentKey(string? value) => Normalize(value).Replace(' ', '_');
 
-    public static bool IsMatch(
-        DeveloperCompletionRecord record,
-        ApplicationContext context,
-        string? snapshotHash,
-        IReadOnlyList<UiCandidate> candidates)
+    public static bool IsSameIntent(string? left, string? right)
     {
-        if (!EqualsText(record.Context.ApplicationName, context.ApplicationName)) return false;
-        if (!string.IsNullOrWhiteSpace(record.SnapshotHash)
-            && string.Equals(record.SnapshotHash, snapshotHash, StringComparison.Ordinal)) return true;
+        var a = Normalize(left);
+        var b = Normalize(right);
+        if (a.Length == 0 || b.Length == 0) return false;
+        if (a == b) return true;
 
-        var expected = record.VisibleSemantics.Select(EvidenceKey).ToHashSet(StringComparer.Ordinal);
-        if (expected.Count == 0) return false;
-        var observed = CaptureEvidence(candidates).Select(EvidenceKey).ToHashSet(StringComparer.Ordinal);
-        var matched = expected.Count(observed.Contains);
-        var overlap = matched / (double)Math.Max(1, expected.Count);
-        var titleMatches = EqualsText(record.Context.WindowTitle, context.WindowTitle);
-        return (titleMatches && matched >= 2 && overlap >= 0.55)
-            || (matched >= 3 && overlap >= 0.75);
+        var leftAction = ExtractAction(a);
+        var rightAction = ExtractAction(b);
+        if (leftAction is not null && rightAction is not null
+            && !string.Equals(leftAction, rightAction, StringComparison.Ordinal)) return false;
+
+        var leftConcepts = ExtractConcepts(a);
+        var rightConcepts = ExtractConcepts(b);
+        if (leftConcepts.Count == 0 || rightConcepts.Count == 0) return false;
+        var overlap = leftConcepts.Intersect(rightConcepts, StringComparer.Ordinal).Count();
+        var coverage = (double)overlap / Math.Min(leftConcepts.Count, rightConcepts.Count);
+        return overlap > 0 && coverage >= 0.6;
     }
 
-    private static string EvidenceKey(CompletionSemanticEvidence evidence) => string.Join('|',
-        Normalize(evidence.Label),
-        Normalize(evidence.Role),
-        Normalize(evidence.AutomationId),
-        Normalize(evidence.SourceScope));
+    private static string Normalize(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant().Normalize();
+        foreach (var (source, target) in PhraseAliases)
+            normalized = normalized.Replace(source, target, StringComparison.Ordinal);
+        return string.Join(' ', normalized.Split(
+            [' ', '\t', '\r', '\n', '?', '!', '.', ',', '/', '\\'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
 
-    private static string? Attribute(UiCandidate candidate, string key) =>
-        candidate.Attributes?.TryGetValue(key, out var value) == true ? Convert.ToString(value) : null;
+    private static string? ExtractAction(string value)
+    {
+        if (ContainsAny(value, ["검색", "찾아", "찾기", "search"])) return "search";
+        if (ContainsAny(value, ["삭제", "제거", "지워", "remove", "delete", "uninstall"])) return "remove";
+        if (ContainsAny(value, ["확인", "상태", "됐는지", "작동", "check", "status"])) return "check";
+        if (ContainsAny(value, ["추가", "등록", "연결", "add", "connect", "pair"])) return "add";
+        if (ContainsAny(value, ["재생", "노래 틀", "음악 틀", "play"])) return "play";
+        if (value.Contains("유튜브뮤직", StringComparison.Ordinal)
+            && value.Contains("틀어", StringComparison.Ordinal)) return "open";
+        if (ContainsAny(value, ["설정", "변경", "바꿔", "configure", "setting", "change"])) return "configure";
+        if (ContainsAny(value, ["열어", "실행", "켜줘", "접속", "open", "launch"])) return "open";
+        return null;
+    }
 
-    private static bool EqualsText(string? left, string? right) =>
-        Normalize(left).Length > 0 && Normalize(left) == Normalize(right);
+    private static HashSet<string> ExtractConcepts(string value)
+    {
+        var concepts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var token = TrimKoreanParticle(raw);
+            if (token.Length < 2 || StopWords.Contains(token) || ActionWords.Any(token.Contains)) continue;
+            concepts.Add(token);
+        }
+        return concepts;
+    }
 
-    private static string Normalize(string? value) => string.Concat(
-        (value ?? string.Empty).Trim().ToLowerInvariant().Where(character => !char.IsWhiteSpace(character)));
+    private static string TrimKoreanParticle(string token)
+    {
+        foreach (var suffix in KoreanParticles)
+            if (token.Length > suffix.Length + 1 && token.EndsWith(suffix, StringComparison.Ordinal))
+                return token[..^suffix.Length];
+        return token;
+    }
+
+    private static bool ContainsAny(string value, string[] terms) => terms.Any(value.Contains);
+
+    private static readonly (string Source, string Target)[] PhraseAliases =
+    [
+        ("youtube music", "유튜브뮤직"), ("유튜브 뮤직", "유튜브뮤직"),
+        ("유튜브 음악", "유튜브뮤직"), ("음악", "노래"), ("music", "노래"), ("song", "노래"),
+        ("인쇄 장치", "프린터"), ("인쇄장치", "프린터"), ("printer", "프린터"),
+        ("와이 파이", "와이파이"), ("wi-fi", "와이파이"), ("wifi", "와이파이"),
+        ("블루투스", "bluetooth"),
+    ];
+
+    private static readonly HashSet<string> StopWords = new(StringComparer.Ordinal)
+    {
+        "어디", "어디서", "어떻게", "해줘", "해주세요", "하고", "싶어", "싶어요", "보여줘", "알려줘",
+        "where", "how", "please", "show", "the", "and", "with", "from", "크롬", "windows", "윈도우",
+    };
+
+    private static readonly string[] ActionWords =
+    [
+        "검색", "찾아", "찾기", "삭제", "제거", "지워", "추가", "등록", "연결", "재생", "틀어", "열어",
+        "실행", "켜줘", "접속", "확인", "상태", "됐는지", "작동", "설정", "변경", "바꿔", "search",
+        "remove", "delete", "add", "connect", "pair", "play", "open", "launch", "check", "status", "configure", "change",
+    ];
+
+    private static readonly string[] KoreanParticles =
+    ["에서", "에게", "으로", "부터", "까지", "처럼", "하고", "이랑", "랑", "을", "를", "이", "가", "은", "는", "의", "에", "로"];
 }
 
 public static class DeveloperCommentRefiner

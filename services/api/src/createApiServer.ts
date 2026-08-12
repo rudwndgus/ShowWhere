@@ -2,11 +2,6 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AiProvider } from '../../../src/guide-api/AiProvider';
 import { GUIDE_API_PATH, handleGuideApiRequest } from '../../../src/guide-api/handleGuideApiRequest';
 import type { ApiConfig } from './config';
-import type { TeachingService } from './teaching/TeachingService';
-
-export const TEACHING_ANALYZE_PATH = '/api/teaching/analyze';
-export const TEACHING_VALIDATE_PATH = '/api/teaching/validate';
-export const TEACHING_GOLD_PATH = '/api/teaching/gold';
 
 async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -31,12 +26,11 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(JSON.stringify(body));
 }
 
-export function createApiServer(config: ApiConfig, provider: AiProvider, teaching?: TeachingService) {
+export function createApiServer(config: ApiConfig, provider: AiProvider) {
   return createServer(async (request, response) => {
     const requestStartedAt = performance.now();
     const url = new URL(request.url ?? '/', 'http://localhost');
-    const isTeachingRoute = [TEACHING_ANALYZE_PATH, TEACHING_VALIDATE_PATH, TEACHING_GOLD_PATH].includes(url.pathname);
-    if (request.method !== 'POST' || (url.pathname !== GUIDE_API_PATH && !isTeachingRoute)) {
+    if (request.method !== 'POST' || url.pathname !== GUIDE_API_PATH) {
       sendJson(response, 404, { message: '안내 경로를 찾을 수 없어요.' });
       return;
     }
@@ -48,50 +42,6 @@ export function createApiServer(config: ApiConfig, provider: AiProvider, teachin
       const status = error instanceof Error && error.message === 'request_too_large' ? 413 : 400;
       sendJson(response, status, { message: '화면 정보를 확인할 수 없어요. 다시 시도해 주세요.' });
       return;
-    }
-
-    if (isTeachingRoute) {
-      if (!teaching) {
-        sendJson(response, 503, { message: '개발자 학습 서비스를 사용할 수 없습니다.' });
-        return;
-      }
-      try {
-        if (url.pathname === TEACHING_ANALYZE_PATH) {
-          sendJson(response, 200, await teaching.analyze(body));
-          return;
-        }
-        if (url.pathname === TEACHING_VALIDATE_PATH) {
-          sendJson(response, 200, await teaching.validate(body));
-          return;
-        }
-        const envelope = body && typeof body === 'object' && !Array.isArray(body)
-          ? body as { record?: unknown; approvedBy?: unknown } : {};
-        if (!envelope.record) {
-          sendJson(response, 400, { message: '승인할 학습 데이터가 없습니다.' });
-          return;
-        }
-        sendJson(response, 200, await teaching.saveApproved(
-          envelope.record,
-          typeof envelope.approvedBy === 'string' ? envelope.approvedBy : 'developer',
-        ));
-        return;
-      } catch (error) {
-        if (config.debug) {
-          const category = error instanceof Error
-            ? error.message.replace(/\s+/gu, ' ').slice(0, 180)
-            : 'unknown_teaching_error';
-          console.error(
-            `[showwhere:teaching] route=${url.pathname} status=failed category=${JSON.stringify(category)}`
-            + ` duration_ms=${Math.round(performance.now() - requestStartedAt)}`,
-          );
-        }
-        sendJson(response, url.pathname === TEACHING_GOLD_PATH ? 422 : 502, {
-          message: url.pathname === TEACHING_GOLD_PATH
-            ? '검증 오류를 수정한 뒤 다시 승인해 주세요.'
-            : '라벨링 결과를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.',
-        });
-        return;
-      }
     }
 
     const result = await handleGuideApiRequest(url.pathname, body, provider);
@@ -108,6 +58,7 @@ export function createApiServer(config: ApiConfig, provider: AiProvider, teachin
       console.log(
         `[showwhere:api] candidates=${candidates.length} action=${result.decision.action}`
         + ` target=${result.decision.targetId ?? 'none'} label=${JSON.stringify(selectedLabel)}`
+        + ` message=${JSON.stringify(result.decision.message.replace(/\s+/gu, ' ').slice(0, 180))}`
         + ` duration_ms=${Math.round(performance.now() - requestStartedAt)}`,
       );
     }

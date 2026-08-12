@@ -47,7 +47,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     {
         "correct" => "O · 좋은 답변으로 저장됨",
         "incorrect" => "X · 수정 필요로 저장됨",
-        "completed" => "✓ · 이 화면을 목표 완료 지점으로 저장함",
+        "completed" => "끝 · 최종 완료 상태로 저장됨",
         _ => string.Empty,
     };
     public string? OriginalGoal { get; private set; }
@@ -57,6 +57,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     public GuideDecision? Decision { get; private set; }
     public string? TargetLabel { get; private set; }
     public UiBounds? TargetBounds { get; private set; }
+    public CorrectionTargetSignature? TargetSignature { get; private set; }
 
     public void AttachTrainingContext(
         string? originalGoal,
@@ -65,7 +66,8 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         string? snapshotHash,
         GuideDecision? decision,
         string? targetLabel = null,
-        UiBounds? targetBounds = null)
+        UiBounds? targetBounds = null,
+        CorrectionTargetSignature? targetSignature = null)
     {
         OriginalGoal = originalGoal;
         EffectiveGoal = effectiveGoal;
@@ -74,6 +76,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         Decision = decision;
         TargetLabel = targetLabel;
         TargetBounds = targetBounds;
+        TargetSignature = targetSignature;
     }
 
     public void MarkEvaluated(string evaluation) => Evaluation = evaluation;

@@ -1,55 +1,30 @@
-<div align="center">
+# ShowWhere 2.0
 
-# ShowWhere
+ShowWhere is a Windows 10/11 guidance app. It captures the complete desktop, collects live Microsoft UI Automation candidates, and asks one OpenAI GPT vision model for exactly one next action. It never clicks automatically; it highlights the verified location for the user.
 
-### Don't explain your screen. Just tell us your goal.
+## Architecture
 
-복잡한 화면에서 사용자가 길을 잃지 않도록<br>
-다음 행동을 친절하고 분명하게 보여주는 인터페이스 내비게이션 도우미
+```text
+User goal
+  -> WPF desktop captures full screen + UI Automation candidates
+  -> local Node API POST /api/guide
+  -> OpenAI Responses API (GPT-5.6, image input, strict JSON schema)
+  -> contract/confidence/target validation
+  -> live UI element identity revalidation
+  -> always-on-top overlay
+```
 
-</div>
+Only the OpenAI provider is active on this branch. Previous providers, local model services, synthetic pipelines, model registries, hard-coded answer routes, and accumulated datasets were removed.
 
-> [!NOTE]
-> `UI` 브랜치는 ShowWhere의 대화 경험, 플로팅 도우미, 화면 안내 표현, 접근성과 사용성을 발전시키는 공간입니다.
+## Setup
 
-## 좋은 안내는 보여지는 방식까지 좋아야 합니다
+1. Install Node.js 20+, npm, and .NET 8 SDK.
+2. Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
+3. Run `npm install`.
+4. Start both processes with `powershell -ExecutionPolicy Bypass -File scripts/start-showwhere.ps1`.
 
-정답을 알고 있어도 사용자가 발견하지 못하면 도움은 완성되지 않습니다.
+For separate terminals, use `npm run dev:api` and `npm run run:windows`.
 
-안내 창이 화면을 가리거나, 표시가 너무 작거나, 설명이 딱딱하거나, 한꺼번에 너무 많은 정보를 주면 사용자는 다시 길을 잃습니다. ShowWhere가 진정한 동반자가 되려면 무엇을 알려줄지뿐 아니라 언제, 어디에서, 어떤 말투와 모습으로 알려줄지도 세심하게 고민해야 합니다.
+## Data
 
-## ShowWhere가 만들고 싶은 대화
-
-ShowWhere는 명령을 내리는 프로그램이 아니라 함께 문제를 풀어가는 친구처럼 다가가고자 합니다.
-
-“프린터 설정을 확인하고 싶으시군요. 우선 제가 표시한 곳을 눌러보시겠어요?”처럼 사용자의 목적을 먼저 이해하고, 지금 필요한 행동 하나만 친절하게 제안합니다. 사용자가 한 단계를 마치면 자연스럽게 다음 단계로 이어지고, 목표에 도달하면 축하하며 안내를 끝냅니다.
-
-## 우리가 중요하게 생각하는 경험
-
-### 눈에 잘 보여야 합니다
-
-사용자가 찾는 순간에 필요한 위치가 분명하게 드러나야 합니다. 화면 크기와 배율이 달라도 안내가 엉뚱한 곳에 나타나지 않아야 합니다.
-
-### 방해하지 않아야 합니다
-
-ShowWhere는 사용자의 작업을 가리지 않고 필요할 때 가까이 있어야 합니다. 도움을 주는 창이 또 다른 불편이 되어서는 안 됩니다.
-
-### 한 번에 하나만 말해야 합니다
-
-여러 단계를 미리 설명하기보다 지금 해야 할 행동 하나를 이해하기 쉬운 말로 보여줍니다.
-
-### 누구나 사용할 수 있어야 합니다
-
-컴퓨터 경험, 나이, 언어, 시력과 관계없이 안내의 의미를 알아볼 수 있어야 합니다.
-
-### 사용자가 통제해야 합니다
-
-ShowWhere는 위치를 알려주지만 중요한 선택을 빼앗지 않습니다. 사용자가 직접 보고, 판단하고, 행동할 수 있어야 합니다.
-
-## 이 공간이 지향하는 미래
-
-ShowWhere의 모습은 단순한 채팅창이나 화살표에 머물지 않습니다.
-
-사용자의 시선을 방해하지 않으면서도 필요한 순간에는 확실하게 나타나고, 불안한 순간에는 친근한 말로 안심시키며, 실수했을 때는 탓하지 않고 다시 길을 찾아주는 인터페이스를 지향합니다.
-
-기술을 잘 아는 사람만 이해할 수 있는 도구가 아니라, 처음 만난 사람도 설명 없이 자연스럽게 사용할 수 있는 경험을 만드는 것이 이 브랜치의 목표입니다.
+Developer-mode feedback starts empty. New O/X/completion records are written under `training/`; `.env` and screenshots/API credentials must never be committed.

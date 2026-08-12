@@ -41,6 +41,21 @@ describe('guide contracts', () => {
     expect(parsed.candidates[0].bounds.width).toBe(100);
   });
 
+  it('accepts complex Windows screens without exceeding the shared candidate limit', () => {
+    const base = {
+      session,
+      context: { platform: 'windows' as const, applicationName: 'chrome' },
+    };
+    expect(GuideRequestSchema.safeParse({
+      ...base,
+      candidates: Array.from({ length: 220 }, (_, index) => ({ ...candidate, id: `candidate-${index}` })),
+    }).success).toBe(true);
+    expect(GuideRequestSchema.safeParse({
+      ...base,
+      candidates: Array.from({ length: 251 }, (_, index) => ({ ...candidate, id: `candidate-${index}` })),
+    }).success).toBe(false);
+  });
+
   it('requires targetId for highlight decisions', () => {
     const parsed = GuideDecisionSchema.safeParse({
       status: 'in_progress',

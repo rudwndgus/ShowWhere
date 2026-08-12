@@ -9,8 +9,6 @@ export default tseslint.config(
       'services/api/dist/**',
       'node_modules/**',
       '.search-profile/**',
-      'learning/data/**',
-      'training/legacy/**',
     ],
   },
   eslint.configs.recommended,

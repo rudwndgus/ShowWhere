@@ -23,8 +23,8 @@ public sealed class WindowsScreenCaptureService : IWindowsScreenCaptureService
     private const int SmCyVirtualScreen = 79;
     private const int SrcCopy = 0x00CC0020;
     private const int CaptureBlt = 0x40000000;
-    private const int MaximumImageWidth = 2560;
-    private const int MaximumImageHeight = 1440;
+    private const int MaximumImageWidth = 1280;
+    private const int MaximumImageHeight = 720;
 
     public Task<WindowsScreenCapture> CaptureAsync(CancellationToken cancellationToken) =>
         Task.Run(() => Capture(cancellationToken), cancellationToken);

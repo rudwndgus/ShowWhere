@@ -1,0 +1,76 @@
+[
+  {
+    "id": "known-windows-settings",
+    "category": "simple-known-task",
+    "question": "설정을 열어줘",
+    "application": "Windows Start",
+    "candidates": [{ "id": "settings", "label": "Settings", "role": "button" }, { "id": "power", "label": "Power", "role": "button" }],
+    "expectedTargetId": "settings"
+  },
+  {
+    "id": "printer-paraphrase-ko",
+    "category": "new-paraphrase",
+    "question": "프린터가 제대로 붙어 있는지 보고 싶어",
+    "application": "Windows Start",
+    "candidates": [{ "id": "settings", "label": "설정", "role": "button" }, { "id": "calculator", "label": "계산기", "role": "button" }],
+    "expectedTargetId": "settings"
+  },
+  {
+    "id": "youtube-music-ko-en",
+    "category": "korean-user-english-ui",
+    "question": "유튜브 뮤직에서 아이유 노래를 검색해줘",
+    "application": "YouTube Music",
+    "candidates": [{ "id": "browser-address", "label": "Search Google or type a URL", "role": "edit" }, { "id": "music-search", "label": "Search songs, albums, artists", "role": "edit" }],
+    "expectedTargetId": "music-search"
+  },
+  {
+    "id": "settings-en-ko",
+    "category": "english-user-korean-ui",
+    "question": "Open Bluetooth settings",
+    "application": "설정",
+    "candidates": [{ "id": "bluetooth", "label": "Bluetooth 및 장치", "role": "button" }, { "id": "network", "label": "네트워크 및 인터넷", "role": "button" }],
+    "expectedTargetId": "bluetooth"
+  },
+  {
+    "id": "ambiguous-search",
+    "category": "ambiguous-buttons",
+    "question": "검색해줘",
+    "application": "Chrome",
+    "candidates": [{ "id": "address", "label": "주소 및 검색창", "role": "edit" }, { "id": "site-search", "label": "사이트 검색", "role": "edit" }],
+    "expectedAction": "ask_user"
+  },
+  {
+    "id": "wrong-state-printer",
+    "category": "wrong-state",
+    "question": "프린터 상태를 확인해줘",
+    "application": "Calculator",
+    "candidates": [{ "id": "one", "label": "1", "role": "button" }, { "id": "menu", "label": "메뉴", "role": "button" }],
+    "expectedAction": "request_new_observation"
+  },
+  {
+    "id": "recovery-after-failure",
+    "category": "recovery",
+    "question": "프린터 설정을 계속 찾아줘",
+    "application": "Settings",
+    "failureCount": 1,
+    "candidates": [{ "id": "devices", "label": "Bluetooth & devices", "role": "button" }, { "id": "system", "label": "System", "role": "button" }],
+    "expectedTargetId": "devices"
+  },
+  {
+    "id": "unknown-task",
+    "category": "unknown-task",
+    "question": "그거 저번처럼 해줘",
+    "application": "Desktop",
+    "candidates": [{ "id": "start", "label": "Start", "role": "button" }],
+    "expectedAction": "ask_user"
+  },
+  {
+    "id": "icon-only-camera",
+    "category": "icon-only-uia-failure",
+    "question": "카메라를 켜줘",
+    "application": "Custom App",
+    "candidates": [],
+    "expectedAction": "highlight_visual"
+  }
+]
+

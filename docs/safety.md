@@ -1,12 +1,7 @@
-# Safety model
+# Safety and privacy
 
-- ShowWhere highlights controls but never clicks them automatically.
-- Only the Node backend reads `FEATHERLESS_API_KEY`.
-- The Windows executable contains only the non-secret local backend URL.
-- UI Automation passwords are masked before candidate normalization.
-- A semantic model may select only a candidate ID from the current observation.
-- A visual model may highlight only normalized coordinates tied to the attached screenshot.
-- Malformed, stale, unknown, out-of-bounds, and low-confidence decisions are rejected.
-- ShowWhere's own panel, assistant, and overlay are excluded from screenshots.
-- Provider errors and API keys are not returned to the desktop client or written to diagnostics.
-- Full-screen images are sent to Featherless only when local UI Automation cannot resolve the next control.
+- The complete desktop screenshot and visible UI metadata are sent to OpenAI for each decision.
+- API requests set `store: false`.
+- The key stays server-side in ignored `.env` and is never sent to the Windows client.
+- ShowWhere highlights but does not click controls or execute arbitrary actions.
+- Low-confidence or stale targets are rejected instead of displayed.

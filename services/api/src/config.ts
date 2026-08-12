@@ -6,121 +6,77 @@ const integerFromEnvironment = (minimum: number, maximum: number) => z.preproces
 );
 
 const booleanFromEnvironment = z.preprocess(
-  (value) => {
-    if (value === undefined || value === '') return undefined;
-    if (typeof value === 'boolean') return value;
-    return String(value).toLowerCase() === 'true';
-  },
+  (value) => value === undefined || value === '' ? undefined : String(value).toLowerCase() === 'true',
   z.boolean(),
 );
 
 const environmentSchema = z.object({
-  SHOWWHERE_AI_MODE: z.enum(['mock', 'featherless']).default('mock'),
+  OPENAI_API_KEY: z.string().trim().min(1),
+  OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.6'),
+  OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),
+  OPENAI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
+  HF_TOKEN: z.string().trim().min(1).optional(),
+  HF_EMBEDDING_MODEL: z.string().trim().min(1).default('Qwen/Qwen3-Embedding-0.6B'),
+  HF_BASE_URL: z.string().url().default('https://router.huggingface.co/hf-inference/models'),
+  HF_REQUEST_TIMEOUT_MS: integerFromEnvironment(500, 30_000).default(4_000),
+  HF_MIN_SCORE: z.preprocess(
+    (value) => value === undefined || value === '' ? undefined : Number(value),
+    z.number().min(0).max(1),
+  ).default(0.68),
+  HF_MIN_MARGIN: z.preprocess(
+    (value) => value === undefined || value === '' ? undefined : Number(value),
+    z.number().min(0).max(1),
+  ).default(0.08),
   SHOWWHERE_API_HOST: z.string().trim().min(1).default('127.0.0.1'),
   SHOWWHERE_API_PORT: integerFromEnvironment(1, 65_535).default(8787),
-  SHOWWHERE_MAX_REQUEST_BYTES: integerFromEnvironment(1_024, 10_000_000).default(10_000_000),
+  SHOWWHERE_MAX_REQUEST_BYTES: integerFromEnvironment(1_024, 20_000_000).default(12_000_000),
   SHOWWHERE_DEBUG: booleanFromEnvironment.default(false),
-  FEATHERLESS_API_KEY: z.string().trim().min(1).optional(),
-  FEATHERLESS_BASE_URL: z.string().url().optional(),
-  FEATHERLESS_GUIDE_MODEL: z.string().trim().min(1).optional(),
-  FEATHERLESS_GUIDE_FALLBACK_MODEL: z.string().trim().min(1).optional(),
-  FEATHERLESS_VISION_MODEL: z.string().trim().min(1).optional(),
-  FEATHERLESS_VISION_MODELS: z.string().trim().min(1).optional(),
-  FEATHERLESS_FAST_MODEL: z.string().trim().min(1).optional(),
-  FEATHERLESS_REASONING_MODEL: z.string().trim().min(1).optional(),
-  FEATHERLESS_EMBEDDING_MODEL: z.string().trim().min(1).optional(),
-  FEATHERLESS_REQUEST_TIMEOUT_MS: integerFromEnvironment(500, 120_000).default(30_000),
-  FEATHERLESS_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
-  FEATHERLESS_RETRY_BASE_DELAY_MS: integerFromEnvironment(0, 10_000).default(250),
-  FEATHERLESS_MAX_TOKENS: integerFromEnvironment(64, 4_096).default(256),
-  FEATHERLESS_ENABLE_THINKING: booleanFromEnvironment.default(false),
-  LEARNING_GENERATOR_MODEL: z.string().trim().min(1).optional(),
-  LEARNING_JUDGE_A_MODEL: z.string().trim().min(1).optional(),
-  LEARNING_JUDGE_B_MODEL: z.string().trim().min(1).optional(),
-  LEARNING_JUDGE_C_MODEL: z.string().trim().min(1).optional(),
-}).superRefine((environment, context) => {
-  if (environment.SHOWWHERE_AI_MODE !== 'featherless') return;
-
-  for (const key of [
-    'FEATHERLESS_API_KEY',
-    'FEATHERLESS_BASE_URL',
-    'FEATHERLESS_GUIDE_MODEL',
-  ] as const) {
-    if (!environment[key]) {
-      context.addIssue({
-        code: 'custom',
-        path: [key],
-        message: `${key} is required when SHOWWHERE_AI_MODE=featherless.`,
-      });
-    }
-  }
 });
 
 export interface ApiConfig {
-  aiMode: 'mock' | 'featherless';
   host: string;
   port: number;
   maxRequestBytes: number;
   debug: boolean;
-  featherless?: {
+  openai: {
     apiKey: string;
-    baseUrl: string;
     model: string;
-    guideFallbackModel?: string;
-    visionModels: string[];
-    fastModel?: string;
-    reasoningModel?: string;
-    embeddingModel?: string;
-    learningGeneratorModel?: string;
-    learningJudgeModels: string[];
+    baseUrl: string;
     requestTimeoutMs: number;
     maxRetries: number;
-    retryBaseDelayMs: number;
-    maxTokens: number;
-    enableThinking: boolean;
-    debug: boolean;
+  };
+  huggingFace?: {
+    token: string;
+    model: string;
+    baseUrl: string;
+    requestTimeoutMs: number;
+    minScore: number;
+    minMargin: number;
   };
 }
 
 export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
   const parsed = environmentSchema.parse(environment);
-  const config: ApiConfig = {
-    aiMode: parsed.SHOWWHERE_AI_MODE,
+  return {
     host: parsed.SHOWWHERE_API_HOST,
     port: parsed.SHOWWHERE_API_PORT,
     maxRequestBytes: parsed.SHOWWHERE_MAX_REQUEST_BYTES,
     debug: parsed.SHOWWHERE_DEBUG,
+    openai: {
+      apiKey: parsed.OPENAI_API_KEY,
+      model: parsed.OPENAI_MODEL,
+      baseUrl: parsed.OPENAI_BASE_URL.replace(/\/$/u, ''),
+      requestTimeoutMs: parsed.OPENAI_REQUEST_TIMEOUT_MS,
+      maxRetries: parsed.OPENAI_MAX_RETRIES,
+    },
+    huggingFace: parsed.HF_TOKEN ? {
+      token: parsed.HF_TOKEN,
+      model: parsed.HF_EMBEDDING_MODEL,
+      baseUrl: parsed.HF_BASE_URL.replace(/\/$/u, ''),
+      requestTimeoutMs: parsed.HF_REQUEST_TIMEOUT_MS,
+      minScore: parsed.HF_MIN_SCORE,
+      minMargin: parsed.HF_MIN_MARGIN,
+    } : undefined,
   };
-
-  if (parsed.SHOWWHERE_AI_MODE === 'featherless') {
-    config.featherless = {
-      apiKey: parsed.FEATHERLESS_API_KEY!,
-      baseUrl: parsed.FEATHERLESS_BASE_URL!,
-      model: parsed.FEATHERLESS_GUIDE_MODEL!,
-      guideFallbackModel: parsed.FEATHERLESS_GUIDE_FALLBACK_MODEL,
-      visionModels: (parsed.FEATHERLESS_VISION_MODELS
-        ?? parsed.FEATHERLESS_VISION_MODEL
-        ?? parsed.FEATHERLESS_GUIDE_MODEL!)
-        .split(',')
-        .map((model) => model.trim())
-        .filter(Boolean),
-      fastModel: parsed.FEATHERLESS_FAST_MODEL,
-      reasoningModel: parsed.FEATHERLESS_REASONING_MODEL,
-      embeddingModel: parsed.FEATHERLESS_EMBEDDING_MODEL,
-      learningGeneratorModel: parsed.LEARNING_GENERATOR_MODEL,
-      learningJudgeModels: [
-        parsed.LEARNING_JUDGE_A_MODEL,
-        parsed.LEARNING_JUDGE_B_MODEL,
-        parsed.LEARNING_JUDGE_C_MODEL,
-      ].filter((model): model is string => Boolean(model)),
-      requestTimeoutMs: parsed.FEATHERLESS_REQUEST_TIMEOUT_MS,
-      maxRetries: parsed.FEATHERLESS_MAX_RETRIES,
-      retryBaseDelayMs: parsed.FEATHERLESS_RETRY_BASE_DELAY_MS,
-      maxTokens: parsed.FEATHERLESS_MAX_TOKENS,
-      enableThinking: parsed.FEATHERLESS_ENABLE_THINKING,
-      debug: parsed.SHOWWHERE_DEBUG,
-    };
-  }
-
-  return config;
 }

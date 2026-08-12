@@ -14,7 +14,6 @@ public partial class App : Application
     private HighlightOverlayWindow? _overlay;
     private GuidancePanelWindow? _panel;
     private FloatingAssistantWindow? _assistant;
-    private DeveloperTeachingWindow? _teachingWindow;
 
     protected override void OnStartup(StartupEventArgs eventArgs)
     {
@@ -25,7 +24,6 @@ public partial class App : Application
         var screenCapture = new WindowsScreenCaptureService();
         _overlay = new HighlightOverlayWindow();
         var apiClient = new GuideApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
-        var teachingClient = new TeachingApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
         var correctionSelection = new DeveloperRegionSelectionService();
         var correctionStore = new JsonlDeveloperCorrectionStore();
         var viewModel = new GuidanceViewModel(
@@ -33,19 +31,11 @@ public partial class App : Application
             monitor,
             screenCapture,
             apiClient,
-            teachingClient,
             _overlay,
             correctionSelection,
             correctionStore,
             Shutdown);
         _panel = new GuidancePanelWindow { DataContext = viewModel };
-        _teachingWindow = new DeveloperTeachingWindow { DataContext = viewModel };
-        viewModel.TeachingEditorRequested += () =>
-        {
-            _teachingWindow.Show();
-            _teachingWindow.Activate();
-        };
-        viewModel.TeachingEditorClosed += () => _teachingWindow.Hide();
         _panel.Deactivated += (_, _) => _panel.Dispatcher.BeginInvoke(
             observer.RememberCurrentForegroundWindow,
             DispatcherPriority.Background);
@@ -62,18 +52,12 @@ public partial class App : Application
             observer.RememberCurrentForegroundWindow();
             _panel.Hide();
             _assistant.Hide();
-            _teachingWindow.Hide();
         };
         viewModel.CorrectionSelectionCompleted += () =>
         {
             _assistant.Show();
             _panel.Show();
             _panel.Activate();
-            if (viewModel.IsCorrectionEditorVisible)
-            {
-                _teachingWindow.Show();
-                _teachingWindow.Activate();
-            }
         };
         MainWindow = _assistant;
         _assistant.Show();
@@ -82,7 +66,6 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs eventArgs)
     {
         _panel?.CloseForShutdown();
-        _teachingWindow?.CloseForShutdown();
         _overlay?.Close();
         _httpClient?.Dispose();
         base.OnExit(eventArgs);

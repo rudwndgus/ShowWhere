@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { SemanticKnowledgeContextSchema } from '../semantic/contracts';
 
 const attributeValueSchema = z.union([
   z.string(),
@@ -60,10 +59,9 @@ export const TaskSessionSchema = z.object({
 export const GuideRequestSchema = z.object({
   session: TaskSessionSchema,
   context: ApplicationContextSchema,
-  candidates: z.array(UiCandidateSchema).max(100),
-  screenshot: z.string().max(8_000_000).optional(),
+  candidates: z.array(UiCandidateSchema).max(250),
+  screenshot: z.string().max(12_000_000).optional(),
   screenshotBounds: BoundsSchema.optional(),
-  semanticContext: SemanticKnowledgeContextSchema.optional(),
 }).strict().superRefine((request, context) => {
   if ((request.screenshot === undefined) !== (request.screenshotBounds === undefined)) {
     context.addIssue({
@@ -101,21 +99,18 @@ export const GuideDecisionSchema = z.object({
     'request_safe_tool',
   ]),
   targetId: z.string().trim().min(1).max(160).optional(),
-  semanticTarget: z.string().trim().min(1).max(160).optional(),
   message: z.string().trim().min(1).max(500),
   expectedChange: z.string().trim().min(1).max(1_000).optional(),
   confidence: z.number().finite().min(0).max(1),
   safeToolId: z.string().trim().min(1).max(160).optional(),
   alternativeTargetIds: z.array(z.string().trim().min(1).max(160)).min(2).max(4).optional(),
   visualTarget: VisualTargetSchema.optional(),
-  expectedStateId: z.string().trim().min(1).max(160).optional(),
-  expectedEvidenceConceptIds: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
 }).strict().superRefine((decision, context) => {
-  if (decision.action === 'highlight' && !decision.targetId && !decision.semanticTarget) {
+  if (decision.action === 'highlight' && !decision.targetId) {
     context.addIssue({
       code: 'custom',
       path: ['targetId'],
-      message: 'targetId or semanticTarget is required when action is highlight.',
+      message: 'targetId is required when action is highlight.',
     });
   }
   if (decision.action === 'highlight_visual' && !decision.visualTarget) {
@@ -161,6 +156,6 @@ export const DEFAULT_GUIDE_CONFIDENCE_THRESHOLD = 0.65;
 
 export function targetExistsInRequest(decision: GuideDecision, request: GuideRequest): boolean {
   const candidateIds = new Set(request.candidates.map((candidate) => candidate.id));
-  if (decision.action === 'highlight' && (!decision.targetId || !candidateIds.has(decision.targetId))) return false;
+  if (decision.action === 'highlight' && !candidateIds.has(decision.targetId ?? '')) return false;
   return decision.alternativeTargetIds?.every((id) => candidateIds.has(id)) ?? true;
 }

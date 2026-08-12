@@ -1,31 +1,28 @@
-# 좋은 안내를 만드는 기억
+# Fresh GPT feedback data
 
-> `ai-learning` 브랜치는 사람의 교정을 바탕으로 ShowWhere의 판단을 더 정확하게 만드는 공간입니다.
+This directory intentionally starts empty on the `ShowWhere2.0` branch.
+The Windows developer-mode O/X/completion controls create new JSONL records here at runtime.
+No legacy provider, synthetic, or previous gold records are retained.
 
-ShowWhere가 기억해야 하는 것은 화면 위의 고정된 위치가 아닙니다. 화면 크기와 배치가 달라져도 변하지 않는 사용자의 목적, 현재 단계, 버튼의 의미, 행동 뒤에 기대되는 결과를 기억해야 합니다.
+Runtime order is exact replay, conservative semantic-intent replay, optional Hugging Face candidate ranking, then GPT fallback.
 
-## 좌표보다 의미가 중요한 이유
+- `corrections.jsonl`: human-corrected and O-approved target signatures used by runtime memory.
+- `answer-feedback.jsonl`: every developer O/X evaluation.
+- `completions.jsonl`: developer-verified task completion states used to stop repeated guidance.
+- `learning-status.jsonl`: append-only revoke/restore events created from the developer history UI.
+- `learning-edits.jsonl`: append-only edits to question, answer, O/X/end rating, target label, and developer comment made in `LOG`.
 
-어제 오른쪽 위에 있던 버튼이 오늘은 왼쪽 메뉴 안에 있을 수 있습니다. 같은 기능이 한국어 화면에서는 “주문 내역”, 영어 화면에서는 “Orders”나 “Purchases”로 나타날 수도 있습니다.
+These JSONL records stay repository-local so approved learning can be synchronized between development computers. Screenshots remain ignored because they can contain private information. API keys, tokens, cookies, passwords, raw screenshots, and private chain-of-thought must never be written here.
 
-좌표를 기억하면 화면이 조금만 달라져도 길을 잃습니다. 의미를 기억하면 처음 보는 표현에서도 사용자가 원하는 결과를 찾아갈 수 있습니다.
+An O record is replayed only when its semantic action/target intent is compatible and its target signature can be resolved again from the current live UI. X records are negative feedback and never become positive runtime memory automatically.
 
-## 좋은 기억은 무엇인가요?
+Runtime guarantees:
 
-좋은 기억에는 사용자의 질문만 있는 것이 아닙니다.
-
-사용자가 무엇을 하려 했는지, 현재 어디까지 왔는지, 화면에서 무엇을 확인할 수 있었는지, 다음 행동은 무엇이었는지, 그 행동이 성공했다면 어떤 변화가 보여야 하는지가 함께 담겨야 합니다.
-
-그리고 무엇보다 중요한 것은 완료 지점입니다. 사용자가 이미 목표를 이뤘다면 ShowWhere는 더 많은 행동을 추천하지 않고 멈출 줄 알아야 합니다.
-
-## 사람의 승인이 필요한 이유
-
-잘못된 기억은 기억이 없는 것보다 위험할 수 있습니다. ShowWhere가 자신 있게 틀린 곳을 가리키면 사용자는 더 큰 혼란을 겪습니다.
-
-그래서 AI의 추측은 곧바로 정답이 되지 않습니다. 사람이 검토하고 옳다고 확인한 안내만 가장 신뢰할 수 있는 기준이 됩니다. 확실하지 않은 내용은 보류하고, 서로 충돌하는 교정은 다시 확인해야 합니다.
-
-## 기억을 다루는 태도
-
-ShowWhere는 사용자의 화면을 배움의 재료로만 보지 않습니다. 화면에는 이름, 계정 정보, 문서, 메시지처럼 보호해야 할 정보가 있을 수 있습니다.
-
-필요한 의미만 남기고 불필요한 개인 정보는 남기지 않는 것, 화면의 위치보다 목적과 관계를 배우는 것, 사람의 확인 없이 정답이라고 주장하지 않는 것이 ShowWhere가 기억을 다루는 원칙입니다.
+- O immediately creates a `human_gold` correction and is available in the current process and after restart.
+- Similar wording can reuse O when action and target concepts remain compatible; different actions remain separate.
+- X is reloaded as negative memory and removes the same rejected target ID for the same intent/application.
+- A newer O for that target supersedes the older X.
+- Saved correction comments retain raw text, normalized text, issue tags, semantic target signature, and learning labels.
+- End creates a verified completion record. Completion replay requires specific live evidence; generic titles such as `Settings` are insufficient.
+- The developer-mode `LOG` panel lists O/X/end/comment records. Each field can be corrected and saved, or the whole record can be revoked/restored. Original records are never overwritten; the latest edit/status event becomes the effective runtime value.
+- Coordinates are observations only. Every replay resolves the semantic target against the current live UI.

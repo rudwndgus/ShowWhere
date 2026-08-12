@@ -1,8 +1,0 @@
-{
-  "datasetVersion": "showwhere-v0.1",
-  "seedVersion": "0.1.0",
-  "provenance": "human",
-  "transformation": "Deterministic one-to-one conversion of runtime-validated human seed examples; no model generation.",
-  "count": 24,
-  "generatedAt": "2026-08-10T03:28:02.094Z"
-}
