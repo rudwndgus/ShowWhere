@@ -58,6 +58,43 @@ public sealed record RefinedDeveloperComment(
     string Normalized,
     IReadOnlyList<string> IssueTags);
 
+public static class DeveloperPositiveFeedback
+{
+    public static DeveloperCorrectionRecord? Create(
+        AnswerFeedbackRecord feedback,
+        CorrectionTargetSignature? targetSignature)
+    {
+        if (!string.Equals(feedback.Rating, "correct", StringComparison.OrdinalIgnoreCase)
+            || feedback.Action != GuideActions.Highlight
+            || targetSignature is null
+            || feedback.Context is null
+            || string.IsNullOrWhiteSpace(feedback.OriginalGoal)) return null;
+
+        return new DeveloperCorrectionRecord(
+            1,
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow,
+            feedback.OriginalGoal,
+            string.IsNullOrWhiteSpace(feedback.EffectiveGoal) ? feedback.OriginalGoal : feedback.EffectiveGoal,
+            null,
+            feedback.Context,
+            feedback.SnapshotHash,
+            feedback.Action,
+            feedback.TargetId,
+            feedback.TargetLabel,
+            feedback.TargetBounds,
+            feedback.TargetBounds,
+            null,
+            targetSignature,
+            null,
+            true,
+            feedback.Id,
+            null,
+            "Developer explicitly marked this answer correct.",
+            ["positive_feedback", "human_gold"]);
+    }
+}
+
 public interface IDeveloperCorrectionStore
 {
     string DataDirectory { get; }

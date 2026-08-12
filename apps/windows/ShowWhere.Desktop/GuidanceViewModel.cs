@@ -425,7 +425,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     }
                     _lastHighlightedCandidate = selectedCandidate;
                     _lastHighlightedBounds = bounds;
-                    AttachTrainingContext(answerMessage, decision, selectedLabel, bounds);
+                    AttachTrainingContext(answerMessage, decision, selectedLabel, bounds, selectedCandidate);
                     _session = TaskSessionStateMachine.GuidanceReady(_session, decision.Message, decision.ExpectedChange);
                     if (isOffscreen)
                     {
@@ -607,9 +607,13 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         if (parameter is not ChatMessageItem message || !message.CanEvaluate) return;
         try
         {
-            await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "correct"));
+            var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "correct"));
+            if (DeveloperPositiveFeedback.Create(feedback, message.TargetSignature) is { } positiveCorrection)
+                await _correctionStore.SaveAsync(positiveCorrection, null);
             message.MarkEvaluated("correct");
-            StatusText = "좋은 답변으로 영구 저장됨";
+            StatusText = message.TargetSignature is null
+                ? "정답으로 영구 저장됨"
+                : "정답으로 영구 저장됨 · 다음 동일 질문은 AI 없이 즉시 안내";
         }
         catch (Exception exception)
         {
@@ -906,7 +910,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ChatMessageItem message,
         GuideDecision? decision,
         string? targetLabel = null,
-        UiBounds? targetBounds = null)
+        UiBounds? targetBounds = null,
+        UiCandidate? targetCandidate = null)
     {
         message.AttachTrainingContext(
             string.IsNullOrWhiteSpace(_submittedGoal) ? _session?.OriginalUserMessage : _submittedGoal,
@@ -915,7 +920,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _lastObservation?.SnapshotHash,
             decision,
             targetLabel,
-            targetBounds);
+            targetBounds,
+            targetCandidate is null ? null : DeveloperCorrectionMatcher.CreateSignature(targetCandidate));
     }
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

@@ -56,6 +56,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     public GuideDecision? Decision { get; private set; }
     public string? TargetLabel { get; private set; }
     public UiBounds? TargetBounds { get; private set; }
+    public CorrectionTargetSignature? TargetSignature { get; private set; }
 
     public void AttachTrainingContext(
         string? originalGoal,
@@ -64,7 +65,8 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         string? snapshotHash,
         GuideDecision? decision,
         string? targetLabel = null,
-        UiBounds? targetBounds = null)
+        UiBounds? targetBounds = null,
+        CorrectionTargetSignature? targetSignature = null)
     {
         OriginalGoal = originalGoal;
         EffectiveGoal = effectiveGoal;
@@ -73,6 +75,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         Decision = decision;
         TargetLabel = targetLabel;
         TargetBounds = targetBounds;
+        TargetSignature = targetSignature;
     }
 
     public void MarkEvaluated(string evaluation) => Evaluation = evaluation;

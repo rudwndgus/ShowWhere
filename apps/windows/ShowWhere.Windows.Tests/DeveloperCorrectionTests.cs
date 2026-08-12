@@ -81,6 +81,43 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task O_feedback_is_promoted_to_human_gold_and_replayed_without_ai_after_restart()
+    {
+        var originalStore = new JsonlDeveloperCorrectionStore(_directory);
+        var feedback = Feedback("correct", "설정 버튼을 누르세요");
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("settings", "설정", "settings-button", "windows_start"));
+        var gold = DeveloperPositiveFeedback.Create(feedback, signature);
+
+        Assert.NotNull(gold);
+        Assert.Contains("human_gold", gold.IssueTags!);
+        await originalStore.SaveFeedbackAsync(feedback);
+        await originalStore.SaveAsync(gold, null);
+
+        var reloadedStore = new JsonlDeveloperCorrectionStore(_directory);
+        var found = reloadedStore.TryResolveTarget(
+            feedback.OriginalGoal!,
+            feedback.Context!,
+            [Candidate("new-settings-id", "설정", "settings-button", "windows_start")],
+            out var target,
+            out var replayedGold);
+
+        Assert.True(found);
+        Assert.Equal("new-settings-id", target.Id);
+        Assert.Equal(feedback.Id, replayedGold.FeedbackId);
+    }
+
+    [Fact]
+    public void X_feedback_is_never_promoted_to_positive_memory()
+    {
+        var feedback = Feedback("incorrect", "잘못된 버튼");
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("wrong", "잘못된 버튼", "wrong-button", "browser_chrome"));
+
+        Assert.Null(DeveloperPositiveFeedback.Create(feedback, signature));
+    }
+
+    [Fact]
     public void Developer_comment_keeps_raw_text_and_adds_structured_issue_tags()
     {
         var refined = DeveloperCommentRefiner.Refine(
