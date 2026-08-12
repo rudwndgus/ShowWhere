@@ -2,6 +2,7 @@ import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import type { GuideDecision, GuideRequest } from '../../../../src/contracts';
 import { cosineSimilarity, HuggingFaceEmbeddingClient } from './HuggingFaceEmbeddingClient';
 import { describeCandidate, eligibleCandidates, resolveLocally } from './LocalGuideResolver';
+import { resolveWindowsKnowledge } from '../windows-knowledge/WindowsKnowledgeResolver';
 
 export interface HybridGuideProviderOptions {
   minScore: number;
@@ -17,6 +18,11 @@ export class HybridGuideProvider implements AiProvider {
   ) {}
 
   async decideNextAction(request: GuideRequest): Promise<unknown> {
+    const windows = resolveWindowsKnowledge(request);
+    if (windows) {
+      this.log('windows_knowledge', windows.targetId);
+      return windows;
+    }
     const local = resolveLocally(request);
     if (local) {
       this.log('local', local.targetId);

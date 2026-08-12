@@ -26,4 +26,16 @@ describe('hybrid guide provider', () => {
     expect(result).toBe(expected);
     expect(fallback.decideNextAction).toHaveBeenCalledOnce();
   });
+
+  it('routes known Windows settings before local, Hugging Face, or GPT', async () => {
+    const fallback: AiProvider = { decideNextAction: vi.fn() };
+    const provider = new HybridGuideProvider(fallback);
+    const result = await provider.decideNextAction({
+      ...guideRequestFixture,
+      session: { ...guideRequestFixture.session, originalUserMessage: '프린터 설정 어디야?', goal: '프린터 설정 어디야?' },
+      candidates: [{ ...guideRequestFixture.candidates[0], id: 'printers', label: '프린터 및 스캐너' }],
+    }) as { targetId?: string };
+    expect(result.targetId).toBe('printers');
+    expect(fallback.decideNextAction).not.toHaveBeenCalled();
+  });
 });
