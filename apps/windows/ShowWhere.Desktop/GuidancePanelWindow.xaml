@@ -70,6 +70,9 @@
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+          <Button Content="{Binding DeveloperModeText}" Command="{Binding ToggleDeveloperModeCommand}"
+                  Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
+                  Style="{StaticResource QuietButton}" ToolTip="검증 평가와 Brain v2 라벨링을 켜거나 끕니다" />
           <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
                   Style="{StaticResource QuietButton}" Padding="0" Click="OnMinimize" ToolTip="최소화" />
           <Button Content="×" Width="30" Height="30" FontSize="20"
@@ -114,6 +117,7 @@
                                FontSize="13" LineHeight="19" Foreground="{StaticResource TextBrush}" />
                   </Border>
                   <Grid Grid.Row="1" Margin="2,4,2,0">
+                    <StackPanel Visibility="{Binding DataContext.IsDeveloperMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel Orientation="Horizontal"
                                 Visibility="{Binding CanEvaluate, Converter={StaticResource BooleanToVisibilityConverter}}">
                       <Button Content="O 정답" Margin="0,0,5,0" Padding="8,4" FontSize="10"
@@ -124,6 +128,7 @@
                               Style="{StaticResource QuietButton}"
                               Command="{Binding DataContext.MarkAnswerIncorrectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                               CommandParameter="{Binding}" />
+                    </StackPanel>
                     </StackPanel>
                     <TextBlock Text="{Binding EvaluationLabel}" FontSize="10" Foreground="{StaticResource MutedBrush}"
                                Visibility="{Binding IsEvaluated, Converter={StaticResource BooleanToVisibilityConverter}}" />
@@ -175,10 +180,11 @@
         </Grid>
       </Border>
 
-      <Border Grid.Row="4" Margin="17,9,17,0" Padding="12"
+      <Border Grid.Row="4" Margin="17,9,17,0" Padding="12" MaxHeight="370"
               Background="#FFFFF9E8" BorderBrush="#FFFFD778" BorderThickness="1"
               CornerRadius="9"
               Visibility="{Binding IsCorrectionEditorVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel>
           <TextBlock Text="개발자 교정 모드" FontSize="13" FontWeight="Bold"
                      Foreground="{StaticResource TextBrush}" />
@@ -193,6 +199,23 @@
           <TextBox Text="{Binding CorrectionCommentText, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
                    ToolTip="무엇이 틀렸고 어떻게 고쳐야 하는지 자유롭게 적으세요" />
+          <TextBlock Text="Brain v2 학습 라벨" FontSize="11" FontWeight="SemiBold"
+                     Foreground="{StaticResource TextBrush}" Margin="0,10,0,4" />
+          <TextBlock Text="점(.)으로 계층을 구분합니다. 빈칸은 현재 질문과 화면에서 자동 생성합니다."
+                     TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,6" />
+          <TextBox Text="{Binding CorrectionTaskId, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
+                   ToolTip="작업 ID 예: windows.printer.add" />
+          <TextBox Text="{Binding CorrectionStateId, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
+                   ToolTip="현재 상태 예: windows.settings.home" />
+          <TextBox Text="{Binding CorrectionTargetConcept, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
+                   ToolTip="정답 대상 예: windows.settings.printers_scanners" />
+          <TextBox Text="{Binding CorrectionExpectedNextState, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
+                   ToolTip="예상 다음 상태 예: windows.settings.printers_scanners" />
+          <TextBox Text="{Binding CorrectionExpectedEvidence, UpdateSourceTrigger=PropertyChanged}"
+                   MinHeight="38" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,5" Margin="0,0,0,5"
+                   ToolTip="성공 증거를 쉼표 또는 줄바꿈으로 입력" />
+          <ComboBox ItemsSource="{Binding CorrectionOutcomeLabels}" SelectedItem="{Binding CorrectionOutcomeLabel}"
+                    Padding="7,5" ToolTip="오답 원인 또는 학습 결과 라벨" />
           <TextBlock Text="{Binding CorrectionSelectionSummary}" TextWrapping="Wrap"
                      FontSize="10" Foreground="#FF7A5A16" Margin="0,7,0,0" />
           <CheckBox IsChecked="{Binding SaveCorrectionScreenshot}" Margin="0,8,0,7"
@@ -216,6 +239,7 @@
                     Style="{StaticResource QuietButton}" FontSize="11" />
           </Grid>
         </StackPanel>
+        </ScrollViewer>
       </Border>
 
       <Grid Grid.Row="5" Margin="17,9,17,12">

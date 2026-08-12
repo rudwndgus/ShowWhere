@@ -91,6 +91,9 @@ public sealed class DeveloperCorrectionTests : IDisposable
 
         Assert.NotNull(gold);
         Assert.Contains("human_gold", gold.IssueTags!);
+        Assert.Equal("human_gold", gold.LearningLabels?.Authority);
+        Assert.Equal("correct_target", gold.LearningLabels?.OutcomeLabel);
+        Assert.Contains("설정", gold.LearningLabels?.ExpectedEvidence ?? []);
         await originalStore.SaveFeedbackAsync(feedback);
         await originalStore.SaveAsync(gold, null);
 
@@ -118,6 +121,26 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task O_visual_feedback_is_replayed_only_on_the_same_verified_screen()
+    {
+        var feedback = Feedback("correct", "화면의 설정 아이콘을 누르세요") with
+        {
+            Action = GuideActions.HighlightVisual,
+        };
+        var visual = new VisualTarget(0.7, 0.2, 0.05, 0.05, "설정");
+        var gold = DeveloperPositiveFeedback.Create(feedback, null, visual);
+        Assert.NotNull(gold);
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        await store.SaveAsync(gold, null);
+
+        Assert.True(store.TryResolveVisualTarget(
+            feedback.OriginalGoal!, feedback.Context!, "snapshot", out var replay, out _));
+        Assert.Equal(visual, replay);
+        Assert.False(store.TryResolveVisualTarget(
+            feedback.OriginalGoal!, feedback.Context!, "different-screen", out _, out _));
+    }
+
+    [Fact]
     public void Developer_comment_keeps_raw_text_and_adds_structured_issue_tags()
     {
         var refined = DeveloperCommentRefiner.Refine(
@@ -126,6 +149,27 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal("크롬 주소창이 아니라 유튜브 뮤직 웹페이지 검색창을 표시해야 해", refined.Normalized);
         Assert.Contains("wrong_scope", refined.IssueTags);
         Assert.Contains("wrong_application", refined.IssueTags);
+    }
+
+    [Fact]
+    public void Developer_labels_follow_brain_v2_task_state_target_and_evidence_contract()
+    {
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            "프린터를 추가해줘",
+            new ApplicationContext(Platforms.Windows, "SystemSettings", "설정"),
+            "프린터 및 스캐너",
+            "Windows.Printer.Add",
+            "Windows.Settings.Home",
+            "Windows.Settings.Printers Scanners",
+            "프린터 및 스캐너, 장치 추가",
+            "wrong_target");
+
+        Assert.Equal("windows.printer.add", labels.TaskId);
+        Assert.Equal("windows.settings.home", labels.StateId);
+        Assert.Equal("프린터.및.스캐너", labels.TargetConcept);
+        Assert.Equal("windows.settings.printers.scanners", labels.ExpectedNextState);
+        Assert.Equal(["프린터 및 스캐너", "장치 추가"], labels.ExpectedEvidence);
+        Assert.Equal("human_gold", labels.Authority);
     }
 
     [Fact]

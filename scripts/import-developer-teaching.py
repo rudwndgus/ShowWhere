@@ -48,7 +48,15 @@ def main() -> int:
             # AI drafts, unapproved drags, and feedback-only records never become gold.
             if correction.get("developerVerified") is not True or not correction.get("correctTarget"):
                 continue
-            concept = correction["correctTarget"].get("label") or correction.get("correctedIntent")
+            labels = correction.get("learningLabels") or {}
+            concept = labels.get("targetConcept") or correction["correctTarget"].get("label") or correction.get("correctedIntent")
+            task_id = labels.get("taskId") or task_slug(correction.get("effectiveGoal") or correction.get("originalGoal", ""))
+            state_id = labels.get("stateId") or ".".join(filter(None, [
+                correction.get("context", {}).get("applicationName"),
+                correction.get("context", {}).get("windowTitle"),
+            ])) or "unknown"
+            expected_next_state = labels.get("expectedNextState") or correction.get("refinedComment") or f"UI changes after selecting {concept}"
+            expected_evidence = labels.get("expectedEvidence") or [concept]
             gold = {
                 "schemaVersion": "showwhere-developer-gold-v2",
                 "id": correction.get("id"),
@@ -57,9 +65,13 @@ def main() -> int:
                 "immutableSource": True,
                 "userQuestion": correction.get("originalGoal"),
                 "correctedIntent": correction.get("refinedComment") or correction.get("correctedIntent"),
-                "taskId": task_slug(correction.get("effectiveGoal") or correction.get("originalGoal", "")),
+                "taskId": task_id,
+                "stateId": state_id,
                 "state": correction.get("context"),
                 "targetConcept": concept,
+                "expectedNextState": expected_next_state,
+                "expectedEvidence": expected_evidence,
+                "outcomeLabel": labels.get("outcomeLabel") or "correct_target",
                 "correctTarget": correction.get("correctTarget"),
                 "selectedBounds": correction.get("selectedBounds"),
                 "normalizedVisualTarget": correction.get("normalizedVisualTarget"),
@@ -69,11 +81,11 @@ def main() -> int:
             target.write(json.dumps(gold, ensure_ascii=False) + "\n")
             memory_entries.append(scrub({
                 "id": correction.get("id"), "score": 1.0, "authority": "human_gold",
-                "taskId": gold["taskId"],
-                "stateId": ".".join(filter(None, [correction.get("context", {}).get("applicationName"), correction.get("context", {}).get("windowTitle")])) or "unknown",
+                "taskId": task_id,
+                "stateId": state_id,
                 "targetConcept": concept,
-                "expectedNextState": correction.get("refinedComment") or f"UI changes after selecting {concept}",
-                "text": " | ".join(filter(None, [correction.get("originalGoal"), correction.get("effectiveGoal"), correction.get("correctedIntent"), correction.get("refinedComment"), concept])),
+                "expectedNextState": expected_next_state,
+                "text": " | ".join(filter(None, [correction.get("originalGoal"), correction.get("effectiveGoal"), correction.get("correctedIntent"), correction.get("refinedComment"), concept, *expected_evidence])),
             }))
             accepted += 1
     memory_path = Path(args.memory)

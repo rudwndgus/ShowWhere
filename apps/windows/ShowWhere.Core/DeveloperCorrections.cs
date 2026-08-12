@@ -14,6 +14,15 @@ public sealed record CorrectionTargetSignature(
     string? SourceScope,
     string? ContainerLabel);
 
+public sealed record DeveloperLearningLabels(
+    string TaskId,
+    string StateId,
+    string TargetConcept,
+    string ExpectedNextState,
+    IReadOnlyList<string> ExpectedEvidence,
+    string OutcomeLabel,
+    string Authority = "human_gold");
+
 public sealed record DeveloperCorrectionRecord(
     int SchemaVersion,
     string Id,
@@ -35,7 +44,8 @@ public sealed record DeveloperCorrectionRecord(
     string? FeedbackId = null,
     string? DeveloperComment = null,
     string? RefinedComment = null,
-    IReadOnlyList<string>? IssueTags = null);
+    IReadOnlyList<string>? IssueTags = null,
+    DeveloperLearningLabels? LearningLabels = null);
 
 public sealed record AnswerFeedbackRecord(
     int SchemaVersion,
@@ -62,14 +72,21 @@ public static class DeveloperPositiveFeedback
 {
     public static DeveloperCorrectionRecord? Create(
         AnswerFeedbackRecord feedback,
-        CorrectionTargetSignature? targetSignature)
+        CorrectionTargetSignature? targetSignature,
+        VisualTarget? normalizedVisualTarget = null)
     {
         if (!string.Equals(feedback.Rating, "correct", StringComparison.OrdinalIgnoreCase)
-            || feedback.Action != GuideActions.Highlight
-            || targetSignature is null
+            || (feedback.Action != GuideActions.Highlight && feedback.Action != GuideActions.HighlightVisual)
+            || (targetSignature is null && normalizedVisualTarget is null)
             || feedback.Context is null
             || string.IsNullOrWhiteSpace(feedback.OriginalGoal)) return null;
 
+        var targetConcept = targetSignature?.Label
+            ?? targetSignature?.Description
+            ?? targetSignature?.AutomationId
+            ?? normalizedVisualTarget?.Label
+            ?? targetSignature?.Role
+            ?? "visual target";
         return new DeveloperCorrectionRecord(
             1,
             Guid.NewGuid().ToString("D"),
@@ -84,14 +101,86 @@ public static class DeveloperPositiveFeedback
             feedback.TargetLabel,
             feedback.TargetBounds,
             feedback.TargetBounds,
-            null,
+            normalizedVisualTarget,
             targetSignature,
             null,
             true,
             feedback.Id,
             null,
             "Developer explicitly marked this answer correct.",
-            ["positive_feedback", "human_gold"]);
+            ["positive_feedback", "human_gold"],
+            DeveloperLabeling.CreatePositiveLabels(feedback, targetConcept));
+    }
+}
+
+public static class DeveloperLabeling
+{
+    public static readonly string[] OutcomeLabels =
+    [
+        "correct_target",
+        "wrong_intent",
+        "wrong_application",
+        "wrong_scope",
+        "wrong_target",
+        "overlay_missing",
+        "missing_detail",
+        "ambiguous_request",
+        "visual_grounding_error",
+    ];
+
+    public static DeveloperLearningLabels CreatePositiveLabels(
+        AnswerFeedbackRecord feedback,
+        string targetConcept) => new(
+            StableLabel("task", feedback.EffectiveGoal ?? feedback.OriginalGoal ?? "unknown"),
+            StableLabel("state", $"{feedback.Context?.ApplicationName}.{feedback.Context?.WindowTitle}"),
+            NormalizeConcept(targetConcept),
+            StableLabel("state", $"after.{targetConcept}"),
+            [targetConcept],
+            "correct_target");
+
+    public static DeveloperLearningLabels CreateCorrectionLabels(
+        string originalGoal,
+        ApplicationContext context,
+        string targetConcept,
+        string? taskId,
+        string? stateId,
+        string? expectedNextState,
+        string? expectedEvidence,
+        string? outcomeLabel)
+    {
+        var evidence = (expectedEvidence ?? string.Empty)
+            .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (evidence.Length == 0 && !string.IsNullOrWhiteSpace(targetConcept)) evidence = [targetConcept];
+        return new DeveloperLearningLabels(
+            NormalizeProvided(taskId) ?? StableLabel("task", originalGoal),
+            NormalizeProvided(stateId) ?? StableLabel("state", $"{context.ApplicationName}.{context.WindowTitle}"),
+            NormalizeProvided(targetConcept) ?? "unknown.target",
+            NormalizeProvided(expectedNextState) ?? StableLabel("state", $"after.{targetConcept}"),
+            evidence,
+            OutcomeLabels.Contains(outcomeLabel, StringComparer.Ordinal) ? outcomeLabel! : "wrong_target");
+    }
+
+    private static string NormalizeConcept(string value) =>
+        NormalizeProvided(value) ?? "unknown.target";
+
+    private static string StableLabel(string prefix, string value)
+    {
+        var normalized = NormalizeProvided(value) ?? "unknown";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant()[..10];
+        return $"{prefix}.{normalized[..Math.Min(normalized.Length, 48)]}.{hash}";
+    }
+
+    private static string? NormalizeProvided(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var output = new string(value.Trim().ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '.')
+            .ToArray());
+        while (output.Contains("..", StringComparison.Ordinal)) output = output.Replace("..", ".", StringComparison.Ordinal);
+        return output.Trim('.');
     }
 }
 
@@ -104,6 +193,12 @@ public interface IDeveloperCorrectionStore
         ApplicationContext context,
         IReadOnlyList<UiCandidate> candidates,
         out UiCandidate target,
+        out DeveloperCorrectionRecord correction);
+    bool TryResolveVisualTarget(
+        string goal,
+        ApplicationContext context,
+        string snapshotHash,
+        out VisualTarget target,
         out DeveloperCorrectionRecord correction);
     Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
@@ -191,6 +286,35 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             return true;
         }
         return false;
+    }
+
+    public bool TryResolveVisualTarget(
+        string goal,
+        ApplicationContext context,
+        string snapshotHash,
+        out VisualTarget target,
+        out DeveloperCorrectionRecord correction)
+    {
+        target = null!;
+        correction = null!;
+        var normalizedGoal = Normalize(goal);
+        lock (_gate)
+        {
+            var match = _records
+                .Where(record => record.NormalizedVisualTarget is not null)
+                .Where(record => Normalize(record.OriginalGoal) == normalizedGoal
+                    || Normalize(record.EffectiveGoal) == normalizedGoal
+                    || Normalize(record.CorrectedIntent) == normalizedGoal)
+                .Where(record => string.Equals(record.SnapshotHash, snapshotHash, StringComparison.Ordinal)
+                    && string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(record.Context.WindowTitle, context.WindowTitle, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(record => record.CreatedAtUtc)
+                .FirstOrDefault();
+            if (match is null) return false;
+            target = match.NormalizedVisualTarget!;
+            correction = match;
+            return true;
+        }
     }
 
     public async Task<DeveloperCorrectionRecord> SaveAsync(
