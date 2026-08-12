@@ -86,6 +86,9 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.False(DeveloperIntentMatcher.IsSameIntent(
             "프린터 상태를 확인하고 싶어",
             "프린터를 추가해줘"));
+        Assert.True(DeveloperIntentMatcher.IsSameIntent(
+            "프린터 설정을 열어줘",
+            "인쇄 장치 설정 어디야?"));
     }
 
     [Fact]
@@ -123,6 +126,50 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task X_feedback_is_reloaded_and_removes_the_same_rejected_target()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var wrong = Feedback("incorrect", "주소창을 누르세요") with
+        {
+            OriginalGoal = "유튜브 뮤직에서 노래 검색해줘",
+            EffectiveGoal = "유튜브 뮤직에서 노래 검색해줘",
+            TargetId = "browser-address",
+            TargetLabel = "검색",
+        };
+        await store.SaveFeedbackAsync(wrong);
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        var filtered = reloaded.FilterRejectedCandidates(
+            "유튜브 뮤직에서 음악 찾아줘",
+            wrong.Context!,
+            [Candidate("browser-address", "검색", "address", "browser_chrome"),
+             Candidate("music-search", "검색", "music", "browser_content")]);
+
+        Assert.DoesNotContain(filtered, candidate => candidate.Id == "browser-address");
+        Assert.Contains(filtered, candidate => candidate.Id == "music-search");
+    }
+
+    [Fact]
+    public async Task A_later_O_clears_the_same_target_from_negative_memory()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var incorrect = Feedback("incorrect", "wrong") with { TargetId = "target" };
+        await store.SaveFeedbackAsync(incorrect);
+        await store.SaveFeedbackAsync(incorrect with
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            CreatedAtUtc = incorrect.CreatedAtUtc.AddSeconds(1),
+            Rating = "correct",
+        });
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        var filtered = reloaded.FilterRejectedCandidates(
+            incorrect.OriginalGoal!, incorrect.Context!,
+            [Candidate("target", "설정", "settings", "windows_start")]);
+        Assert.Single(filtered);
+    }
+
+    [Fact]
     public async Task O_feedback_is_promoted_to_human_gold_and_replayed_without_ai_after_restart()
     {
         var originalStore = new JsonlDeveloperCorrectionStore(_directory);
@@ -150,6 +197,27 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.True(found);
         Assert.Equal("new-settings-id", target.Id);
         Assert.Equal(feedback.Id, replayedGold.FeedbackId);
+    }
+
+    [Fact]
+    public async Task O_feedback_replays_a_semantically_equivalent_question_after_restart()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var feedback = Feedback("correct", "프린터 및 스캐너를 누르세요") with
+        {
+            OriginalGoal = "프린터 연결 상태를 확인하고 싶어",
+            EffectiveGoal = "프린터 연결 상태 확인",
+        };
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("printer", "프린터 및 스캐너", "printers", "settings"));
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(feedback, signature)!, null);
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.True(reloaded.TryResolveTarget(
+            "인쇄 장치 상태를 보여줘", feedback.Context!,
+            [Candidate("new-printer", "프린터 및 스캐너", "printers", "settings")],
+            out var target, out _));
+        Assert.Equal("new-printer", target.Id);
     }
 
     [Fact]
@@ -205,6 +273,40 @@ public sealed class DeveloperCorrectionTests : IDisposable
             "크롬에서 유튜브 뮤직 틀어줘",
             new ApplicationContext(Platforms.Windows, "chrome", "새 탭 - Chrome"),
             [], out _));
+    }
+
+    [Fact]
+    public async Task Generic_settings_title_does_not_complete_a_task_without_specific_live_evidence()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(Platforms.Windows, "SystemSettings", "설정");
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            "프린터 설정 열어줘", context, "프린터 및 스캐너",
+            null, null, "printers", "프린터 및 스캐너,장치 추가", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            "프린터 설정 열어줘", "프린터 설정 열어줘", context, "snapshot",
+            ["프린터 및 스캐너", "장치 추가"], labels));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.False(reloaded.TryResolveCompletion(
+            "인쇄 장치 설정 보여줘", context,
+            [Candidate("sound", "소리", "sound", "settings")], out _));
+        Assert.True(reloaded.TryResolveCompletion(
+            "인쇄 장치 설정 보여줘", context,
+            [Candidate("printers", "프린터 및 스캐너", "printers", "settings")], out _));
+    }
+
+    [Fact]
+    public void Completion_evidence_ignores_generic_window_chrome_and_keeps_specific_controls()
+    {
+        var evidence = DeveloperCompletionEvidence.Build(
+            new ApplicationContext(Platforms.Windows, "SystemSettings", "설정"),
+            [Candidate("close", "닫기", "close", "window_chrome"),
+             Candidate("printers", "프린터 및 스캐너", "printers", "settings")]);
+        Assert.DoesNotContain("설정", evidence);
+        Assert.DoesNotContain("닫기", evidence);
+        Assert.Contains("프린터 및 스캐너", evidence);
     }
 
     [Fact]

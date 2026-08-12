@@ -1,6 +1,6 @@
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import type { GuideDecision, GuideRequest } from '../../../../src/contracts';
-import { cosineSimilarity, HuggingFaceEmbeddingClient } from './HuggingFaceEmbeddingClient';
+import { cosineSimilarity, type TextEmbeddingProvider } from './HuggingFaceEmbeddingClient';
 import { describeCandidate, eligibleCandidates, resolveLocally } from './LocalGuideResolver';
 import { resolveWindowsKnowledge } from '../windows-knowledge/WindowsKnowledgeResolver';
 
@@ -13,7 +13,7 @@ export interface HybridGuideProviderOptions {
 export class HybridGuideProvider implements AiProvider {
   constructor(
     private readonly fallback: AiProvider,
-    private readonly embeddings?: HuggingFaceEmbeddingClient,
+    private readonly embeddings?: TextEmbeddingProvider,
     private readonly options: HybridGuideProviderOptions = { minScore: 0.68, minMargin: 0.08 },
   ) {}
 
@@ -29,20 +29,33 @@ export class HybridGuideProvider implements AiProvider {
       return local;
     }
 
-    if (this.embeddings) {
-      try {
-        const semantic = await this.resolveWithEmbeddings(request);
-        if (semantic) {
-          this.log('huggingface', semantic.targetId);
-          return semantic;
-        }
-      } catch (error) {
-        this.log('huggingface_fallback', error instanceof Error ? error.message : String(error));
-      }
+    if (!this.embeddings) {
+      this.log('openai', 'reasoning');
+      return this.fallback.decideNextAction(request);
     }
 
-    this.log('openai', 'reasoning');
-    return this.fallback.decideNextAction(request);
+    // Ambiguous requests start both remote paths immediately. Whichever returns a
+    // usable answer first wins; a slow HF provider never delays GPT escalation.
+    const openai = this.fallback.decideNextAction(request);
+    const huggingFace = this.resolveWithEmbeddings(request)
+      .catch((error) => {
+        this.log('huggingface_fallback', error instanceof Error ? error.message : String(error));
+        return undefined;
+      });
+    const first = await Promise.race([
+      openai.then((value) => ({ source: 'openai' as const, value })),
+      huggingFace.then((value) => ({ source: 'huggingface' as const, value })),
+    ]);
+    if (first.source === 'openai') {
+      this.log('openai', 'reasoning_parallel');
+      return first.value;
+    }
+    if (first.value) {
+      this.log('huggingface', first.value.targetId);
+      return first.value;
+    }
+    this.log('openai', 'reasoning_after_hf_miss');
+    return openai;
   }
 
   private async resolveWithEmbeddings(request: GuideRequest): Promise<GuideDecision | undefined> {

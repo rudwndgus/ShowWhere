@@ -316,7 +316,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     IsLoading = false;
                     return;
                 }
-                var prioritizedCandidates = currentObservation.Candidates;
+                var prioritizedCandidates = _correctionStore.FilterRejectedCandidates(
+                    _session.OriginalUserMessage,
+                    currentObservation.Context,
+                    currentObservation.Candidates);
                 StatusText = $"후보 {prioritizedCandidates.Count}개 분석 중";
                 _session = TaskSessionStateMachine.AiRequested(_session);
                 var request = new GuideRequest(_session, currentObservation.Context, prioritizedCandidates);
@@ -647,7 +650,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             message.MarkEvaluated("correct");
             StatusText = message.TargetSignature is null
                 ? "정답으로 영구 저장됨"
-                : "정답으로 영구 저장됨 · 다음 동일 질문은 AI 없이 즉시 안내";
+                : "정답으로 영구 저장됨 · 같은 의도의 질문은 AI 없이 즉시 안내";
         }
         catch (Exception exception)
         {
@@ -695,11 +698,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             }
             _lastObservation = observation;
             var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "completed"));
-            var evidence = !string.IsNullOrWhiteSpace(observation.Context.WindowTitle)
-                ? new[] { observation.Context.WindowTitle.Trim() }
-                : !string.IsNullOrWhiteSpace(observation.Context.Url)
-                    ? new[] { observation.Context.Url.Trim() }
-                    : new[] { observation.Context.ApplicationName.Trim() };
+            var evidence = DeveloperCompletionEvidence.Build(
+                observation.Context,
+                observation.Candidates);
             var intentKey = DeveloperIntentMatcher.CreateIntentKey(goal);
             var labels = DeveloperLabeling.CreateCorrectionLabels(
                 goal,

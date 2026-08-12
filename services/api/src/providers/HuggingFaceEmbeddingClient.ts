@@ -5,6 +5,10 @@ export interface HuggingFaceEmbeddingOptions {
   requestTimeoutMs: number;
 }
 
+export interface TextEmbeddingProvider {
+  embed(texts: string[]): Promise<number[][]>;
+}
+
 function meanVector(value: unknown): number[] {
   if (!Array.isArray(value) || value.length === 0) throw new Error('Hugging Face returned no embedding.');
   if (value.every((item) => typeof item === 'number')) return value as number[];
@@ -27,7 +31,7 @@ export function cosineSimilarity(left: number[], right: number[]): number {
   return leftNorm === 0 || rightNorm === 0 ? -1 : dot / Math.sqrt(leftNorm * rightNorm);
 }
 
-export class HuggingFaceEmbeddingClient {
+export class HuggingFaceEmbeddingClient implements TextEmbeddingProvider {
   private readonly cache = new Map<string, number[]>();
 
   constructor(private readonly options: HuggingFaceEmbeddingOptions) {}

@@ -82,6 +82,55 @@ public sealed record RefinedDeveloperComment(
     string Normalized,
     IReadOnlyList<string> IssueTags);
 
+public static class DeveloperCompletionEvidence
+{
+    private static readonly HashSet<string> GenericValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "설정", "settings", "홈", "home", "뒤로", "back", "닫기", "close", "최소화", "최대화",
+        "windows", "systemsettings", "chrome", "edge", "button", "window",
+    };
+
+    public static IReadOnlyList<string> Build(
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        var values = new List<string>();
+        Add(values, context.Url);
+        Add(values, context.WindowTitle);
+        foreach (var candidate in candidates.Where(item => item.Visible)
+                     .OrderBy(item => item.Bounds.Y).ThenBy(item => item.Bounds.X))
+        {
+            Add(values, candidate.Label);
+            if (values.Count >= 24) break;
+        }
+        if (values.Count == 0) Add(values, context.ApplicationName, allowGeneric: true);
+        return values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public static bool IsPresent(
+        string evidence,
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        if (!IsStrong(evidence)) return false;
+        var state = string.Join(' ', new[] { context.ApplicationName, context.WindowTitle, context.Url }
+            .Concat(candidates.Where(item => item.Visible).SelectMany(item => new[] { item.Label, item.Description }))
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+        return state.Contains(evidence.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void Add(List<string> values, string? value, bool allowGeneric = false)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed) || trimmed.Length < 2) return;
+        if (!allowGeneric && !IsStrong(trimmed)) return;
+        values.Add(trimmed);
+    }
+
+    private static bool IsStrong(string value) => value.Trim().Length >= 3
+        && !GenericValues.Contains(value.Trim());
+}
+
 public static class DeveloperPositiveFeedback
 {
     public static DeveloperCorrectionRecord? Create(
@@ -220,6 +269,10 @@ public interface IDeveloperCorrectionStore
         ApplicationContext context,
         IReadOnlyList<UiCandidate> candidates,
         out DeveloperCompletionRecord completion);
+    IReadOnlyList<UiCandidate> FilterRejectedCandidates(
+        string goal,
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates);
     Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
         string? screenshotDataUrl,
@@ -245,6 +298,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     private readonly string _completionsPath;
     private List<DeveloperCorrectionRecord> _records;
     private List<DeveloperCompletionRecord> _completions;
+    private List<AnswerFeedbackRecord> _feedback;
 
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
@@ -255,6 +309,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         Directory.CreateDirectory(DataDirectory);
         _records = LoadRecords(_recordsPath);
         _completions = LoadCompletionRecords(_completionsPath);
+        _feedback = LoadFeedbackRecords(_feedbackPath);
     }
 
     public string DataDirectory { get; }
@@ -349,15 +404,17 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         out DeveloperCompletionRecord completion)
     {
         completion = null!;
-        var state = $"{context.ApplicationName} {context.WindowTitle} {context.Url}".ToLowerInvariant();
         lock (_gate)
         {
             var match = _completions
                 .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
                     || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal))
+                .Where(record => string.Equals(
+                    record.Context.ApplicationName,
+                    context.ApplicationName,
+                    StringComparison.OrdinalIgnoreCase))
                 .Where(record => record.LearningLabels.ExpectedEvidence.Any(evidence =>
-                    !string.IsNullOrWhiteSpace(evidence)
-                    && state.Contains(evidence.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    DeveloperCompletionEvidence.IsPresent(evidence, context, candidates)))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .FirstOrDefault();
             if (match is null) return false;
@@ -406,8 +463,36 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(DataDirectory);
         var line = JsonSerializer.Serialize(feedback, JsonOptions) + Environment.NewLine;
-        lock (_gate) File.AppendAllText(_feedbackPath, line);
+        lock (_gate)
+        {
+            File.AppendAllText(_feedbackPath, line);
+            _feedback.Add(feedback);
+        }
         return Task.FromResult(feedback);
+    }
+
+    public IReadOnlyList<UiCandidate> FilterRejectedCandidates(
+        string goal,
+        ApplicationContext context,
+        IReadOnlyList<UiCandidate> candidates)
+    {
+        HashSet<string> rejectedIds;
+        lock (_gate)
+        {
+            rejectedIds = _feedback
+                .Where(item => !string.IsNullOrWhiteSpace(item.TargetId)
+                    && item.Context is not null
+                    && DeveloperIntentMatcher.IsSameIntent(goal, item.OriginalGoal ?? item.EffectiveGoal)
+                    && string.Equals(item.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(item => item.TargetId!, StringComparer.Ordinal)
+                .Select(group => group.OrderByDescending(item => item.CreatedAtUtc).First())
+                .Where(item => string.Equals(item.Rating, "incorrect", StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.TargetId!)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        if (rejectedIds.Count == 0) return candidates;
+        var filtered = candidates.Where(candidate => !rejectedIds.Contains(candidate.Id)).ToArray();
+        return filtered.Length == 0 ? candidates : filtered;
     }
 
     public Task<DeveloperCompletionRecord> SaveCompletionAsync(
@@ -453,6 +538,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             {
                 var record = JsonSerializer.Deserialize<DeveloperCompletionRecord>(line, JsonOptions);
                 if (record is not null && record.SchemaVersion == 1 && record.DeveloperVerified) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<AnswerFeedbackRecord> LoadFeedbackRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<AnswerFeedbackRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<AnswerFeedbackRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1) records.Add(record);
             }
             catch (JsonException) { }
         }
@@ -563,8 +665,8 @@ public static class DeveloperIntentMatcher
         if (ContainsAny(value, ["재생", "노래 틀", "음악 틀", "play"])) return "play";
         if (value.Contains("유튜브뮤직", StringComparison.Ordinal)
             && value.Contains("틀어", StringComparison.Ordinal)) return "open";
-        if (ContainsAny(value, ["열어", "실행", "켜줘", "접속", "open", "launch"])) return "open";
         if (ContainsAny(value, ["설정", "변경", "바꿔", "configure", "setting", "change"])) return "configure";
+        if (ContainsAny(value, ["열어", "실행", "켜줘", "접속", "open", "launch"])) return "open";
         return null;
     }
 
@@ -593,6 +695,7 @@ public static class DeveloperIntentMatcher
     private static readonly (string Source, string Target)[] PhraseAliases =
     [
         ("youtube music", "유튜브뮤직"), ("유튜브 뮤직", "유튜브뮤직"),
+        ("유튜브 음악", "유튜브뮤직"), ("음악", "노래"), ("music", "노래"), ("song", "노래"),
         ("인쇄 장치", "프린터"), ("인쇄장치", "프린터"), ("printer", "프린터"),
         ("와이 파이", "와이파이"), ("wi-fi", "와이파이"), ("wifi", "와이파이"),
         ("블루투스", "bluetooth"),
