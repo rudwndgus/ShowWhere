@@ -66,12 +66,12 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
-    public void Open_destination_is_not_confused_with_searching_or_playing_specific_music()
+    public void Semantic_intent_matches_paraphrases_but_separates_different_actions()
     {
         Assert.True(DeveloperIntentMatcher.IsSameIntent(
             "크롬에서 유튜브 뮤직 틀어줘",
             "  크롬에서   유튜브 뮤직 틀어줘  "));
-        Assert.False(DeveloperIntentMatcher.IsSameIntent(
+        Assert.True(DeveloperIntentMatcher.IsSameIntent(
             "크롬에서 유튜브 뮤직 틀어줘",
             "유튜브 뮤직을 열어줘"));
         Assert.False(DeveloperIntentMatcher.IsSameIntent(
@@ -80,6 +80,12 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.False(DeveloperIntentMatcher.IsSameIntent(
             "유튜브 뮤직을 열어줘",
             "유튜브 뮤직에서 아이유 노래 틀어줘"));
+        Assert.True(DeveloperIntentMatcher.IsSameIntent(
+            "프린터 연결됐는지 확인하고 싶어",
+            "인쇄 장치 상태를 보여줘"));
+        Assert.False(DeveloperIntentMatcher.IsSameIntent(
+            "프린터 상태를 확인하고 싶어",
+            "프린터를 추가해줘"));
     }
 
     [Fact]

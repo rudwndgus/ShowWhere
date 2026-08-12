@@ -39,9 +39,9 @@ public static class ContractValidator
             throw new ContractValidationException("Session ID is invalid.");
         if (string.IsNullOrWhiteSpace(request.Session.OriginalUserMessage) || request.Session.OriginalUserMessage.Length > 4_000)
             throw new ContractValidationException("User message is invalid.");
-        if (request.Candidates.Count > 100)
+        if (request.Candidates.Count > 250)
             throw new ContractValidationException("Too many UI candidates.");
-        if (request.Screenshot?.Length > 8_000_000)
+        if (request.Screenshot?.Length > 12_000_000)
             throw new ContractValidationException("Screenshot payload is too large.");
         if ((request.Screenshot is null) != (request.ScreenshotBounds is null))
             throw new ContractValidationException("Screenshot data and bounds must be supplied together.");

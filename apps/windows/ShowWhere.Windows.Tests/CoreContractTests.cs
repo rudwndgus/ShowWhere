@@ -88,6 +88,27 @@ public sealed class CoreContractTests
         Assert.Null(session.ExpectedChange);
     }
 
+    [Fact]
+    public void Complex_windows_screens_share_the_same_candidate_limit_as_the_backend()
+    {
+        var baseRequest = CreateRequest();
+        var accepted = baseRequest with
+        {
+            Candidates = Enumerable.Range(0, 220)
+                .Select(index => baseRequest.Candidates[0] with { Id = $"candidate-{index}" })
+                .ToArray(),
+        };
+        ContractValidator.Validate(accepted);
+
+        var rejected = accepted with
+        {
+            Candidates = Enumerable.Range(0, 251)
+                .Select(index => baseRequest.Candidates[0] with { Id = $"candidate-{index}" })
+                .ToArray(),
+        };
+        Assert.Throws<ContractValidationException>(() => ContractValidator.Validate(rejected));
+    }
+
     internal static GuideRequest CreateRequest() => new(
         TaskSessionStateMachine.Create("Open settings", () => "session-1") with { Status = TaskStatuses.WaitingForAi },
         new ApplicationContext(Platforms.Windows, "notepad", "Untitled - Notepad", Locale: "en-US"),

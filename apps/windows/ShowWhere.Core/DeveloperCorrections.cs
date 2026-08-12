@@ -529,13 +529,90 @@ public static class DeveloperIntentMatcher
         var a = Normalize(left);
         var b = Normalize(right);
         if (a.Length == 0 || b.Length == 0) return false;
-        return a == b;
+        if (a == b) return true;
+
+        var leftAction = ExtractAction(a);
+        var rightAction = ExtractAction(b);
+        if (leftAction is not null && rightAction is not null
+            && !string.Equals(leftAction, rightAction, StringComparison.Ordinal)) return false;
+
+        var leftConcepts = ExtractConcepts(a);
+        var rightConcepts = ExtractConcepts(b);
+        if (leftConcepts.Count == 0 || rightConcepts.Count == 0) return false;
+        var overlap = leftConcepts.Intersect(rightConcepts, StringComparer.Ordinal).Count();
+        var coverage = (double)overlap / Math.Min(leftConcepts.Count, rightConcepts.Count);
+        return overlap > 0 && coverage >= 0.6;
     }
 
-    private static string Normalize(string? value) => string.Join(' ',
-        (value ?? string.Empty).Trim().ToLowerInvariant().Split(
+    private static string Normalize(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant().Normalize();
+        foreach (var (source, target) in PhraseAliases)
+            normalized = normalized.Replace(source, target, StringComparison.Ordinal);
+        return string.Join(' ', normalized.Split(
             [' ', '\t', '\r', '\n', '?', '!', '.', ',', '/', '\\'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    private static string? ExtractAction(string value)
+    {
+        if (ContainsAny(value, ["검색", "찾아", "찾기", "search"])) return "search";
+        if (ContainsAny(value, ["삭제", "제거", "지워", "remove", "delete", "uninstall"])) return "remove";
+        if (ContainsAny(value, ["확인", "상태", "됐는지", "작동", "check", "status"])) return "check";
+        if (ContainsAny(value, ["추가", "등록", "연결", "add", "connect", "pair"])) return "add";
+        if (ContainsAny(value, ["재생", "노래 틀", "음악 틀", "play"])) return "play";
+        if (value.Contains("유튜브뮤직", StringComparison.Ordinal)
+            && value.Contains("틀어", StringComparison.Ordinal)) return "open";
+        if (ContainsAny(value, ["열어", "실행", "켜줘", "접속", "open", "launch"])) return "open";
+        if (ContainsAny(value, ["설정", "변경", "바꿔", "configure", "setting", "change"])) return "configure";
+        return null;
+    }
+
+    private static HashSet<string> ExtractConcepts(string value)
+    {
+        var concepts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var token = TrimKoreanParticle(raw);
+            if (token.Length < 2 || StopWords.Contains(token) || ActionWords.Any(token.Contains)) continue;
+            concepts.Add(token);
+        }
+        return concepts;
+    }
+
+    private static string TrimKoreanParticle(string token)
+    {
+        foreach (var suffix in KoreanParticles)
+            if (token.Length > suffix.Length + 1 && token.EndsWith(suffix, StringComparison.Ordinal))
+                return token[..^suffix.Length];
+        return token;
+    }
+
+    private static bool ContainsAny(string value, string[] terms) => terms.Any(value.Contains);
+
+    private static readonly (string Source, string Target)[] PhraseAliases =
+    [
+        ("youtube music", "유튜브뮤직"), ("유튜브 뮤직", "유튜브뮤직"),
+        ("인쇄 장치", "프린터"), ("인쇄장치", "프린터"), ("printer", "프린터"),
+        ("와이 파이", "와이파이"), ("wi-fi", "와이파이"), ("wifi", "와이파이"),
+        ("블루투스", "bluetooth"),
+    ];
+
+    private static readonly HashSet<string> StopWords = new(StringComparer.Ordinal)
+    {
+        "어디", "어디서", "어떻게", "해줘", "해주세요", "하고", "싶어", "싶어요", "보여줘", "알려줘",
+        "where", "how", "please", "show", "the", "and", "with", "from", "크롬", "windows", "윈도우",
+    };
+
+    private static readonly string[] ActionWords =
+    [
+        "검색", "찾아", "찾기", "삭제", "제거", "지워", "추가", "등록", "연결", "재생", "틀어", "열어",
+        "실행", "켜줘", "접속", "확인", "상태", "됐는지", "작동", "설정", "변경", "바꿔", "search",
+        "remove", "delete", "add", "connect", "pair", "play", "open", "launch", "check", "status", "configure", "change",
+    ];
+
+    private static readonly string[] KoreanParticles =
+    ["에서", "에게", "으로", "부터", "까지", "처럼", "하고", "이랑", "랑", "을", "를", "이", "가", "은", "는", "의", "에", "로"];
 }
 
 public static class DeveloperCommentRefiner

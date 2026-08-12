@@ -62,17 +62,50 @@ Rules:
 - Confidence must reflect visual evidence. Below 0.65, ask for clarification or a new observation instead of pointing.
 - ShowWhere's own panel, bubble, tooltip, and existing overlay are never valid targets.`;
 
+function candidateScore(request: GuideRequest, index: number): number {
+  const candidate = request.candidates[index];
+  const intent = `${request.session.originalUserMessage} ${request.session.goal ?? ''}`.toLowerCase();
+  const searchable = `${candidate.label ?? ''} ${candidate.description ?? ''} ${candidate.role}`.toLowerCase();
+  const intentWords = intent.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 2);
+  const directMatches = intentWords.filter((word) => searchable.includes(word) || intent.includes(searchable.trim())).length;
+  const scope = String(candidate.attributes?.sourceScope ?? '');
+  const globalEntryScore = scope === 'windows_taskbar' ? 600
+    : scope === 'windows_window_overview' ? 450
+      : 0;
+  return directMatches * 2_000 + globalEntryScore + Math.max(0, 250 - index);
+}
+
+function selectCandidates(request: GuideRequest) {
+  if (request.candidates.length <= 32) return request.candidates;
+  return request.candidates
+    .map((candidate, index) => ({ candidate, index, score: candidateScore(request, index) }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, 32)
+    .map(({ candidate }) => candidate);
+}
+
 function compactRequest(request: GuideRequest) {
+  const attributeKeys = [
+    'automationId', 'className', 'controlType', 'processName',
+    'sourceScope', 'containerLabel',
+  ] as const;
   return {
     session: request.session,
     context: request.context,
-    candidates: request.candidates.map((candidate) => ({
+    candidates: selectCandidates(request).map((candidate) => ({
       id: candidate.id,
-      label: candidate.label ?? null,
-      description: candidate.description ?? null,
+      label: candidate.label?.slice(0, 160) ?? null,
+      description: candidate.description?.slice(0, 80) ?? null,
       role: candidate.role,
-      bounds: candidate.bounds,
-      attributes: candidate.attributes ?? null,
+      bounds: Object.fromEntries(Object.entries(candidate.bounds).map(([key, value]) => [key, Math.round(value)])),
+      enabled: candidate.enabled,
+      clickable: candidate.clickable,
+      attributes: candidate.attributes
+        ? Object.fromEntries(attributeKeys.flatMap((key) => {
+          const value = candidate.attributes?.[key];
+          return typeof value === 'string' && value.length > 0 ? [[key, value.slice(0, 120)]] : [];
+        }))
+        : null,
     })),
   };
 }
@@ -99,7 +132,12 @@ function removeNulls(value: Record<string, unknown>): Record<string, unknown> {
 
 function shouldRetry(error: unknown): boolean {
   if (!(error instanceof Error)) return true;
-  return !/credit_balance_exhausted|insufficient_quota|invalid_api_key|401|403/iu.test(error.message);
+  return !/credit_balance_exhausted|insufficient_quota|invalid_api_key|401|403|request too large/iu.test(error.message);
+}
+
+function retryDelay(error: unknown, attempt: number): number {
+  const match = error instanceof Error ? /try again in ([\d.]+)s/iu.exec(error.message) : null;
+  return match ? Math.min(20_000, Math.ceil(Number(match[1]) * 1_000) + 100) : 250 * (attempt + 1);
 }
 
 export class OpenAiGuideProvider implements AiProvider {
@@ -120,12 +158,14 @@ export class OpenAiGuideProvider implements AiProvider {
             model: this.options.model,
             store: false,
             reasoning: { effort: 'low' },
-            max_output_tokens: 700,
+            max_output_tokens: 300,
             input: [
               { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
               { role: 'user', content: [
                 { type: 'input_text', text: JSON.stringify(compactRequest(request)) },
-                { type: 'input_image', image_url: request.screenshot, detail: 'high' },
+                // Keep the entire virtual desktop, but use the low vision token budget.
+                // Exact UIA bounds remain available for pixel-accurate highlighting.
+                { type: 'input_image', image_url: request.screenshot, detail: 'low' },
               ] },
             ],
             text: { format: { type: 'json_schema', name: 'showwhere_next_action', strict: true, schema: decisionJsonSchema } },
@@ -137,7 +177,7 @@ export class OpenAiGuideProvider implements AiProvider {
       } catch (error) {
         lastError = error;
         if (attempt < this.options.maxRetries && shouldRetry(error))
-          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          await new Promise((resolve) => setTimeout(resolve, retryDelay(error, attempt)));
         else
           break;
       } finally {

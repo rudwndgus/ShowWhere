@@ -16,6 +16,18 @@ const environmentSchema = z.object({
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),
   OPENAI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
+  HF_TOKEN: z.string().trim().min(1).optional(),
+  HF_EMBEDDING_MODEL: z.string().trim().min(1).default('Qwen/Qwen3-Embedding-0.6B'),
+  HF_BASE_URL: z.string().url().default('https://router.huggingface.co/hf-inference/models'),
+  HF_REQUEST_TIMEOUT_MS: integerFromEnvironment(500, 30_000).default(4_000),
+  HF_MIN_SCORE: z.preprocess(
+    (value) => value === undefined || value === '' ? undefined : Number(value),
+    z.number().min(0).max(1),
+  ).default(0.68),
+  HF_MIN_MARGIN: z.preprocess(
+    (value) => value === undefined || value === '' ? undefined : Number(value),
+    z.number().min(0).max(1),
+  ).default(0.08),
   SHOWWHERE_API_HOST: z.string().trim().min(1).default('127.0.0.1'),
   SHOWWHERE_API_PORT: integerFromEnvironment(1, 65_535).default(8787),
   SHOWWHERE_MAX_REQUEST_BYTES: integerFromEnvironment(1_024, 20_000_000).default(12_000_000),
@@ -34,6 +46,14 @@ export interface ApiConfig {
     requestTimeoutMs: number;
     maxRetries: number;
   };
+  huggingFace?: {
+    token: string;
+    model: string;
+    baseUrl: string;
+    requestTimeoutMs: number;
+    minScore: number;
+    minMargin: number;
+  };
 }
 
 export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
@@ -50,5 +70,13 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
       requestTimeoutMs: parsed.OPENAI_REQUEST_TIMEOUT_MS,
       maxRetries: parsed.OPENAI_MAX_RETRIES,
     },
+    huggingFace: parsed.HF_TOKEN ? {
+      token: parsed.HF_TOKEN,
+      model: parsed.HF_EMBEDDING_MODEL,
+      baseUrl: parsed.HF_BASE_URL.replace(/\/$/u, ''),
+      requestTimeoutMs: parsed.HF_REQUEST_TIMEOUT_MS,
+      minScore: parsed.HF_MIN_SCORE,
+      minMargin: parsed.HF_MIN_MARGIN,
+    } : undefined,
   };
 }

@@ -59,7 +59,7 @@ export const TaskSessionSchema = z.object({
 export const GuideRequestSchema = z.object({
   session: TaskSessionSchema,
   context: ApplicationContextSchema,
-  candidates: z.array(UiCandidateSchema).max(100),
+  candidates: z.array(UiCandidateSchema).max(250),
   screenshot: z.string().max(12_000_000).optional(),
   screenshotBounds: BoundsSchema.optional(),
 }).strict().superRefine((request, context) => {

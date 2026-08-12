@@ -545,8 +545,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             StatusText = "관찰 오류";
             CompletePendingOrAddError(pendingMessage, ErrorMessage);
         }
-        catch (ContractValidationException)
+        catch (ContractValidationException exception)
         {
+            DesktopDiagnostics.Write(exception);
             ErrorMessage = "안전하게 표시할 대상을 확인하지 못했어요. 다시 시도해 주세요.";
             StatusText = "안내 검증 오류";
             CompletePendingOrAddError(pendingMessage, ErrorMessage);

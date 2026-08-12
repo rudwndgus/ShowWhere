@@ -51,6 +51,14 @@ function providerFailure(error: unknown): GuideDecision {
       confidence: 1,
     };
   }
+  if (/request too large|tokens per min/iu.test(detail)) {
+    return {
+      status: 'blocked',
+      action: 'explain',
+      message: '현재 화면 정보가 OpenAI API 토큰 한도를 초과했어요. 잠시 후 다시 시도해 주세요.',
+      confidence: 1,
+    };
+  }
   return safeFallback('안내를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.');
 }
 
