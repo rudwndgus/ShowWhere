@@ -97,6 +97,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ToggleDeveloperModeCommand = new RelayCommand(ToggleDeveloperMode);
         ToggleLearningHistoryCommand = new RelayCommand(ToggleLearningHistory);
         ToggleLearningRecordCommand = new AsyncParameterRelayCommand(ToggleLearningRecordAsync);
+        SaveLearningRecordCommand = new AsyncParameterRelayCommand(SaveLearningRecordAsync);
         ExitCommand = new RelayCommand(_exit);
         Messages.Add(CreateAssistantMessage(
             "assistant",
@@ -121,10 +122,17 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand ToggleDeveloperModeCommand { get; }
     public ICommand ToggleLearningHistoryCommand { get; }
     public ICommand ToggleLearningRecordCommand { get; }
+    public ICommand SaveLearningRecordCommand { get; }
     public ICommand ExitCommand { get; }
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
     public ObservableCollection<ClarificationChoiceItem> ClarificationChoices { get; } = [];
     public ObservableCollection<DeveloperLearningHistoryItem> LearningHistory { get; } = [];
+    public IReadOnlyList<DeveloperRatingOption> LearningRatingOptions { get; } =
+    [
+        new("correct", "O 정답"),
+        new("incorrect", "X 수정"),
+        new("completed", "끝"),
+    ];
 
     public string GoalText
     {
@@ -222,6 +230,32 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         {
             DesktopDiagnostics.Write(exception);
             StatusText = "학습 기록 변경 오류";
+        }
+    }
+
+    private async Task SaveLearningRecordAsync(object? parameter)
+    {
+        if (!IsDeveloperMode || parameter is not DeveloperLearningHistoryItem item) return;
+        try
+        {
+            await _correctionStore.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+                1,
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                item.FeedbackId,
+                item.Rating,
+                item.Goal,
+                item.Answer,
+                item.TargetLabel,
+                item.Comment));
+            item.MarkSaved();
+            _approvedReplays.Clear();
+            StatusText = "LOG 수정 내용 저장됨 · 다음 판단부터 즉시 적용";
+        }
+        catch (Exception exception)
+        {
+            DesktopDiagnostics.Write(exception);
+            StatusText = "LOG 수정 저장 오류";
         }
     }
 

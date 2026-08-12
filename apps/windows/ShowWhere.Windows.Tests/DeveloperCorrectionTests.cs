@@ -329,6 +329,64 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Log_edit_is_append_only_reloaded_and_changes_positive_replay_immediately()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var feedback = Feedback("correct", "검색을 누르세요");
+        await store.SaveFeedbackAsync(feedback);
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("music", "검색", "ytmusic-search", "browser_content"));
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(feedback, signature)!, null);
+
+        await store.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            feedback.Id, "correct", "유튜브 뮤직에서 음악 검색해줘",
+            "상단 검색 버튼을 누르세요", "YouTube Music 검색", "의도를 더 구체적으로 수정"));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        var history = Assert.Single(reloaded.GetHistory());
+        Assert.True(history.HasEdits);
+        Assert.Equal("유튜브 뮤직에서 음악 검색해줘", history.Goal);
+        Assert.Equal("상단 검색 버튼을 누르세요", history.Answer);
+        Assert.Equal("YouTube Music 검색", history.TargetLabel);
+        Assert.True(reloaded.TryResolveTarget(
+            history.Goal, feedback.Context!,
+            [Candidate("music-new", "검색", "ytmusic-search", "browser_content")], out _, out _));
+
+        Assert.Single(File.ReadAllLines(Path.Combine(_directory, "learning-edits.jsonl")));
+        Assert.Single(File.ReadAllLines(Path.Combine(_directory, "answer-feedback.jsonl")));
+    }
+
+    [Fact]
+    public async Task Changing_log_rating_from_completed_stops_completion_replay()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var feedback = Feedback("completed", "완료") with
+        {
+            OriginalGoal = "유튜브 뮤직 열어줘",
+            EffectiveGoal = "유튜브 뮤직 열어줘",
+            Context = context,
+        };
+        await store.SaveFeedbackAsync(feedback);
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            feedback.OriginalGoal!, context, "youtube music", null, null,
+            "completed.youtube_music", "YouTube Music", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            feedback.OriginalGoal!, feedback.EffectiveGoal!, context, "snapshot",
+            ["YouTube Music"], labels, true, feedback.Id));
+        await store.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            feedback.Id, "incorrect", feedback.OriginalGoal!,
+            "아직 완료가 아님", "프로필", "끝을 잘못 눌렀음"));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.False(reloaded.TryResolveCompletion(feedback.OriginalGoal!, context, [], out _));
+        Assert.Equal("incorrect", Assert.Single(reloaded.GetHistory()).Rating);
+    }
+
+    [Fact]
     public async Task Generic_settings_title_does_not_complete_a_task_without_specific_live_evidence()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);

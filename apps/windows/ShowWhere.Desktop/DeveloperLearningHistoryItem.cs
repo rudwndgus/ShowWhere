@@ -7,27 +7,46 @@ namespace ShowWhere.Desktop;
 public sealed class DeveloperLearningHistoryItem : INotifyPropertyChanged
 {
     private bool _active;
+    private string _rating;
+    private string _goal;
+    private string _answer;
+    private string? _targetLabel;
+    private string? _comment;
+    private bool _isDirty;
 
     public DeveloperLearningHistoryItem(DeveloperLearningHistoryRecord record)
     {
         FeedbackId = record.FeedbackId;
         CreatedAtUtc = record.CreatedAtUtc;
-        Rating = record.Rating;
-        Goal = record.Goal;
-        Answer = record.Answer;
-        TargetLabel = record.TargetLabel;
-        Comment = record.Comment;
+        _rating = record.Rating;
+        _goal = record.Goal;
+        _answer = record.Answer;
+        _targetLabel = record.TargetLabel;
+        _comment = record.Comment;
         _active = record.Active;
+        HasEdits = record.HasEdits;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public string FeedbackId { get; }
     public DateTimeOffset CreatedAtUtc { get; }
-    public string Rating { get; }
-    public string Goal { get; }
-    public string Answer { get; }
-    public string? TargetLabel { get; }
-    public string? Comment { get; }
+    public string Rating { get => _rating; set { if (Set(ref _rating, value)) OnPropertyChanged(nameof(RatingText)); } }
+    public string Goal { get => _goal; set => Set(ref _goal, value); }
+    public string Answer { get => _answer; set => Set(ref _answer, value); }
+    public string? TargetLabel { get => _targetLabel; set => Set(ref _targetLabel, value); }
+    public string? Comment { get => _comment; set => Set(ref _comment, value); }
+    public bool HasEdits { get; private set; }
+    public bool IsDirty
+    {
+        get => _isDirty;
+        private set
+        {
+            if (_isDirty == value) return;
+            _isDirty = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SaveText));
+        }
+    }
     public bool Active
     {
         get => _active;
@@ -35,9 +54,9 @@ public sealed class DeveloperLearningHistoryItem : INotifyPropertyChanged
         {
             if (_active == value) return;
             _active = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Active)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToggleText)));
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(StatusText));
+            OnPropertyChanged(nameof(ToggleText));
         }
     }
     public string RatingText => Rating switch
@@ -49,5 +68,27 @@ public sealed class DeveloperLearningHistoryItem : INotifyPropertyChanged
     };
     public string StatusText => Active ? "적용 중" : "취소됨";
     public string ToggleText => Active ? "이 기록 취소" : "다시 적용";
+    public string SaveText => IsDirty ? "수정 저장 *" : "수정 저장";
     public string TimeText => CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
+    public void MarkSaved()
+    {
+        HasEdits = true;
+        IsDirty = false;
+        OnPropertyChanged(nameof(HasEdits));
+    }
+
+    private bool Set<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        IsDirty = true;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
+
+public sealed record DeveloperRatingOption(string Value, string Label);

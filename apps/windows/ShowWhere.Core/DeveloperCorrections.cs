@@ -85,6 +85,17 @@ public sealed record DeveloperLearningStatusRecord(
     bool Active,
     string? Reason = null);
 
+public sealed record DeveloperLearningEditRecord(
+    int SchemaVersion,
+    string Id,
+    DateTimeOffset CreatedAtUtc,
+    string FeedbackId,
+    string Rating,
+    string Goal,
+    string Answer,
+    string? TargetLabel,
+    string? Comment);
+
 public sealed record DeveloperLearningHistoryRecord(
     string FeedbackId,
     DateTimeOffset CreatedAtUtc,
@@ -93,7 +104,8 @@ public sealed record DeveloperLearningHistoryRecord(
     string Answer,
     string? TargetLabel,
     string? Comment,
-    bool Active);
+    bool Active,
+    bool HasEdits = false);
 
 public sealed record RefinedDeveloperComment(
     string Raw,
@@ -297,6 +309,9 @@ public interface IDeveloperCorrectionStore
         bool active,
         string? reason = null,
         CancellationToken cancellationToken = default);
+    Task<DeveloperLearningEditRecord> SaveHistoryEditAsync(
+        DeveloperLearningEditRecord edit,
+        CancellationToken cancellationToken = default);
     Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
         string? screenshotDataUrl,
@@ -321,10 +336,12 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     private readonly string _feedbackPath;
     private readonly string _completionsPath;
     private readonly string _statusPath;
+    private readonly string _editsPath;
     private List<DeveloperCorrectionRecord> _records;
     private List<DeveloperCompletionRecord> _completions;
     private List<AnswerFeedbackRecord> _feedback;
     private List<DeveloperLearningStatusRecord> _statusChanges;
+    private List<DeveloperLearningEditRecord> _edits;
 
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
@@ -333,11 +350,13 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         _feedbackPath = Path.Combine(DataDirectory, "answer-feedback.jsonl");
         _completionsPath = Path.Combine(DataDirectory, "completions.jsonl");
         _statusPath = Path.Combine(DataDirectory, "learning-status.jsonl");
+        _editsPath = Path.Combine(DataDirectory, "learning-edits.jsonl");
         Directory.CreateDirectory(DataDirectory);
         _records = LoadRecords(_recordsPath);
         _completions = LoadCompletionRecords(_completionsPath);
         _feedback = LoadFeedbackRecords(_feedbackPath);
         _statusChanges = LoadStatusRecords(_statusPath);
+        _edits = LoadEditRecords(_editsPath);
     }
 
     public string DataDirectory { get; }
@@ -348,10 +367,8 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             return _records
-                .Where(record => IsFeedbackActive(record.FeedbackId))
-                .Where(record => DeveloperIntentMatcher.IsSameIntent(originalGoal, record.OriginalGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(originalGoal, record.EffectiveGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(originalGoal, record.CorrectedIntent))
+                .Where(IsCorrectionUsable)
+                .Where(record => RecordMatchesGoal(originalGoal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .Select(record => record.CorrectedIntent)
                 .FirstOrDefault(intent => !string.IsNullOrWhiteSpace(intent))
@@ -372,11 +389,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             matchingRecords = _records
-                .Where(record => IsFeedbackActive(record.FeedbackId))
+                .Where(IsCorrectionUsable)
                 .Where(record => record.CorrectTarget is not null)
-                .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(goal, record.CorrectedIntent))
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .ToList();
         }
@@ -411,11 +426,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             var match = _records
-                .Where(record => IsFeedbackActive(record.FeedbackId))
+                .Where(IsCorrectionUsable)
                 .Where(record => record.NormalizedVisualTarget is not null)
-                .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(goal, record.CorrectedIntent))
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
                 .Where(record => string.Equals(record.SnapshotHash, snapshotHash, StringComparison.Ordinal)
                     && string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(record.Context.WindowTitle, context.WindowTitle, StringComparison.OrdinalIgnoreCase))
@@ -439,8 +452,8 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         {
             var match = _completions
                 .Where(record => IsFeedbackActive(record.FeedbackId))
-                .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
-                    || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal))
+                .Where(record => string.Equals(GetEffectiveRating(record.FeedbackId, "completed"), "completed", StringComparison.OrdinalIgnoreCase))
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, null))
                 .Where(record => string.Equals(
                     record.Context.ApplicationName,
                     context.ApplicationName,
@@ -515,11 +528,11 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(item => IsFeedbackActive(item.Id))
                 .Where(item => !string.IsNullOrWhiteSpace(item.TargetId)
                     && item.Context is not null
-                    && DeveloperIntentMatcher.IsSameIntent(goal, item.OriginalGoal ?? item.EffectiveGoal)
+                    && DeveloperIntentMatcher.IsSameIntent(goal, GetEffectiveGoal(item.Id, item.OriginalGoal ?? item.EffectiveGoal))
                     && string.Equals(item.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
                 .GroupBy(item => item.TargetId!, StringComparer.Ordinal)
                 .Select(group => group.OrderByDescending(item => item.CreatedAtUtc).First())
-                .Where(item => string.Equals(item.Rating, "incorrect", StringComparison.OrdinalIgnoreCase))
+                .Where(item => string.Equals(GetEffectiveRating(item.Id, item.Rating), "incorrect", StringComparison.OrdinalIgnoreCase))
                 .Select(item => item.TargetId!)
                 .ToHashSet(StringComparer.Ordinal);
         }
@@ -538,15 +551,17 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                     string.Equals(record.FeedbackId, item.Id, StringComparison.Ordinal));
                 var completion = _completions.LastOrDefault(record =>
                     string.Equals(record.FeedbackId, item.Id, StringComparison.Ordinal));
+                var edit = GetLatestEdit(item.Id);
                 return new DeveloperLearningHistoryRecord(
                     item.Id,
                     item.CreatedAtUtc,
-                    item.Rating,
-                    item.OriginalGoal ?? item.EffectiveGoal ?? "질문 정보 없음",
-                    item.AnswerText,
-                    correction?.CorrectTarget?.Label ?? item.TargetLabel,
-                    correction?.DeveloperComment ?? correction?.RefinedComment ?? completion?.DeveloperComment,
-                    IsFeedbackActive(item.Id));
+                    edit?.Rating ?? item.Rating,
+                    edit?.Goal ?? item.OriginalGoal ?? item.EffectiveGoal ?? "질문 정보 없음",
+                    edit?.Answer ?? item.AnswerText,
+                    edit?.TargetLabel ?? correction?.CorrectTarget?.Label ?? item.TargetLabel,
+                    edit?.Comment ?? correction?.DeveloperComment ?? correction?.RefinedComment ?? completion?.DeveloperComment,
+                    IsFeedbackActive(item.Id),
+                    edit is not null);
             }).ToArray();
         }
     }
@@ -571,11 +586,80 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return Task.CompletedTask;
     }
 
+    public Task<DeveloperLearningEditRecord> SaveHistoryEditAsync(
+        DeveloperLearningEditRecord edit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(edit.Goal)) throw new ArgumentException("질문은 비워둘 수 없습니다.", nameof(edit));
+        if (string.IsNullOrWhiteSpace(edit.Answer)) throw new ArgumentException("답안은 비워둘 수 없습니다.", nameof(edit));
+        if (!new[] { "correct", "incorrect", "completed" }.Contains(edit.Rating, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException("판정은 O, X 또는 끝이어야 합니다.", nameof(edit));
+
+        var normalized = edit with
+        {
+            SchemaVersion = 1,
+            Id = string.IsNullOrWhiteSpace(edit.Id) ? Guid.NewGuid().ToString("D") : edit.Id,
+            CreatedAtUtc = edit.CreatedAtUtc == default ? DateTimeOffset.UtcNow : edit.CreatedAtUtc,
+            Rating = edit.Rating.Trim().ToLowerInvariant(),
+            Goal = edit.Goal.Trim(),
+            Answer = edit.Answer.Trim(),
+            TargetLabel = string.IsNullOrWhiteSpace(edit.TargetLabel) ? null : edit.TargetLabel.Trim(),
+            Comment = string.IsNullOrWhiteSpace(edit.Comment) ? null : edit.Comment.Trim(),
+        };
+        lock (_gate)
+        {
+            if (!_feedback.Any(item => string.Equals(item.Id, normalized.FeedbackId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("학습 기록을 찾을 수 없습니다.");
+            File.AppendAllText(_editsPath, JsonSerializer.Serialize(normalized, JsonOptions) + Environment.NewLine);
+            _edits.Add(normalized);
+        }
+        return Task.FromResult(normalized);
+    }
+
     private bool IsFeedbackActive(string? feedbackId)
     {
         if (string.IsNullOrWhiteSpace(feedbackId)) return true;
         return _statusChanges.LastOrDefault(item =>
             string.Equals(item.FeedbackId, feedbackId, StringComparison.Ordinal))?.Active ?? true;
+    }
+
+    private DeveloperLearningEditRecord? GetLatestEdit(string? feedbackId) =>
+        string.IsNullOrWhiteSpace(feedbackId) ? null : _edits.LastOrDefault(item =>
+            string.Equals(item.FeedbackId, feedbackId, StringComparison.Ordinal));
+
+    private string GetEffectiveRating(string? feedbackId, string fallback) =>
+        GetLatestEdit(feedbackId)?.Rating ?? fallback;
+
+    private string GetEffectiveGoal(string? feedbackId, string? fallback) =>
+        GetLatestEdit(feedbackId)?.Goal ?? fallback ?? string.Empty;
+
+    private bool IsCorrectionUsable(DeveloperCorrectionRecord record)
+    {
+        if (!IsFeedbackActive(record.FeedbackId)) return false;
+        if (string.IsNullOrWhiteSpace(record.FeedbackId)) return true;
+        var feedback = _feedback.LastOrDefault(item => string.Equals(item.Id, record.FeedbackId, StringComparison.Ordinal));
+        if (feedback is null) return true;
+        var requiredRating = record.IssueTags?.Contains("positive_feedback", StringComparer.OrdinalIgnoreCase) == true
+            ? "correct"
+            : "incorrect";
+        return string.Equals(GetEffectiveRating(record.FeedbackId, feedback.Rating), requiredRating, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool RecordMatchesGoal(
+        string goal,
+        string? feedbackId,
+        string? originalGoal,
+        string? effectiveGoal,
+        string? correctedIntent)
+    {
+        var edit = GetLatestEdit(feedbackId);
+        if (edit is not null)
+            return DeveloperIntentMatcher.IsSameIntent(goal, edit.Goal)
+                || DeveloperIntentMatcher.IsSameIntent(goal, correctedIntent);
+        return DeveloperIntentMatcher.IsSameIntent(goal, originalGoal)
+            || DeveloperIntentMatcher.IsSameIntent(goal, effectiveGoal)
+            || DeveloperIntentMatcher.IsSameIntent(goal, correctedIntent);
     }
 
     public Task<DeveloperCompletionRecord> SaveCompletionAsync(
@@ -654,6 +738,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             try
             {
                 var record = JsonSerializer.Deserialize<DeveloperLearningStatusRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<DeveloperLearningEditRecord> LoadEditRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<DeveloperLearningEditRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<DeveloperLearningEditRecord>(line, JsonOptions);
                 if (record is not null && record.SchemaVersion == 1) records.Add(record);
             }
             catch (JsonException) { }

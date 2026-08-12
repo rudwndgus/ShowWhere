@@ -70,9 +70,9 @@
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-          <Button Content="학습 기록" Command="{Binding ToggleLearningHistoryCommand}"
+          <Button Content="LOG" Command="{Binding ToggleLearningHistoryCommand}"
                   Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
-                  Style="{StaticResource QuietButton}" ToolTip="저장된 O/X/끝/코멘트를 확인하고 취소합니다"
+                  Style="{StaticResource QuietButton}" ToolTip="O/X/끝 기록을 확인하고 수정·저장합니다"
                   Visibility="{Binding IsDeveloperMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <Button Content="{Binding DeveloperModeText}" Command="{Binding ToggleDeveloperModeCommand}"
                   Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
@@ -184,8 +184,8 @@
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel>
-              <TextBlock Text="학습 기록" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
-              <TextBlock Text="잘못 누른 O/X/끝을 취소하면 즉시 다음 판단에서 제외됩니다."
+              <TextBlock Text="DEVELOPER LOG" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
+              <TextBlock Text="어느 질문·답안에서 무엇을 눌렀는지 확인하고 수정 저장할 수 있습니다."
                          FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,3,8,8" />
             </StackPanel>
             <Button Grid.Column="1" Content="닫기" Command="{Binding ToggleLearningHistoryCommand}"
@@ -204,17 +204,34 @@
                           <ColumnDefinition Width="*" />
                           <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding RatingText}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <ComboBox ItemsSource="{Binding DataContext.LearningRatingOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                  DisplayMemberPath="Label" SelectedValuePath="Value"
+                                  SelectedValue="{Binding Rating, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  MinWidth="76" FontSize="10" Padding="4,2" />
                         <TextBlock Grid.Column="1" Text="{Binding TimeText}" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="8,2" />
                         <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="10" FontWeight="SemiBold" />
                       </Grid>
-                      <TextBlock Text="{Binding Goal}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,6,0,2" />
-                      <TextBlock Text="{Binding Answer}" TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedBrush}" MaxHeight="48" />
-                      <TextBlock Text="{Binding TargetLabel, StringFormat=대상 · {0}}" FontSize="10" Margin="0,4,0,0" />
-                      <TextBlock Text="{Binding Comment, StringFormat=코멘트 · {0}}" TextWrapping="Wrap" FontSize="10" Margin="0,3,0,0" />
-                      <Button Content="{Binding ToggleText}" Margin="0,8,0,0" HorizontalAlignment="Left"
-                              Command="{Binding DataContext.ToggleLearningRecordCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                              CommandParameter="{Binding}" Style="{StaticResource QuietButton}" Padding="8,4" FontSize="10" />
+                      <TextBlock Text="질문" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,7,0,2" />
+                      <TextBox Text="{Binding Goal, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               TextWrapping="Wrap" AcceptsReturn="True" MinHeight="34" Padding="5" FontSize="10" />
+                      <TextBlock Text="답안" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
+                      <TextBox Text="{Binding Answer, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48" MaxHeight="90"
+                               VerticalScrollBarVisibility="Auto" Padding="5" FontSize="10" />
+                      <TextBlock Text="표시/클릭 대상" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
+                      <TextBox Text="{Binding TargetLabel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               Padding="5" FontSize="10" />
+                      <TextBlock Text="개발자 코멘트" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
+                      <TextBox Text="{Binding Comment, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               TextWrapping="Wrap" AcceptsReturn="True" MinHeight="38" Padding="5" FontSize="10" />
+                      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="{Binding SaveText}" Margin="0,0,6,0"
+                                Command="{Binding DataContext.SaveLearningRecordCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}" Style="{StaticResource QuietButton}" Padding="8,4" FontSize="10" />
+                        <Button Content="{Binding ToggleText}"
+                                Command="{Binding DataContext.ToggleLearningRecordCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}" Style="{StaticResource QuietButton}" Padding="8,4" FontSize="10" />
+                      </StackPanel>
                     </StackPanel>
                   </Border>
                 </DataTemplate>
