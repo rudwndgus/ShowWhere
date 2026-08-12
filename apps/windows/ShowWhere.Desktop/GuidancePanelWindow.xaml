@@ -128,7 +128,7 @@
                                 Style="{StaticResource QuietButton}"
                                 Command="{Binding DataContext.MarkAnswerIncorrectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" />
-                        <Button Content="끝 완료" Padding="8,4" FontSize="10"
+                        <Button Content="끝" Padding="8,4" FontSize="10"
                                 Style="{StaticResource QuietButton}"
                                 Command="{Binding DataContext.MarkAnswerCompletedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" />
