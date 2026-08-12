@@ -3,6 +3,8 @@ import type { GuideDecision, GuideRequest } from '../../../../src/contracts';
 import { cosineSimilarity, type TextEmbeddingProvider } from './HuggingFaceEmbeddingClient';
 import { describeCandidate, eligibleCandidates, resolveLocally } from './LocalGuideResolver';
 import { resolveWindowsKnowledge } from '../windows-knowledge/WindowsKnowledgeResolver';
+import { resolveWebKnowledge } from '../web-knowledge/WebKnowledgeResolver';
+import type { WebKnowledgeSource } from '../web-knowledge/WebKnowledgeStore';
 
 export interface HybridGuideProviderOptions {
   minScore: number;
@@ -15,6 +17,7 @@ export class HybridGuideProvider implements AiProvider {
     private readonly fallback: AiProvider,
     private readonly embeddings?: TextEmbeddingProvider,
     private readonly options: HybridGuideProviderOptions = { minScore: 0.68, minMargin: 0.08 },
+    private readonly webKnowledge: WebKnowledgeSource = { catalogs: [], patterns: [] },
   ) {}
 
   async decideNextAction(request: GuideRequest): Promise<unknown> {
@@ -22,6 +25,11 @@ export class HybridGuideProvider implements AiProvider {
     if (windows) {
       this.log('windows_knowledge', windows.targetId);
       return windows;
+    }
+    const web = resolveWebKnowledge(request, this.webKnowledge);
+    if (web) {
+      this.log('web_knowledge', web.targetId);
+      return web;
     }
     const local = resolveLocally(request);
     if (local) {

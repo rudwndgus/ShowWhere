@@ -1,0 +1,2 @@
+{"id":"fc01eeee-b9cf-4fd1-bf40-16ffc5d375ae","input":"네트워크 확인을 어디서할까?","output":"네트워크 는 여기서 확인을 해봐야지","context":{"platform":"windows","applicationName":"ApplicationFrameHost","windowTitle":"설정","locale":"ko-KR"}}
+{"id":"43de7d3a-5dcb-47a3-8ce6-150f3c16f658","input":"로그아웃 어디서해?","output":"로그아웃 어디서해","context":{"platform":"windows","applicationName":"chrome","windowTitle":"mReports - Google Chrome","locale":"en-US"}}

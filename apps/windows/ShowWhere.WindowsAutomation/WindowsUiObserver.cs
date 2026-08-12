@@ -22,6 +22,10 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         "SearchApp",
         "ShellExperienceHost",
     };
+    private static readonly HashSet<string> BrowserProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chrome", "msedge", "brave", "bravebrowser", "firefox", "opera", "opera_gx", "vivaldi", "arc",
+    };
     private readonly int _ownProcessId = Environment.ProcessId;
     private readonly object _windowGate = new();
     private IntPtr _lastExternalForegroundWindow;
@@ -54,10 +58,12 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
 
         var processName = GetProcessName(root);
         var windowTitle = Read(() => root.Current.Name);
+        var browserUrl = TryReadBrowserUrl(root, processName);
         var context = new ApplicationContext(
             Platforms.Windows,
             string.IsNullOrWhiteSpace(processName) ? "Windows application" : processName,
             string.IsNullOrWhiteSpace(windowTitle) ? null : windowTitle,
+            browserUrl,
             Locale: CultureInfo.CurrentUICulture.Name);
 
         const bool deferForegroundScan = false;
@@ -347,6 +353,37 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         if (controlType == ControlType.Pane) return "pane";
         if (controlType == ControlType.Window) return "window";
         return "other";
+    }
+
+    private static string? TryReadBrowserUrl(AutomationElement root, string processName)
+    {
+        if (!BrowserProcesses.Contains(processName)) return null;
+        var walker = TreeWalker.ControlViewWalker;
+        var queue = new Queue<AutomationElement>();
+        EnqueueChildren(root, walker, queue);
+        for (var visited = 0; queue.Count > 0 && visited++ < 500;)
+        {
+            var element = queue.Dequeue();
+            try
+            {
+                EnqueueChildren(element, walker, queue);
+                if (element.Current.ControlType != ControlType.Edit
+                    || !element.TryGetCurrentPattern(ValuePattern.Pattern, out var patternObject)
+                    || patternObject is not ValuePattern valuePattern) continue;
+                var raw = valuePattern.Current.Value?.Trim();
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                if (!raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                    && !raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) continue;
+                var sanitized = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty, Query = string.Empty, Fragment = string.Empty };
+                return sanitized.Uri.AbsoluteUri;
+            }
+            catch (ElementNotAvailableException) { }
+            catch (InvalidOperationException) { }
+            catch (ArgumentException) { }
+            catch (COMException) { }
+        }
+        return null;
     }
 
     private static void EnqueueChildren(AutomationElement parent, TreeWalker walker, Queue<AutomationElement> queue)

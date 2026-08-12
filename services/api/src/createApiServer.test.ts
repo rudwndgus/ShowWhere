@@ -9,6 +9,7 @@ const config: ApiConfig = {
   host: '127.0.0.1',
   port: 0,
   maxRequestBytes: 100_000,
+  webKnowledgeDirectory: 'knowledge/web',
   debug: false,
   openai: {
     apiKey: 'test-key',

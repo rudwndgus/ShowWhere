@@ -31,6 +31,7 @@ const environmentSchema = z.object({
   SHOWWHERE_API_HOST: z.string().trim().min(1).default('127.0.0.1'),
   SHOWWHERE_API_PORT: integerFromEnvironment(1, 65_535).default(8787),
   SHOWWHERE_MAX_REQUEST_BYTES: integerFromEnvironment(1_024, 20_000_000).default(12_000_000),
+  SHOWWHERE_WEB_KNOWLEDGE_DIR: z.string().trim().min(1).default('knowledge/web'),
   SHOWWHERE_DEBUG: booleanFromEnvironment.default(false),
 });
 
@@ -38,6 +39,7 @@ export interface ApiConfig {
   host: string;
   port: number;
   maxRequestBytes: number;
+  webKnowledgeDirectory: string;
   debug: boolean;
   openai: {
     apiKey: string;
@@ -62,6 +64,7 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
     host: parsed.SHOWWHERE_API_HOST,
     port: parsed.SHOWWHERE_API_PORT,
     maxRequestBytes: parsed.SHOWWHERE_MAX_REQUEST_BYTES,
+    webKnowledgeDirectory: parsed.SHOWWHERE_WEB_KNOWLEDGE_DIR,
     debug: parsed.SHOWWHERE_DEBUG,
     openai: {
       apiKey: parsed.OPENAI_API_KEY,

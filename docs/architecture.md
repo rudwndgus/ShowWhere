@@ -4,9 +4,13 @@
 
 The API uses a cost-ordered router:
 
-1. `LocalGuideResolver` selects only unique, visible, interactive, semantically explicit targets (zero model calls).
-2. When `HF_TOKEN` is configured, `HuggingFaceEmbeddingClient` ranks otherwise unresolved candidates. A result is used only when its absolute score and margin over the runner-up exceed configured thresholds.
-3. `OpenAiGuideProvider` handles novel intent reasoning, troubleshooting, ambiguous state, and visual grounding. It calls the OpenAI Responses API with a compact candidate set, low-detail full-desktop image, and strict JSON Schema output.
+1. `WindowsKnowledgeResolver` resolves known Windows settings and troubleshooting routes.
+2. `WebKnowledgeResolver` searches Git-tracked site navigation maps and cross-site patterns against live browser candidates.
+3. `LocalGuideResolver` selects only unique, visible, interactive, semantically explicit targets (zero model calls).
+4. When `HF_TOKEN` is configured, `HuggingFaceEmbeddingClient` ranks otherwise unresolved candidates. A result is used only when its absolute score and margin over the runner-up exceed configured thresholds.
+5. `OpenAiGuideProvider` handles novel intent reasoning, troubleshooting, ambiguous state, and visual grounding. It calls the OpenAI Responses API with a compact candidate set, low-detail full-desktop image, and strict JSON Schema output.
+
+The independent `services/crawler` Playwright pipeline creates Web Knowledge. It stores sanitized observations, normalizes semantic controls, records state transitions, builds navigation routes, and derives shared patterns only after multiple sites support a sequence. Runtime never reuses crawler coordinates or selectors directly; it matches semantic names and roles against the current live UI Automation candidates.
 
 After local resolution misses, Hugging Face and GPT begin concurrently. A confident valid HF target may win, but a slow or unavailable HF provider never postpones an already available GPT decision.
 

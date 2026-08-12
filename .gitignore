@@ -27,11 +27,12 @@ Thumbs.db
 .vscode/
 .smoke-profile/
 .search-profile/
+.crawl/
+playwright/.auth/
+knowledge/web/private/
 
-# Learning records stay in the repository for cross-computer Git sync.
-# Full-screen images can contain private data and exports are reproducible.
-training/screenshots/
-training/exports/
+# Every learning artifact stays in the repository for cross-computer Git sync.
+# Secrets and authenticated browser state remain excluded separately.
 training/*.tmp
 
 # Python runtime artifacts
