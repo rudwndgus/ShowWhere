@@ -35,6 +35,7 @@ def task_slug(text: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="training/corrections.jsonl")
+    parser.add_argument("--completions", default="training/completions.jsonl")
     parser.add_argument("--output", default="data/brain-v2/gold/developer-teaching.jsonl")
     parser.add_argument("--memory", default="data/brain-v2/memory-v2.json")
     args = parser.parse_args()
@@ -88,6 +89,41 @@ def main() -> int:
                 "text": " | ".join(filter(None, [correction.get("originalGoal"), correction.get("effectiveGoal"), correction.get("correctedIntent"), correction.get("refinedComment"), concept, *expected_evidence])),
             }))
             accepted += 1
+        completion_source = Path(args.completions)
+        if completion_source.exists():
+            with completion_source.open(encoding="utf-8") as completions:
+                for line in completions:
+                    completion = json.loads(line)
+                    if completion.get("developerVerified") is not True:
+                        continue
+                    labels = completion.get("learningLabels") or {}
+                    evidence = labels.get("expectedEvidence") or completion.get("visibleEvidence") or []
+                    gold = scrub({
+                        "schemaVersion": "showwhere-developer-gold-v2",
+                        "id": completion.get("id"),
+                        "importedAt": datetime.now(timezone.utc).isoformat(),
+                        "authority": "human_gold",
+                        "immutableSource": True,
+                        "userQuestion": completion.get("originalGoal"),
+                        "taskId": labels.get("taskId") or task_slug(completion.get("effectiveGoal") or completion.get("originalGoal", "")),
+                        "stateId": labels.get("stateId") or "unknown",
+                        "state": completion.get("context"),
+                        "targetConcept": labels.get("targetConcept") or "task.completed",
+                        "expectedNextState": labels.get("expectedNextState") or "task.completed",
+                        "expectedEvidence": evidence,
+                        "outcomeLabel": "task_completed",
+                        "taskCompleted": True,
+                        "developerComment": completion.get("developerComment"),
+                    })
+                    target.write(json.dumps(gold, ensure_ascii=False) + "\n")
+                    memory_entries.append(scrub({
+                        "id": completion.get("id"), "score": 1.0, "authority": "human_gold",
+                        "taskId": gold["taskId"], "stateId": gold["stateId"],
+                        "targetConcept": gold["targetConcept"],
+                        "expectedNextState": gold["expectedNextState"],
+                        "text": " | ".join(filter(None, [completion.get("originalGoal"), completion.get("effectiveGoal"), *evidence, "task completed"])),
+                    }))
+                    accepted += 1
     memory_path = Path(args.memory)
     memory_path.parent.mkdir(parents=True, exist_ok=True)
     memory_path.write_text(json.dumps({"schemaVersion": 1, "entries": memory_entries}, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -47,6 +47,39 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Verified_target_is_reused_for_a_paraphrase_with_the_same_action_and_destination()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("music", "YouTube Music", "ytmusic", "browser_content"));
+        await store.SaveAsync(RecordForGoal("크롬에서 유튜브 뮤직 틀어줘", signature), null);
+
+        var found = store.TryResolveTarget(
+            "유튜브 뮤직을 크롬으로 열어줘",
+            new ApplicationContext(Platforms.Windows, "chrome", "새 탭 - Chrome"),
+            [Candidate("new-music", "YouTube Music", "ytmusic", "browser_content")],
+            out var target,
+            out _);
+
+        Assert.True(found);
+        Assert.Equal("new-music", target.Id);
+    }
+
+    [Fact]
+    public void Open_destination_is_not_confused_with_searching_or_playing_specific_music()
+    {
+        Assert.True(DeveloperIntentMatcher.IsSameIntent(
+            "크롬에서 유튜브 뮤직 틀어줘",
+            "유튜브 뮤직을 열어줘"));
+        Assert.False(DeveloperIntentMatcher.IsSameIntent(
+            "유튜브 뮤직을 열어줘",
+            "유튜브 뮤직에서 아이유 노래 찾아줘"));
+        Assert.False(DeveloperIntentMatcher.IsSameIntent(
+            "유튜브 뮤직을 열어줘",
+            "유튜브 뮤직에서 아이유 노래 틀어줘"));
+    }
+
+    [Fact]
     public async Task Correction_never_substitutes_browser_chrome_for_a_missing_content_target()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
@@ -141,6 +174,31 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Developer_completed_state_is_persisted_and_reused_for_the_same_intent()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            "크롬에서 유튜브 뮤직 틀어줘", context, "open:youtube_music",
+            "task.open.youtube_music", null, "completed.youtube_music", "YouTube Music", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            "크롬에서 유튜브 뮤직 틀어줘", "크롬에서 유튜브 뮤직 틀어줘",
+            context, "snapshot", ["YouTube Music"], labels));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.True(reloaded.TryResolveCompletion(
+            "유튜브 뮤직을 열어줘", context, [], out var completion));
+        Assert.Equal("task_completed", completion.LearningLabels.OutcomeLabel);
+        Assert.False(reloaded.TryResolveCompletion(
+            "유튜브 뮤직에서 노래 검색해줘", context, [], out _));
+        Assert.False(reloaded.TryResolveCompletion(
+            "유튜브 뮤직을 열어줘",
+            new ApplicationContext(Platforms.Windows, "chrome", "새 탭 - Chrome"),
+            [], out _));
+    }
+
+    [Fact]
     public void Developer_comment_keeps_raw_text_and_adds_structured_issue_tags()
     {
         var refined = DeveloperCommentRefiner.Refine(
@@ -226,6 +284,14 @@ public sealed class DeveloperCorrectionTests : IDisposable
         signature is null ? null : new VisualTarget(0.1, 0.1, 0.2, 0.05, "검색"),
         signature,
         null);
+
+    private static DeveloperCorrectionRecord RecordForGoal(
+        string goal,
+        CorrectionTargetSignature signature) => Record(signature: signature) with
+        {
+            OriginalGoal = goal,
+            EffectiveGoal = goal,
+        };
 
     private static UiCandidate Candidate(
         string id,

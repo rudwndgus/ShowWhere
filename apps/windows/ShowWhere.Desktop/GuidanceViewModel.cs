@@ -91,6 +91,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         CancelCorrectionEditCommand = new RelayCommand(CloseCorrectionEditor);
         MarkAnswerCorrectCommand = new AsyncParameterRelayCommand(MarkAnswerCorrectAsync, CanEvaluateAnswer);
         MarkAnswerIncorrectCommand = new AsyncParameterRelayCommand(MarkAnswerIncorrectAsync, CanEvaluateAnswer);
+        MarkAnswerCompletedCommand = new AsyncParameterRelayCommand(MarkAnswerCompletedAsync, CanEvaluateAnswer);
         TogglePauseCommand = new RelayCommand(TogglePause);
         ToggleDeveloperModeCommand = new RelayCommand(ToggleDeveloperMode);
         ExitCommand = new RelayCommand(_exit);
@@ -112,6 +113,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand CancelCorrectionEditCommand { get; }
     public ICommand MarkAnswerCorrectCommand { get; }
     public ICommand MarkAnswerIncorrectCommand { get; }
+    public ICommand MarkAnswerCompletedCommand { get; }
     public ICommand TogglePauseCommand { get; }
     public ICommand ToggleDeveloperModeCommand { get; }
     public ICommand ExitCommand { get; }
@@ -300,6 +302,37 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 CurrentApplication = string.IsNullOrWhiteSpace(currentObservation.Context.WindowTitle)
                     ? currentObservation.Context.ApplicationName
                     : $"{currentObservation.Context.ApplicationName} — {currentObservation.Context.WindowTitle}";
+                var storedCompletion = _correctionStore.TryResolveCompletion(
+                        _session.OriginalUserMessage,
+                        currentObservation.Context,
+                        currentObservation.Candidates,
+                        out _);
+                var automaticCompletion = GoalCompletionResolver.TryResolve(
+                        _session.OriginalUserMessage,
+                        currentObservation.Context,
+                        currentObservation.Candidates,
+                        out var automaticCompletionMessage);
+                if (storedCompletion || automaticCompletion)
+                {
+                    var completionMessage = string.IsNullOrWhiteSpace(automaticCompletionMessage)
+                        ? "완료됐어요. 개발자가 검증한 최종 상태에 도착했습니다."
+                        : automaticCompletionMessage;
+                    var completionDecision = new GuideDecision(
+                        GuideStatuses.Completed,
+                        GuideActions.Explain,
+                        completionMessage,
+                        1);
+                    _lastDecision = completionDecision;
+                    pendingMessage.Text = completionMessage;
+                    AttachTrainingContext(pendingMessage, completionDecision);
+                    pendingMessage.IsPending = false;
+                    pendingMessage = null;
+                    _overlay.Clear();
+                    _session = TaskSessionStateMachine.Completed(_session, completionMessage);
+                    StatusText = "작업 완료";
+                    IsLoading = false;
+                    return;
+                }
                 var prioritizedCandidates = WindowsCandidatePrioritizer.Prioritize(
                     _session.OriginalUserMessage,
                     currentObservation.Candidates);
@@ -733,6 +766,73 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         }
     }
 
+    private async Task MarkAnswerCompletedAsync(object? parameter)
+    {
+        if (!IsDeveloperMode || parameter is not ChatMessageItem message || !message.CanEvaluate) return;
+        try
+        {
+            CancelRunningWork(markCancelled: false);
+            StatusText = "완료 상태 확인 및 저장 중";
+            var goal = message.OriginalGoal
+                ?? (string.IsNullOrWhiteSpace(_submittedGoal) ? _session?.OriginalUserMessage : _submittedGoal);
+            if (string.IsNullOrWhiteSpace(goal)) return;
+            WindowsObservation observation;
+            try
+            {
+                observation = await _observer.ObserveAsync(goal, CancellationToken.None);
+            }
+            catch
+            {
+                if (_lastObservation is null) throw;
+                observation = _lastObservation;
+            }
+            _lastObservation = observation;
+            var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "completed"));
+            var evidence = !string.IsNullOrWhiteSpace(observation.Context.WindowTitle)
+                ? new[] { observation.Context.WindowTitle.Trim() }
+                : !string.IsNullOrWhiteSpace(observation.Context.Url)
+                    ? new[] { observation.Context.Url.Trim() }
+                    : new[] { observation.Context.ApplicationName.Trim() };
+            var intentKey = DeveloperIntentMatcher.CreateIntentKey(goal);
+            var labels = DeveloperLabeling.CreateCorrectionLabels(
+                goal,
+                observation.Context,
+                string.IsNullOrWhiteSpace(intentKey) ? "task completed" : intentKey,
+                string.IsNullOrWhiteSpace(intentKey) ? null : $"task.{intentKey.Replace(':', '.')}",
+                null,
+                $"completed.{observation.Context.ApplicationName}.{observation.Context.WindowTitle}",
+                string.Join(',', evidence),
+                "task_completed");
+            var completion = new DeveloperCompletionRecord(
+                1,
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                goal,
+                message.EffectiveGoal ?? goal,
+                observation.Context,
+                observation.SnapshotHash,
+                evidence,
+                labels,
+                true,
+                feedback.Id,
+                "Developer explicitly marked the task complete.");
+            await _correctionStore.SaveCompletionAsync(completion);
+            message.MarkEvaluated("completed");
+            _overlay.Clear();
+            if (_session is not null)
+                _session = TaskSessionStateMachine.Completed(_session, "개발자가 완료 상태로 검증했습니다.");
+            Messages.Add(CreateAssistantMessage(
+                "assistant",
+                "여기서 작업이 끝난 것으로 저장했습니다. 같은 의도와 완료 화면에서는 더 이상 다음 단계를 찾지 않습니다."));
+            StatusText = "완료 상태가 human_gold로 저장됨";
+        }
+        catch (Exception exception)
+        {
+            DesktopDiagnostics.Write(exception);
+            StatusText = "완료 상태 저장 오류";
+        }
+    }
+
     private void CloseCorrectionEditor()
     {
         ResetCorrectionDraft();
@@ -1006,8 +1106,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         string goal,
         WindowsObservation? observation)
     {
+        _approvedReplays.TryGetValue(NormalizeGoal(goal), out var replay);
+        replay ??= _approvedReplays.Values.LastOrDefault(item =>
+            DeveloperIntentMatcher.IsSameIntent(goal, item.Goal));
         if (observation is null
-            || !_approvedReplays.TryGetValue(NormalizeGoal(goal), out var replay)
+            || replay is null
             || !string.Equals(replay.SnapshotHash, observation.SnapshotHash, StringComparison.Ordinal)) return null;
         if (replay.TargetId is null) return replay.TargetBounds is null ? null : replay;
         if (!observation.Registry.TryResolveState(replay.TargetId, out _, out var isOffscreen)
@@ -1041,6 +1144,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         (SaveCorrectionCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         (MarkAnswerCorrectCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();
         (MarkAnswerIncorrectCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();
+        (MarkAnswerCompletedCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();
         (SelectClarificationCommand as AsyncParameterRelayCommand)?.RaiseCanExecuteChanged();
     }
 
