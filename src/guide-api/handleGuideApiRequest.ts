@@ -6,7 +6,6 @@ import {
   type GuideDecision,
 } from '../contracts';
 import type { AiProvider } from './AiProvider';
-import { guardContextualDecision } from './contextualDecisionGuard';
 import { MockAiProvider } from './MockAiProvider';
 
 export const GUIDE_API_PATH = '/api/guide';
@@ -96,5 +95,5 @@ export async function handleGuideApiRequest(
     };
   }
 
-  return { status: 200, decision: guardContextualDecision(parsedRequest.data, parsedDecision.data) };
+  return { status: 200, decision: parsedDecision.data };
 }

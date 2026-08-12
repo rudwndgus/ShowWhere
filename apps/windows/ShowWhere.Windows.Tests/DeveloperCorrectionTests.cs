@@ -47,7 +47,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
-    public async Task Verified_target_is_reused_for_a_paraphrase_with_the_same_action_and_destination()
+    public async Task Verified_target_is_reused_only_for_the_same_normalized_question()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
         var signature = DeveloperCorrectionMatcher.CreateSignature(
@@ -55,7 +55,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
         await store.SaveAsync(RecordForGoal("크롬에서 유튜브 뮤직 틀어줘", signature), null);
 
         var found = store.TryResolveTarget(
-            "유튜브 뮤직을 크롬으로 열어줘",
+            "  크롬에서   유튜브 뮤직 틀어줘  ",
             new ApplicationContext(Platforms.Windows, "chrome", "새 탭 - Chrome"),
             [Candidate("new-music", "YouTube Music", "ytmusic", "browser_content")],
             out var target,
@@ -69,6 +69,9 @@ public sealed class DeveloperCorrectionTests : IDisposable
     public void Open_destination_is_not_confused_with_searching_or_playing_specific_music()
     {
         Assert.True(DeveloperIntentMatcher.IsSameIntent(
+            "크롬에서 유튜브 뮤직 틀어줘",
+            "  크롬에서   유튜브 뮤직 틀어줘  "));
+        Assert.False(DeveloperIntentMatcher.IsSameIntent(
             "크롬에서 유튜브 뮤직 틀어줘",
             "유튜브 뮤직을 열어줘"));
         Assert.False(DeveloperIntentMatcher.IsSameIntent(
@@ -188,12 +191,12 @@ public sealed class DeveloperCorrectionTests : IDisposable
 
         var reloaded = new JsonlDeveloperCorrectionStore(_directory);
         Assert.True(reloaded.TryResolveCompletion(
-            "유튜브 뮤직을 열어줘", context, [], out var completion));
+            "크롬에서 유튜브 뮤직 틀어줘", context, [], out var completion));
         Assert.Equal("task_completed", completion.LearningLabels.OutcomeLabel);
         Assert.False(reloaded.TryResolveCompletion(
             "유튜브 뮤직에서 노래 검색해줘", context, [], out _));
         Assert.False(reloaded.TryResolveCompletion(
-            "유튜브 뮤직을 열어줘",
+            "크롬에서 유튜브 뮤직 틀어줘",
             new ApplicationContext(Platforms.Windows, "chrome", "새 탭 - Chrome"),
             [], out _));
     }

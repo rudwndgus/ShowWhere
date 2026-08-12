@@ -1,4 +1,0 @@
-pandas>=2.3,<4
-pyarrow>=20,<24
-jupyterlab>=4.4,<5
-

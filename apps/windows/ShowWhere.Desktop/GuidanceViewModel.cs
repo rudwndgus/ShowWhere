@@ -220,16 +220,6 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             await RunGuidanceLoopAsync(replayObservation, _taskCancellation.Token);
             return;
         }
-        if (WindowsGoalClarificationResolver.TryCreate(query, out var clarification))
-        {
-            _session = TaskSessionStateMachine.Create(query);
-            Messages.Add(CreateAssistantMessage("assistant", clarification.Message));
-            foreach (var choice in clarification.Choices)
-                ClarificationChoices.Add(new ClarificationChoiceItem(choice.Label, choice.ResolvedGoal));
-            StatusText = "선택이 필요해요";
-            RaiseCommandStates();
-            return;
-        }
         var effectiveGoal = _correctionStore.ResolveIntent(query);
         _session = TaskSessionStateMachine.Create(effectiveGoal);
         if (!string.Equals(effectiveGoal, query, StringComparison.Ordinal))
@@ -307,16 +297,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         currentObservation.Context,
                         currentObservation.Candidates,
                         out _);
-                var automaticCompletion = GoalCompletionResolver.TryResolve(
-                        _session.OriginalUserMessage,
-                        currentObservation.Context,
-                        currentObservation.Candidates,
-                        out var automaticCompletionMessage);
-                if (storedCompletion || automaticCompletion)
+                if (storedCompletion)
                 {
-                    var completionMessage = string.IsNullOrWhiteSpace(automaticCompletionMessage)
-                        ? "완료됐어요. 개발자가 검증한 최종 상태에 도착했습니다."
-                        : automaticCompletionMessage;
+                    const string completionMessage = "완료됐어요. 개발자가 검증한 최종 상태에 도착했습니다.";
                     var completionDecision = new GuideDecision(
                         GuideStatuses.Completed,
                         GuideActions.Explain,
@@ -333,9 +316,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     IsLoading = false;
                     return;
                 }
-                var prioritizedCandidates = WindowsCandidatePrioritizer.Prioritize(
-                    _session.OriginalUserMessage,
-                    currentObservation.Candidates);
+                var prioritizedCandidates = currentObservation.Candidates;
                 StatusText = $"후보 {prioritizedCandidates.Count}개 분석 중";
                 _session = TaskSessionStateMachine.AiRequested(_session);
                 var request = new GuideRequest(_session, currentObservation.Context, prioritizedCandidates);
@@ -386,75 +367,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         VisualTarget: correctedVisualTarget);
                     StatusText = "검증된 화면 정답 적용";
                 }
-                else if (WindowsFastPathResolver.TryResolve(request, out var fastDecision))
-                {
-                    StatusText = "Windows 빠른 안내";
-                    decision = ContractValidator.ValidateDecision(fastDecision, request);
-                }
                 else
                 {
-                    GuideDecision? deferredDecision = null;
-                    if (currentObservation.ForegroundScanDeferred)
-                    {
-                        StatusText = "열린 Windows 화면 확인 중";
-                        await Task.Delay(250, cancellationToken);
-                        currentObservation = await _observer.ObserveAsync(
-                            _session.OriginalUserMessage,
-                            cancellationToken);
-                        CurrentApplication = string.IsNullOrWhiteSpace(currentObservation.Context.WindowTitle)
-                            ? currentObservation.Context.ApplicationName
-                            : $"{currentObservation.Context.ApplicationName} — {currentObservation.Context.WindowTitle}";
-                        prioritizedCandidates = WindowsCandidatePrioritizer.Prioritize(
-                            _session.OriginalUserMessage,
-                            currentObservation.Candidates);
-                        request = new GuideRequest(_session, currentObservation.Context, prioritizedCandidates);
-                        if (WindowsFastPathResolver.TryResolve(request, out fastDecision))
-                        {
-                            StatusText = "Windows 빠른 안내";
-                            deferredDecision = ContractValidator.ValidateDecision(fastDecision, request);
-                        }
-                    }
-                    if (deferredDecision is not null)
-                    {
-                        decision = deferredDecision;
-                    }
-                    else if (WindowsFastPathResolver.IsKnownSystemGoal(_session.OriginalUserMessage))
-                    {
-                        GuideDecision? localDecision = null;
-                        for (var retry = 0; retry < 4 && localDecision is null; retry++)
-                        {
-                            StatusText = "Windows 메뉴가 열리기를 기다리는 중";
-                            await Task.Delay(300, cancellationToken);
-                            currentObservation = await _observer.ObserveAsync(
-                                _session.OriginalUserMessage,
-                                cancellationToken);
-                            CurrentApplication = string.IsNullOrWhiteSpace(currentObservation.Context.WindowTitle)
-                                ? currentObservation.Context.ApplicationName
-                                : $"{currentObservation.Context.ApplicationName} — {currentObservation.Context.WindowTitle}";
-                            prioritizedCandidates = WindowsCandidatePrioritizer.Prioritize(
-                                _session.OriginalUserMessage,
-                                currentObservation.Candidates);
-                            request = new GuideRequest(_session, currentObservation.Context, prioritizedCandidates);
-                            if (WindowsFastPathResolver.TryResolve(request, out fastDecision))
-                                localDecision = ContractValidator.ValidateDecision(fastDecision, request);
-                        }
-
-                        if (localDecision is not null)
-                        {
-                            decision = localDecision;
-                        }
-                        else
-                        {
-                            (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
-                        }
-                    }
-                    else
-                    {
-                        StatusText = $"후보 {prioritizedCandidates.Count}개 AI 분석 중";
-                        decision = await _apiClient.DecideNextActionAsync(request, cancellationToken);
-                        if (decision.Action == GuideActions.RequestVision)
-                            (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
-                    }
+                    StatusText = $"현재 화면과 후보 {prioritizedCandidates.Count}개를 GPT가 분석 중";
+                    (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
                 }
                 _lastObservation = currentObservation;
                 _lastDecision = decision;
@@ -541,7 +457,12 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                                 decision.TargetId!,
                                 out bounds,
                                 out isOffscreen))
-                            throw new ContractValidationException("The selected Windows element is stale.");
+                        {
+                            DesktopDiagnostics.WriteEvent("stale_target_rejected", ("id", decision.TargetId));
+                            _overlay.Clear();
+                            currentObservation = null;
+                            continue;
+                        }
                         selectedLabel = selectedCandidate?.Label ?? decision.TargetId!;
                     }
                     _lastHighlightedCandidate = selectedCandidate;
@@ -596,17 +517,6 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     _session = TaskSessionStateMachine.StepCompleted(
                         _session,
                         $"사용자가 '{selectedLabel}' 컨트롤을 클릭함. 이전 안내: {decision.Message}");
-                    if (selectedCandidate is not null
-                        && WindowsSystemOutcomeResolver.TryResolve(
-                            _session.OriginalUserMessage,
-                            selectedCandidate,
-                            out var completedMessage))
-                    {
-                        Messages.Add(CreateAssistantMessage("assistant", completedMessage));
-                        _session = TaskSessionStateMachine.Completed(_session, completedMessage);
-                        StatusText = "작업 완료";
-                        return;
-                    }
                     currentObservation = changed;
                     continue;
                 }
@@ -670,10 +580,6 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         var capture = await _screenCapture.CaptureAsync(cancellationToken);
         var visionRequest = request with
         {
-            // Reaching this path means UI Automation did not find the requested
-            // control. Do not let a generic candidate such as Search distract the
-            // vision model from a more direct control that is visible in pixels.
-            Candidates = [],
             Screenshot = capture.DataUrl,
             ScreenshotBounds = capture.Bounds,
         };
@@ -1079,7 +985,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     {
         IsDeveloperMode = !IsDeveloperMode;
         StatusText = IsDeveloperMode
-            ? "개발자 모드 켜짐 · O/X 평가와 Brain v2 라벨링 사용 가능"
+            ? "개발자 모드 켜짐 · O/X 평가와 GPT 피드백 라벨링 사용 가능"
             : "일반 모드";
         RaiseCommandStates();
     }

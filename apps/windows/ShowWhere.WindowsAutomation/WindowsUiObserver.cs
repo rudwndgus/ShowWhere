@@ -38,9 +38,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
 
     private WindowsObservation Observe(string? goal, CancellationToken cancellationToken)
     {
-        var windowHandle = WindowsFastPathResolver.IsKnownSystemGoal(goal)
-            ? FindVisibleTransientShellSurface()
-            : IntPtr.Zero;
+        var windowHandle = FindVisibleTransientShellSurface();
         if (windowHandle == IntPtr.Zero) windowHandle = FindExternalForegroundWindow();
         if (windowHandle == IntPtr.Zero) throw new WindowsObservationException();
 
@@ -55,7 +53,6 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         }
 
         var processName = GetProcessName(root);
-        TryBringSettingsDestinationIntoView(root, processName, goal);
         var windowTitle = Read(() => root.Current.Name);
         var context = new ApplicationContext(
             Platforms.Windows,
@@ -63,8 +60,7 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             string.IsNullOrWhiteSpace(windowTitle) ? null : windowTitle,
             Locale: CultureInfo.CurrentUICulture.Name);
 
-        var deferForegroundScan = WindowsFastPathResolver.IsKnownSystemGoal(goal)
-            && !WindowsFastPathResolver.IsTrustedWindowsProcess(processName);
+        const bool deferForegroundScan = false;
         var elementsBySource = new Dictionary<string, AutomationElement>(StringComparer.Ordinal);
         IReadOnlyList<NormalizedAutomationCandidate> foregroundCandidates = [];
         if (!deferForegroundScan)
@@ -122,7 +118,10 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             .Where(item => overviewSourceKeys.Contains(item.SourceKey))
             .Select(item => item.Candidate.Id)
             .ToHashSet(StringComparer.Ordinal);
-        var registry = new CandidateRegistry(registryElements, titleBarIds);
+        var registry = new CandidateRegistry(
+            registryElements,
+            candidates.ToDictionary(candidate => candidate.Id, StringComparer.Ordinal),
+            titleBarIds);
         var focusedElementKey = GetFocusedElementKey();
         return new WindowsObservation(
             context,
@@ -280,43 +279,6 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         }
 
         return result;
-    }
-
-    private static void TryBringSettingsDestinationIntoView(
-        AutomationElement root,
-        string processName,
-        string? goal)
-    {
-        if (processName is not ("ApplicationFrameHost" or "SystemSettings")
-            || !WindowsSettingsCatalog.TryFind(goal, out var route))
-            return;
-
-        try
-        {
-            var descendants = root.FindAll(
-                TreeScope.Descendants,
-                Condition.TrueCondition).Cast<AutomationElement>().ToArray();
-            foreach (var stepAliases in route.PageAliases.Reverse())
-            {
-                var matches = descendants.Where(element =>
-                    stepAliases.Any(alias => string.Equals(
-                        Read(() => element.Current.Name)?.Trim(),
-                        alias,
-                        StringComparison.OrdinalIgnoreCase))).ToArray();
-                if (matches.Length == 0) continue;
-                var offscreen = matches.FirstOrDefault(element => Read(() => element.Current.IsOffscreen));
-                if (offscreen is not null
-                    && offscreen.TryGetCurrentPattern(ScrollItemPattern.Pattern, out var pattern))
-                {
-                    ((ScrollItemPattern)pattern).ScrollIntoView();
-                    Thread.Sleep(100);
-                }
-                return;
-            }
-        }
-        catch (ElementNotAvailableException) { }
-        catch (InvalidOperationException) { }
-        catch (COMException) { }
     }
 
     private static BrowserCandidateScope ClassifyCandidateScope(

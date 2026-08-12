@@ -249,14 +249,12 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
         DataDirectory = dataDirectory ?? ResolveDefaultDataDirectory();
-        if (dataDirectory is null) MigrateLegacyTrainingData(DataDirectory);
         _recordsPath = Path.Combine(DataDirectory, "corrections.jsonl");
         _feedbackPath = Path.Combine(DataDirectory, "answer-feedback.jsonl");
         _completionsPath = Path.Combine(DataDirectory, "completions.jsonl");
         Directory.CreateDirectory(DataDirectory);
         _records = LoadRecords(_recordsPath);
         _completions = LoadCompletionRecords(_completionsPath);
-        PromoteExplicitLegacyCompletions();
     }
 
     public string DataDirectory { get; }
@@ -461,50 +459,6 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return records;
     }
 
-    private void PromoteExplicitLegacyCompletions()
-    {
-        var completionTerms = new[] { "끝", "완료", "이미 도착", "그만 안내", "stop", "completed", "already there" };
-        foreach (var correction in _records.Where(record =>
-                     record.DeveloperVerified
-                     && record.CorrectTarget is null
-                     && record.NormalizedVisualTarget is null
-                     && completionTerms.Any(term =>
-                         $"{record.DeveloperComment} {record.RefinedComment}".Contains(term, StringComparison.OrdinalIgnoreCase))))
-        {
-            var id = $"completion-{correction.Id}";
-            if (_completions.Any(record => string.Equals(record.Id, id, StringComparison.Ordinal))) continue;
-            var evidence = !string.IsNullOrWhiteSpace(correction.Context.WindowTitle)
-                ? new[] { correction.Context.WindowTitle.Trim() }
-                : new[] { correction.Context.ApplicationName.Trim() };
-            var intentKey = DeveloperIntentMatcher.CreateIntentKey(correction.OriginalGoal);
-            var labels = DeveloperLabeling.CreateCorrectionLabels(
-                correction.OriginalGoal,
-                correction.Context,
-                string.IsNullOrWhiteSpace(intentKey) ? "task completed" : intentKey,
-                string.IsNullOrWhiteSpace(intentKey) ? correction.LearningLabels?.TaskId : $"task.{intentKey.Replace(':', '.')}",
-                correction.LearningLabels?.StateId,
-                $"completed.{correction.Context.ApplicationName}.{correction.Context.WindowTitle}",
-                string.Join(',', evidence),
-                "task_completed");
-            var completion = new DeveloperCompletionRecord(
-                1,
-                id,
-                correction.CreatedAtUtc,
-                correction.OriginalGoal,
-                correction.EffectiveGoal,
-                correction.Context,
-                correction.SnapshotHash,
-                evidence,
-                labels,
-                true,
-                correction.FeedbackId,
-                correction.DeveloperComment ?? correction.RefinedComment);
-            var line = JsonSerializer.Serialize(completion, JsonOptions) + Environment.NewLine;
-            File.AppendAllText(_completionsPath, line);
-            _completions.Add(completion);
-        }
-    }
-
     private static string ResolveDefaultDataDirectory()
     {
         var configured = Environment.GetEnvironmentVariable("SHOWWHERE_TRAINING_DIR");
@@ -526,28 +480,6 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ShowWhere",
             "training");
-    }
-
-    private static void MigrateLegacyTrainingData(string destination)
-    {
-        var legacy = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ShowWhere",
-            "training");
-        if (!Directory.Exists(legacy)
-            || string.Equals(
-                Path.GetFullPath(legacy).TrimEnd(Path.DirectorySeparatorChar),
-                Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase)) return;
-
-        foreach (var sourcePath in Directory.EnumerateFiles(legacy, "*", SearchOption.AllDirectories))
-        {
-            var relativePath = Path.GetRelativePath(legacy, sourcePath);
-            var destinationPath = Path.Combine(destination, relativePath);
-            if (File.Exists(destinationPath)) continue;
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-            File.Copy(sourcePath, destinationPath, overwrite: false);
-        }
     }
 
     private static int ScoreTarget(
@@ -590,41 +522,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
 public static class DeveloperIntentMatcher
 {
-    private static readonly (string Key, string[] Terms)[] Entities =
-    [
-        ("youtube_music", ["youtube music", "유튜브 뮤직", "유튜브뮤직"]),
-        ("youtube", ["youtube", "유튜브"]),
-        ("chrome", ["chrome", "크롬"]),
-        ("settings", ["windows settings", "설정"]),
-        ("printer", ["printer", "프린터", "프린트"]),
-        ("calculator", ["calculator", "계산기"]),
-        ("camera", ["camera", "카메라"]),
-    ];
-    private static readonly string[] SearchTerms = ["검색", "찾아", "find", "search"];
-    private static readonly string[] SpecificMediaTerms = ["노래", "음악", "곡", "앨범", "가수", "song", "track", "album", "artist"];
-    private static readonly string[] OpenTerms = ["열어", "켜", "실행", "들어가", "접속", "틀어", "open", "launch", "start"];
-
-    public static string CreateIntentKey(string? value)
-    {
-        var normalized = Normalize(value);
-        if (normalized.Length == 0) return string.Empty;
-        var entity = Entities.FirstOrDefault(item => item.Terms.Any(normalized.Contains)).Key;
-        var action = SearchTerms.Any(normalized.Contains) ? "search"
-            : SpecificMediaTerms.Any(normalized.Contains) && normalized.Contains("틀어", StringComparison.Ordinal) ? "play_media"
-            : OpenTerms.Any(normalized.Contains) ? "open"
-            : "navigate";
-        if (entity is null) return string.Empty;
-        return $"{action}:{entity}";
-    }
+    public static string CreateIntentKey(string? value) => Normalize(value).Replace(' ', '_');
 
     public static bool IsSameIntent(string? left, string? right)
     {
         var a = Normalize(left);
         var b = Normalize(right);
         if (a.Length == 0 || b.Length == 0) return false;
-        if (a == b) return true;
-        var leftKey = CreateIntentKey(left);
-        return leftKey.Length > 0 && leftKey == CreateIntentKey(right);
+        return a == b;
     }
 
     private static string Normalize(string? value) => string.Join(' ',

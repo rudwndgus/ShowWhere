@@ -6,20 +6,16 @@ import { createApiServer } from './createApiServer';
 import { guideRequestFixture } from './testFixtures';
 
 const config: ApiConfig = {
-  aiMode: 'mock',
-  brainMode: 'legacy',
   host: '127.0.0.1',
   port: 0,
   maxRequestBytes: 100_000,
   debug: false,
-  brainV2: {
-    baseUrl: 'http://127.0.0.1:8790',
-    modelRoot: 'C:\\ShowWhere_Models',
-    dataRoot: 'data/brain-v2',
-    timeoutMs: 300_000,
+  openai: {
+    apiKey: 'test-key',
+    model: 'gpt-5.6',
+    baseUrl: 'https://api.openai.com/v1',
+    requestTimeoutMs: 30_000,
     maxRetries: 1,
-    memoryReuseThreshold: 0.92,
-    rerankThreshold: 0.62,
   },
 };
 

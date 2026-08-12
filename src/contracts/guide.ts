@@ -60,7 +60,7 @@ export const GuideRequestSchema = z.object({
   session: TaskSessionSchema,
   context: ApplicationContextSchema,
   candidates: z.array(UiCandidateSchema).max(100),
-  screenshot: z.string().max(8_000_000).optional(),
+  screenshot: z.string().max(12_000_000).optional(),
   screenshotBounds: BoundsSchema.optional(),
 }).strict().superRefine((request, context) => {
   if ((request.screenshot === undefined) !== (request.screenshotBounds === undefined)) {
