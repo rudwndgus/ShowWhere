@@ -6,7 +6,6 @@ import {
   type GroundingResult,
   type MemoryHit,
   type RerankerResult,
-  type SemanticDecision,
 } from '../../../../src/brain-v2/contracts';
 import type { CandidateReranker, TaskStateReasoner, VisionGrounder } from '../../../../src/brain-v2/interfaces';
 

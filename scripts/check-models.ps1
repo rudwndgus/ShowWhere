@@ -9,8 +9,7 @@ foreach ($role in @('brain', 'reranker', 'embedding', 'grounder')) {
     $marker = Join-Path $path 'showwhere-download.json'
     $ready = Test-Path -LiteralPath $marker
     $size = if (Test-Path -LiteralPath $path) { (Get-ChildItem -LiteralPath $path -File -Recurse | Measure-Object Length -Sum).Sum } else { 0 }
-    [pscustomobject]@{ Role=$role; Model=$model.id; Ready=$ready; SizeGB=[math]::Round($size/1GB,2); Path=$path }
+    [pscustomobject]@{ Role=$role; Model=$model.id; Ready=$ready; SizeGB=[math]::Round($size/1GB,2); Runtime=$model.runtime; Path=$path }
     if (-not $ready) { $failed = $true }
 }
 if ($failed) { exit 1 }
-

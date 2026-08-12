@@ -55,7 +55,10 @@ export class JsonMemoryProvider implements SemanticRetriever {
       }
     }
     return entries
-      .map(({ embedding: _embedding, ...entry }) => ({ ...entry, score: Math.max(entry.score, vectorScores.get(entry.id) ?? 0, similarity(context, entry.text)) }))
+      .map(({ embedding: _embedding, ...entry }) => ({
+        ...entry,
+        score: Math.max(vectorScores.get(entry.id) ?? 0, similarity(context, entry.text)) * Math.max(0, Math.min(1, entry.score)),
+      }))
       .filter((entry) => entry.authority !== 'rejected')
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
@@ -63,6 +66,8 @@ export class JsonMemoryProvider implements SemanticRetriever {
 
   async remember(event: LearningEventV2): Promise<void> {
     if (!['human_gold', 'verified_real'].includes(event.authority) || event.finalOutcome !== 'success') return;
+    const targetConcept = event.selectedSemanticTarget ?? event.selectedCandidate?.label;
+    if (!targetConcept) return;
     const entries = await this.load();
     entries.push({
       id: event.eventId,
@@ -70,9 +75,9 @@ export class JsonMemoryProvider implements SemanticRetriever {
       authority: event.authority,
       taskId: event.taskId ?? 'unknown',
       stateId: event.stateBefore ?? 'unknown',
-      targetConcept: event.selectedSemanticTarget ?? 'unknown',
-      expectedNextState: event.expectedNextState ?? 'unknown',
-      text: [event.userQuestion, event.selectedSemanticTarget, event.expectedNextState].filter(Boolean).join(' | '),
+      targetConcept,
+      expectedNextState: event.expectedNextState ?? event.observedNextState ?? 'unknown',
+      text: [event.userQuestion, targetConcept, event.expectedNextState, event.observedNextState].filter(Boolean).join(' | '),
     });
     await mkdir(dirname(this.memoryPath), { recursive: true });
     const temporary = `${this.memoryPath}.${process.pid}.tmp`;

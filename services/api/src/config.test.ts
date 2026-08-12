@@ -7,6 +7,7 @@ describe('API environment configuration', () => {
     expect(config.aiMode).toBe('mock');
     expect(config.brainMode).toBe('legacy');
     expect(config.brainV2.modelRoot).toBe('C:\\ShowWhere_Models');
+    expect(config.brainV2.timeoutMs).toBe(300_000);
     expect(config.featherless).toBeUndefined();
   });
 

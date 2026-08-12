@@ -83,15 +83,37 @@ export class BrainV2Provider implements AiProvider {
   async decideNextAction(request: GuideRequest): Promise<unknown> {
     if (this.options.mode === 'shadow') {
       const legacyDecision = await this.options.legacy.decideNextAction(request);
-      void this.runV2(request).catch(() => undefined);
+      void this.runV2(request).catch((error) => this.recordFallback(request, error, legacyDecision).catch(() => undefined));
       return legacyDecision;
     }
 
     try {
       return await this.runV2(request);
-    } catch {
-      return this.options.legacy.decideNextAction(request);
+    } catch (error) {
+      const legacyDecision = await this.options.legacy.decideNextAction(request);
+      await this.recordFallback(request, error, legacyDecision).catch(() => undefined);
+      return legacyDecision;
     }
+  }
+
+  private async recordFallback(request: GuideRequest, error: unknown, rawDecision: unknown): Promise<void> {
+    const legacyDecision = rawDecision as Partial<GuideDecision>;
+    const candidate = request.candidates.find((item) => item.id === legacyDecision.targetId);
+    const event: LearningEventV2 = {
+      schemaVersion: 'showwhere-learning-event-v2', eventId: randomUUID(), sessionId: request.session.sessionId,
+      timestamp: new Date().toISOString(), source: 'live', authority: 'raw',
+      userQuestion: request.session.originalUserMessage,
+      stateBefore: `${request.context.applicationName}.${request.context.windowTitle ?? ''}`.slice(0, 240),
+      visibleConcepts: request.candidates.map((item) => item.label ?? item.role),
+      candidates: request.candidates.map(candidateSnapshot), retrievedMemoryIds: [], retrievalScores: [],
+      rerankerScores: [], visionUsed: false,
+      selectedCandidate: candidate ? candidateSnapshot(candidate) : undefined,
+      selectedBounds: candidate?.bounds, expectedEvidence: [], retryOccurred: true,
+      fallbackUsed: 'legacy', failureReason: error instanceof Error ? error.message.slice(0, 1_000) : String(error).slice(0, 1_000),
+      finalOutcome: 'pending', totalLatencyMs: 0, dataQualityStatus: 'scrubbed',
+    };
+    await this.recorder.append(event);
+    if (legacyDecision.status === 'in_progress') this.pendingEvents.set(request.session.sessionId, event);
   }
 
   private async runV2(request: GuideRequest): Promise<GuideDecision> {

@@ -21,7 +21,7 @@ const environmentSchema = z.object({
   SHOWWHERE_AI_TOKEN: z.string().trim().min(16).optional(),
   SHOWWHERE_MODEL_ROOT: z.string().trim().min(1).default('C:\\ShowWhere_Models'),
   SHOWWHERE_BRAIN_DATA_ROOT: z.string().trim().min(1).default('data/brain-v2'),
-  SHOWWHERE_LOCAL_AI_TIMEOUT_MS: integerFromEnvironment(500, 300_000).default(30_000),
+  SHOWWHERE_LOCAL_AI_TIMEOUT_MS: integerFromEnvironment(500, 900_000).default(300_000),
   SHOWWHERE_LOCAL_AI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
   SHOWWHERE_MEMORY_REUSE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
   SHOWWHERE_RERANK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.62),

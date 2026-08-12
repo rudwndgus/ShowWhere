@@ -1,6 +1,6 @@
 const secretPatterns: Array<[RegExp, string]> = [
   [/\b(?:sk|hf|ghp|gho|github_pat)_[A-Za-z0-9_-]{12,}\b/gu, '[REDACTED_TOKEN]'],
-  [/\bBearer\s+[A-Za-z0-9._~+\/-]+=*\b/giu, 'Bearer [REDACTED_TOKEN]'],
+  [/\bBearer\s+[A-Za-z0-9._~+/-]+=*\b/giu, 'Bearer [REDACTED_TOKEN]'],
   [/(?:api[_ -]?key|password|passwd|token|secret|cvv)\s*[:=]\s*[^\s,;"']{4,}/giu, '$1=[REDACTED]'],
   [/\b(?:\d[ -]*?){13,19}\b/gu, '[REDACTED_CARD]'],
   [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, '[REDACTED_EMAIL]'],

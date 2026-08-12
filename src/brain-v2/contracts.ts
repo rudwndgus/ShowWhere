@@ -110,6 +110,7 @@ export const LearningEventV2Schema = z.object({
   retryOccurred: z.boolean(),
   fallbackUsed: z.enum(['none', 'memory', 'legacy', 'brain', 'vision']).default('none'),
   developerCorrection: z.string().max(4_000).optional(),
+  failureReason: z.string().max(1_000).optional(),
   finalOutcome: z.enum(['pending', 'success', 'failure', 'corrected', 'abandoned']),
   totalLatencyMs: z.number().int().nonnegative(),
   dataQualityStatus: z.enum(['raw', 'scrubbed', 'verified', 'rejected']),

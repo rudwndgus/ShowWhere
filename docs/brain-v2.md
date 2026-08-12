@@ -118,3 +118,11 @@ Training may produce a candidate automatically. Promotion is never automatic: th
 
 The selected Brain and grounder weights are much larger than a 6GB GPU. Lazy loading prevents simultaneous VRAM pressure, but full-precision local inference may require CPU/offload and can be slow or exceed available RAM. A GPU server can run the same endpoints; change only `SHOWWHERE_AI_BASE_URL`, token, and deployment controls.
 
+Measured on the current GTX 1660 Ti development machine:
+
+- BGE reranker: correct `My Tickets` selection, 620 ms warm wall time, confidence 0.936.
+- BGE-M3: correct Korean-to-English order-tracking retrieval, 397 ms warm wall time (5.72 s cold), 1024 dimensions.
+- POINTS-GUI-G: correct synthetic Settings point `(0.763, 0.433)`, 104.77 s cold wall time.
+- Domyn: all four shards loaded in 285 seconds with 4-bit/CPU offload, but Transformers generation failed with a remaining custom Nemotron `meta tensor` offload incompatibility. Brain v2 therefore falls back to legacy on this PC; deploy Domyn on a larger GPU/vLLM worker for production evaluation.
+
+The initial legacy ShowWhereBench baseline measured 5/9 (55.6%) correct next actions at 6,135 ms average. A v2 end-to-end accuracy claim is intentionally withheld until Domyn runs on compatible server hardware; the benchmark saves future runs for an exact comparison.

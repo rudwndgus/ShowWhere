@@ -60,3 +60,4 @@ snapshot_download(
 }
 
 Write-Host "All requested models are available under $ModelRoot" -ForegroundColor Green
+& (Join-Path $PSScriptRoot 'prepare-local-models.ps1') -ModelRoot $ModelRoot

@@ -16,7 +16,9 @@ export class EvidenceOutcomeVerifier implements OutcomeVerifier {
     const normalizedObserved = normalize(observed);
     const evidence = event.expectedEvidence.map(normalize).filter(Boolean);
     const evidenceMatched = evidence.length > 0 && evidence.some((item) => normalizedObserved.includes(item));
-    const stateChanged = normalize(event.stateBefore ?? '') !== normalize(`${nextRequest.context.applicationName}.${nextRequest.context.windowTitle ?? ''}`);
+    const priorVisible = event.visibleConcepts.map(normalize).filter(Boolean).sort().join('|');
+    const currentVisible = nextRequest.candidates.map((candidate) => normalize(candidate.label ?? candidate.role)).filter(Boolean).sort().join('|');
+    const stateChanged = priorVisible !== currentVisible;
     const transitionMatched = evidence.length > 0 ? evidenceMatched : stateChanged;
     return {
       observedNextState: `${nextRequest.context.applicationName}.${nextRequest.context.windowTitle ?? ''}`.slice(0, 240),
@@ -28,4 +30,3 @@ export class EvidenceOutcomeVerifier implements OutcomeVerifier {
     };
   }
 }
-

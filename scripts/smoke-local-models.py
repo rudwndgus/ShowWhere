@@ -7,6 +7,7 @@ import io
 import json
 import time
 import urllib.request
+import urllib.error
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,15 +17,26 @@ from PIL import Image, ImageDraw
 
 def post(base_url: str, path: str, payload: dict) -> tuple[dict, int]:
     started = time.perf_counter()
-    request = urllib.request.Request(
-        base_url.rstrip("/") + path,
-        data=json.dumps(payload, ensure_ascii=False).encode(),
-        headers={"content-type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=600) as response:
-        result = json.load(response)
-    return result, round((time.perf_counter() - started) * 1000)
+    last_error = None
+    for attempt in range(2):
+        request = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            data=json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=600) as response:
+                result = json.load(response)
+            return result, round((time.perf_counter() - started) * 1000)
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")
+            last_error = RuntimeError(f"HTTP {error.code}: {detail}")
+            if error.code < 500:
+                raise last_error from error
+            if attempt == 0:
+                time.sleep(.5)
+    raise last_error or RuntimeError("Local model smoke request failed")
 
 
 def synthetic_settings() -> str:
@@ -52,20 +64,24 @@ def main() -> int:
     roles = ["reranker", "embedding", "brain", "grounder"] if args.role == "all" else [args.role]
     records = []
     for role in roles:
-        if role == "reranker":
-            result, latency = post(args.base_url, "/rerank", {
-                "query": "사용자가 구매한 티켓을 확인하고 싶다",
-                "candidates": [{"id": name.lower().replace(" ", "-"), "label": name, "role": "button"} for name in ["Home", "My Tickets", "Account", "Buy Tickets", "Settings"]],
-            })
-            passed = result.get("selectedId") == "my-tickets"
-        elif role == "embedding":
-            texts = ["저번주에 주문한 신발이 어디 있는지 보고 싶어", "track previous order", "printer status", "connect wifi"]
-            result, latency = post(args.base_url, "/memory/embed", {"texts": texts})
-            scores = [cosine(result["embeddings"][0], vector) for vector in result["embeddings"][1:]]
-            result["scores"] = scores
-            passed = scores.index(max(scores)) == 0
-        elif role == "brain":
-            result, latency = post(args.base_url, "/brain/decide", {
+        started = time.perf_counter()
+        try:
+            if role == "reranker":
+                result, latency = post(args.base_url, "/rerank", {
+                    "query": "사용자가 구매한 티켓을 확인하고 싶다",
+                    "candidates": [{"id": name.lower().replace(" ", "-"), "label": name, "role": "button"} for name in ["Home", "My Tickets", "Account", "Buy Tickets", "Settings"]],
+                })
+                passed = result.get("selectedId") == "my-tickets"
+            elif role == "embedding":
+                texts = ["저번주에 주문한 신발이 어디 있는지 보고 싶어", "track previous order", "printer status", "connect wifi"]
+                result, latency = post(args.base_url, "/memory/embed", {"texts": texts})
+                embeddings = result.pop("embeddings")
+                scores = [cosine(embeddings[0], vector) for vector in embeddings[1:]]
+                result["scores"] = scores
+                result["dimensions"] = len(embeddings[0])
+                passed = scores.index(max(scores)) == 0
+            elif role == "brain":
+                result, latency = post(args.base_url, "/brain/decide", {
                 "guideRequest": {
                     "session": {"sessionId": "smoke", "originalUserMessage": "프린터 연결 상태를 확인하고 싶어", "mode": "guidance", "status": "waiting_for_ai", "completedSteps": [], "knownFacts": [], "failureCount": 0},
                     "context": {"platform": "windows", "applicationName": "Windows Start", "windowTitle": "Start"},
@@ -73,12 +89,19 @@ def main() -> int:
                 },
                 "memories": [{"id": "printer", "score": .9, "authority": "human_gold", "taskId": "windows.printer.check_status", "stateId": "windows.start.menu", "targetConcept": "windows.settings", "expectedNextState": "windows.settings.home", "text": "printer status via Settings"}],
                 "reasoningMode": "off",
-            })
-            required = {"taskId", "nextSemanticAction", "targetConcept", "expectedNextState", "confidence"}
-            passed = required.issubset(result.get("decision", {}))
-        else:
-            result, latency = post(args.base_url, "/ground", {"screenshot": synthetic_settings(), "targetConcept": "Settings button"})
-            passed = bool(result.get("point") or result.get("bounds"))
+                })
+                required = {"taskId", "nextSemanticAction", "targetConcept", "expectedNextState", "confidence"}
+                passed = required.issubset(result.get("decision", {}))
+            else:
+                result, latency = post(args.base_url, "/ground", {"screenshot": synthetic_settings(), "targetConcept": "Settings button"})
+                point = result.get("point")
+                bounds = result.get("bounds")
+                # Synthetic Settings button is x=520..700, y=170..260 on an 800x500 image.
+                passed = bool(bounds) or bool(point and .65 <= point.get("x", -1) <= .875 and .34 <= point.get("y", -1) <= .52)
+        except Exception as error:
+            result = {"error": str(error)}
+            latency = round((time.perf_counter() - started) * 1000)
+            passed = False
         records.append({
             "schemaVersion": "showwhere-model-smoke-v1", "testId": str(uuid.uuid4()),
             "timestamp": datetime.now(timezone.utc).isoformat(), "role": role,
@@ -95,4 +118,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -18,6 +18,11 @@ export interface SemanticRetriever {
   remember(event: LearningEventV2): Promise<void>;
 }
 
+// Stable alias used by future embedded/Qdrant implementations.
+export interface MemoryProvider extends SemanticRetriever {
+  readonly providerKind?: string;
+}
+
 export interface TaskStateReasoner {
   decide(request: BrainV2Request): Promise<{ decision: SemanticDecision; latencyMs: number; model: string }>;
 }

@@ -1,6 +1,6 @@
 # ShowWhere
 
-ShowWhere 2.0 Brain v2 is documented in [docs/brain-v2.md](docs/brain-v2.md). The legacy AI remains the default while `legacy`, `shadow`, and `v2` modes are evaluated.
+ShowWhere 2.0 Brain v2 is documented in [docs/brain-v2.md](docs/brain-v2.md), with a full folder/call-flow explanation in [docs/codebase-map.md](docs/codebase-map.md). The legacy AI remains the default while `legacy`, `shadow`, and `v2` modes are evaluated.
 
 The developer-feedback workflow lives in [`training/`](training/README.md). The synthetic generation, independent judging, human review, dataset splitting, and benchmark tools live in [`learning/`](learning/README.md).
 

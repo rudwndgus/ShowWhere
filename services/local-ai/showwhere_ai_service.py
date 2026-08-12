@@ -9,9 +9,9 @@ import base64
 import gc
 import io
 import json
-import math
 import os
 import re
+import tempfile
 import time
 from pathlib import Path
 from threading import Lock
@@ -57,7 +57,12 @@ class ModelPool:
     def _evict_if_needed(self, keep: str) -> None:
         while len(self.loaded) >= MAX_LOADED and keep not in self.loaded:
             victim = min(self.last_used, key=self.last_used.get)
-            del self.loaded[victim]
+            _tokenizer, model, _processor = self.loaded.pop(victim)
+            try:
+                model.to("cpu")
+            except (RuntimeError, ValueError, NotImplementedError):
+                pass
+            del model
             del self.last_used[victim]
             gc.collect()
             if torch.cuda.is_available():
@@ -79,18 +84,26 @@ class ModelPool:
             if torch.cuda.is_available() and DEVICE != "cpu" and role in {"brain", "grounder"}:
                 gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
                 if gpu_gb < 16:
-                    quantization = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_quant_type="nf4")
+                    quantization = BitsAndBytesConfig(
+                        load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_quant_type="nf4", llm_int8_enable_fp32_cpu_offload=True,
+                    )
+            constrained_memory = {0: "4800MiB", "cpu": "10GiB"} if quantization is not None else None
             if role == "reranker":
-                model = AutoModelForSequenceClassification.from_pretrained(path, **common)
+                model = AutoModelForSequenceClassification.from_pretrained(
+                    path, dtype=self._dtype(), device_map=self._device_map(), low_cpu_mem_usage=True, **common
+                )
             elif role == "brain":
                 model = AutoModelForCausalLM.from_pretrained(
                     path, dtype=self._dtype(), device_map=self._device_map(), low_cpu_mem_usage=True,
-                    quantization_config=quantization, **common
+                    quantization_config=quantization, max_memory=constrained_memory,
+                    attn_implementation="sdpa", **common
                 )
             elif role == "grounder":
                 model = AutoModelForCausalLM.from_pretrained(
                     path, dtype=self._dtype(), device_map=self._device_map(), low_cpu_mem_usage=True,
-                    quantization_config=quantization, **common
+                    quantization_config=quantization, max_memory=constrained_memory,
+                    attn_implementation="eager", **common
                 )
             else:
                 model = AutoModel.from_pretrained(
@@ -102,7 +115,7 @@ class ModelPool:
             image_processor = Qwen2VLImageProcessor.from_pretrained(path, local_files_only=True) if role == "grounder" else None
             self.loaded[role] = (tokenizer, model, image_processor)
             self.last_used[role] = time.time()
-            return tokenizer, model
+            return self.loaded[role]
 
 
 pool = ModelPool()
@@ -147,15 +160,18 @@ class GroundRequest(BaseModel):
 
 
 def model_device(model: Any) -> torch.device:
+    device_map = getattr(model, "hf_device_map", None)
+    if isinstance(device_map, dict):
+        for mapped in device_map.values():
+            if isinstance(mapped, int):
+                return torch.device(f"cuda:{mapped}")
+            if isinstance(mapped, str) and mapped.startswith("cuda"):
+                return torch.device(mapped)
     try:
-        return next(model.parameters()).device
+        device = next(model.parameters()).device
+        return torch.device("cpu") if device.type == "meta" else device
     except StopIteration:
         return torch.device("cpu")
-
-
-def masked_mean(hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    mask = mask.unsqueeze(-1).to(hidden.dtype)
-    return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -192,7 +208,7 @@ def rerank(request: RerankRequest) -> dict[str, Any]:
         inputs = {key: value.to(model_device(model)) for key, value in inputs.items()}
         with torch.inference_mode():
             logits = model(**inputs).logits.view(-1).float().cpu()
-        probabilities = torch.sigmoid(logits).tolist()
+        probabilities = (torch.softmax(logits, dim=0) if len(logits) > 1 else torch.sigmoid(logits)).tolist()
         ranked = sorted(zip(request.candidates, probabilities), key=lambda item: item[1], reverse=True)
         top = ranked[0]
         runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
@@ -216,7 +232,7 @@ def embed(request: EmbedRequest) -> dict[str, Any]:
         inputs = {key: value.to(model_device(model)) for key, value in inputs.items()}
         with torch.inference_mode():
             hidden = model(**inputs).last_hidden_state
-            vectors = torch.nn.functional.normalize(masked_mean(hidden, inputs["attention_mask"]), p=2, dim=1)
+            vectors = torch.nn.functional.normalize(hidden[:, 0], p=2, dim=1)
         return {"embeddings": vectors.float().cpu().tolist(), "model": MODEL_IDS["embedding"]}
     except Exception as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
@@ -291,13 +307,21 @@ def ground(request: GroundRequest) -> dict[str, Any]:
             "You are a GUI agent. Based on the UI screenshot provided, locate the exact position of the element "
             "matching the instruction. Return only the normalized center point as strictly (x, y)."
         )
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
-            {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": request.targetConcept}]},
-        ]
         if not hasattr(model, "chat") or image_processor is None:
             raise RuntimeError("POINTS-GUI-G remote model does not expose the expected chat method")
-        output = model.chat(messages, tokenizer, image_processor, {"max_new_tokens": 128, "do_sample": False})
+        temporary_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temporary:
+                image.save(temporary, format="PNG")
+                temporary_path = temporary.name
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "image", "image": temporary_path}, {"type": "text", "text": request.targetConcept}]},
+            ]
+            output = model.chat(messages, tokenizer, image_processor, {"max_new_tokens": 128, "do_sample": False})
+        finally:
+            if temporary_path:
+                Path(temporary_path).unlink(missing_ok=True)
         text = output[0] if isinstance(output, tuple) else str(output)
         point, bounds = parse_grounding(text, image)
         if point is None and bounds is None:
