@@ -1,19 +1,50 @@
 <UserControl x:Class="ShowWhere.Desktop.AssistantGlyph"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             IsHitTestVisible="False">
+             IsHitTestVisible="False"
+             SnapsToDevicePixels="True"
+             UseLayoutRounding="True">
   <Grid>
-    <TextBlock Text="?" Foreground="White" FontFamily="Arial" FontSize="38" FontWeight="ExtraBold"
-               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-2,-2,0,0">
-      <TextBlock.Effect>
-        <DropShadowEffect Color="White" BlurRadius="5" ShadowDepth="0" Opacity="1" />
-      </TextBlock.Effect>
-    </TextBlock>
-    <TextBlock Text="?" Foreground="#FFCA2C34" FontFamily="Arial" FontSize="34" FontWeight="ExtraBold"
-               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-2,-2,0,0">
-      <TextBlock.Effect>
-        <DropShadowEffect Color="#55000000" BlurRadius="5" ShadowDepth="3" Opacity="0.45" />
-      </TextBlock.Effect>
-    </TextBlock>
+    <!-- The sitting sprite has a large transparent canvas, so crop only its character area. -->
+    <Border Margin="2">
+      <Border.Style>
+        <Style TargetType="Border">
+          <Setter Property="Opacity" Value="1" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IsStanding, RelativeSource={RelativeSource AncestorType=Window}}"
+                         Value="True">
+              <Setter Property="Opacity" Value="0" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <Border.Background>
+        <ImageBrush ImageSource="Assets/Assistant/monkey-sit.png"
+                    Viewbox="88,84,52,68" ViewboxUnits="Absolute"
+                    Stretch="Uniform" AlignmentX="Center" AlignmentY="Bottom"
+                    RenderOptions.BitmapScalingMode="NearestNeighbor" />
+      </Border.Background>
+    </Border>
+
+    <Border Margin="2">
+      <Border.Style>
+        <Style TargetType="Border">
+          <Setter Property="Opacity" Value="0" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IsStanding, RelativeSource={RelativeSource AncestorType=Window}}"
+                         Value="True">
+              <Setter Property="Opacity" Value="1" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <Border.Background>
+        <ImageBrush ImageSource="Assets/Assistant/monkey-stand.png"
+                    Viewbox="32,28,52,72" ViewboxUnits="Absolute"
+                    Stretch="Uniform" AlignmentX="Center" AlignmentY="Bottom"
+                    RenderOptions.BitmapScalingMode="NearestNeighbor" />
+      </Border.Background>
+    </Border>
   </Grid>
+
 </UserControl>

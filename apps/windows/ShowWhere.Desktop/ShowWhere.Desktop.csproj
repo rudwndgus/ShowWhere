@@ -12,4 +12,7 @@
     <ProjectReference Include="..\ShowWhere.WindowsAutomation\ShowWhere.WindowsAutomation.csproj" />
     <ProjectReference Include="..\ShowWhere.Overlay\ShowWhere.Overlay.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\Assistant\*.png" />
+  </ItemGroup>
 </Project>
