@@ -125,4 +125,16 @@ describe('mock /api/guide', () => {
     expect(response.decision.action).toBe('ask_user');
   });
 
+  it('explains exhausted OpenAI credits instead of asking a fake clarification', async () => {
+    const provider: AiProvider = { async decideNextAction() {
+      throw new Error('OpenAI API 429: credit_balance_exhausted insufficient_quota');
+    } };
+    const response = await handleGuideApiRequest(GUIDE_API_PATH, request, provider);
+
+    expect(response.status).toBe(200);
+    expect(response.decision.status).toBe('blocked');
+    expect(response.decision.action).toBe('explain');
+    expect(response.decision.message).toContain('크레딧');
+  });
+
 });

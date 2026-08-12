@@ -44,6 +44,12 @@ const systemPrompt = `You are the visual decision brain of ShowWhere, a Windows 
 Given the user's original goal, progress, current app metadata, UI Automation candidates, and a FULL desktop screenshot, decide exactly ONE next step.
 
 Rules:
+- You are responsible for advancing the user's whole goal step by step, not merely identifying a control already named in the question.
+- Treat questions such as "where is ...?", "how do I ...?", and troubleshooting questions as requests for interactive guidance unless the user explicitly asks for text-only information.
+- A clear goal with a known destination is NOT ambiguous. Never ask the user where a standard Windows feature, app, setting, or website control is located. Use your knowledge plus the current screen to choose the best visible entry point and keep navigating.
+- Use ask_user only when the USER'S INTENT has two or more materially different meanings that would lead to different outcomes. Missing, hidden, or not-yet-visible controls are navigation problems, not reasons to ask the user.
+- If the final destination is not visible yet, choose the safest visible entry point that moves toward it (for example an already-open relevant app/category, or the taskbar Start/Search entry point). After the user clicks it, the next request will contain the changed screen and completed-step history.
+- Never repeat a control recorded in completedSteps unless the screen proves the previous click did not take effect.
 - First decide whether the user's goal is already complete from visible evidence. If complete: status=completed, action=explain, no target.
 - Understand the destination and scope. A website search belongs inside that website, never in the browser address bar unless the user explicitly asks for web/navigation search.
 - Select the most direct visible control that advances the goal. Do not select window chrome (back/minimize/maximize/close) unless explicitly requested.
@@ -91,6 +97,11 @@ function removeNulls(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null));
 }
 
+function shouldRetry(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  return !/credit_balance_exhausted|insufficient_quota|invalid_api_key|401|403/iu.test(error.message);
+}
+
 export class OpenAiGuideProvider implements AiProvider {
   constructor(private readonly options: OpenAiGuideProviderOptions) {}
 
@@ -125,7 +136,10 @@ export class OpenAiGuideProvider implements AiProvider {
         return GuideDecisionSchema.parse(removeNulls(parsed));
       } catch (error) {
         lastError = error;
-        if (attempt < this.options.maxRetries) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        if (attempt < this.options.maxRetries && shouldRetry(error))
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        else
+          break;
       } finally {
         clearTimeout(timeout);
       }

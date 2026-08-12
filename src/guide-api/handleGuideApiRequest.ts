@@ -33,6 +33,27 @@ function safeFallback(message: string): GuideDecision {
   };
 }
 
+function providerFailure(error: unknown): GuideDecision {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (/credit_balance_exhausted|insufficient_quota/iu.test(detail)) {
+    return {
+      status: 'blocked',
+      action: 'explain',
+      message: 'OpenAI API 크레딧이 부족해서 화면을 분석할 수 없어요. API 결제를 충전한 뒤 다시 시도해 주세요.',
+      confidence: 1,
+    };
+  }
+  if (/invalid_api_key|401/iu.test(detail)) {
+    return {
+      status: 'blocked',
+      action: 'explain',
+      message: 'OpenAI API 키가 유효하지 않아요. .env의 OPENAI_API_KEY를 확인해 주세요.',
+      confidence: 1,
+    };
+  }
+  return safeFallback('안내를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.');
+}
+
 export async function handleGuideApiRequest(
   path: string,
   body: unknown,
@@ -59,11 +80,15 @@ export async function handleGuideApiRequest(
   let rawDecision: unknown;
   try {
     rawDecision = await provider.decideNextAction(parsedRequest.data);
-  } catch {
+  } catch (error) {
+    console.error(
+      `[showwhere:api] provider_failure ${error instanceof Error ? error.message.slice(0, 800) : String(error).slice(0, 800)}`,
+    );
+    const failureDecision = providerFailure(error);
     return {
-      status: 502,
+      status: failureDecision.status === 'blocked' ? 200 : 502,
       errorCode: 'provider_failure',
-      decision: safeFallback('안내를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+      decision: failureDecision,
     };
   }
 

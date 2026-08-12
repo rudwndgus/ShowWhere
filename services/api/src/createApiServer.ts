@@ -58,6 +58,7 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
       console.log(
         `[showwhere:api] candidates=${candidates.length} action=${result.decision.action}`
         + ` target=${result.decision.targetId ?? 'none'} label=${JSON.stringify(selectedLabel)}`
+        + ` message=${JSON.stringify(result.decision.message.replace(/\s+/gu, ' ').slice(0, 180))}`
         + ` duration_ms=${Math.round(performance.now() - requestStartedAt)}`,
       );
     }

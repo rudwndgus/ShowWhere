@@ -32,5 +32,24 @@ describe('OpenAiGuideProvider', () => {
     expect(body?.store).toBe(false);
     expect(JSON.stringify(body)).toContain('data:image/jpeg;base64,abc');
     expect(JSON.stringify(body)).toContain('json_schema');
+    expect(JSON.stringify(body)).toContain('Missing, hidden, or not-yet-visible controls are navigation problems');
+  });
+
+  it('does not retry when the account has no API credits', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: { message: 'You have no credits remaining.', code: 'credit_balance_exhausted' },
+    }), { status: 429, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new OpenAiGuideProvider({
+      apiKey: 'secret', model: 'gpt-5.6', baseUrl: 'https://api.openai.com/v1',
+      requestTimeoutMs: 5_000, maxRetries: 2,
+    });
+
+    await expect(provider.decideNextAction({
+      ...guideRequestFixture,
+      screenshot: 'data:image/jpeg;base64,abc',
+      screenshotBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    })).rejects.toThrow('credit_balance_exhausted');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
