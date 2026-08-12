@@ -6,8 +6,8 @@
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         Closing="OnClosing">
   <Window.Resources>
-    <SolidColorBrush x:Key="AccentBrush" Color="#FFCA2C34" />
-    <SolidColorBrush x:Key="AccentDarkBrush" Color="#FFA91F27" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#FF472323" />
+    <SolidColorBrush x:Key="AccentDarkBrush" Color="#FF472323" />
     <SolidColorBrush x:Key="TextBrush" Color="#FF24262B" />
     <SolidColorBrush x:Key="MutedBrush" Color="#FF6E7179" />
     <SolidColorBrush x:Key="BorderBrush" Color="#FFDFE1E5" />
@@ -29,11 +29,66 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="ButtonBorder" Property="Background" Value="#FFFFF8F8" />
-                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#FFCF8E93" />
+                <Setter TargetName="ButtonBorder" Property="Background" Value="#FFF7F3F3" />
+                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#FF472323" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BottomActionButton" TargetType="Button">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="Foreground" Value="#FF45474D" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="7" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="ButtonBorder" Property="Background" Value="#FF472323" />
+                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#FF472323" />
+                <Setter Property="Foreground" Value="White" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ChatInput" TargetType="TextBox">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="#FFCfd2d7" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="InputBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="InputBorder" Property="BorderBrush" Value="#80472323" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="InputBorder" Property="BorderBrush" Value="#80472323" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -65,8 +120,8 @@
         </Grid.ColumnDefinitions>
         <StackPanel>
           <TextBlock Text="SHOWWHERE" Foreground="{StaticResource AccentBrush}"
-                     FontSize="11" FontWeight="Bold" />
-          <TextBlock Text="무엇을 하고 싶으세요?" Foreground="{StaticResource TextBrush}"
+                     FontSize="15" FontWeight="Bold" />
+          <TextBlock Text="" Foreground="{StaticResource TextBrush}"
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
@@ -116,7 +171,7 @@
                   <Border x:Name="Bubble" HorizontalAlignment="Left" MaxWidth="274"
                           Background="{StaticResource SurfaceBrush}"
                           BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
-                          CornerRadius="9" Padding="11,9">
+                          CornerRadius="18" Padding="11,9">
                     <TextBlock x:Name="BubbleText" Text="{Binding Text}" TextWrapping="Wrap"
                                FontSize="13" LineHeight="19" Foreground="{StaticResource TextBrush}" />
                   </Border>
@@ -145,8 +200,10 @@
                 <DataTemplate.Triggers>
                   <DataTrigger Binding="{Binding Role}" Value="user">
                     <Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right" />
-                    <Setter TargetName="Bubble" Property="Background" Value="#FFFFF5F5" />
-                    <Setter TargetName="Bubble" Property="BorderBrush" Value="#FFEDC9CC" />
+                    <Setter TargetName="Bubble" Property="Background" Value="#FF472323" />
+                    <Setter TargetName="Bubble" Property="BorderBrush" Value="#FF472323" />
+                    <Setter TargetName="Bubble" Property="CornerRadius" Value="18" />
+                    <Setter TargetName="BubbleText" Property="Foreground" Value="White" />
                   </DataTrigger>
                   <DataTrigger Binding="{Binding IsPending}" Value="True">
                     <Setter TargetName="Bubble" Property="Opacity" Value="0.7" />
@@ -171,7 +228,7 @@
       </ScrollViewer>
 
       <Border Grid.Row="2" Panel.ZIndex="20" Background="#FFF7F7F8"
-              BorderBrush="#FFE0B3B7" BorderThickness="0,0,0,1"
+              BorderBrush="#FF472323" BorderThickness="0,0,0,1"
               Visibility="{Binding IsLearningHistoryVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid Margin="14,12">
           <Grid.RowDefinitions>
@@ -245,14 +302,15 @@
               Padding="17,12,17,0" Background="White">
         <Grid>
           <TextBox x:Name="GoalInput" Text="{Binding GoalText, UpdateSourceTrigger=PropertyChanged}"
+                   Style="{StaticResource ChatInput}"
                    AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" MaxHeight="120"
-                   VerticalScrollBarVisibility="Auto" Padding="10,9,70,9"
+                   VerticalScrollBarVisibility="Auto" Padding="10,9"
                    FontSize="14" Foreground="{StaticResource TextBrush}"
                    BorderBrush="#FFCfd2d7" BorderThickness="1"
                    PreviewKeyDown="OnGoalInputPreviewKeyDown"
                    ToolTip="하고 싶은 일을 입력하세요" />
           <Button Content="보내기" Command="{Binding SubmitCommand}"
-                  HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                  Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                   MinWidth="58" Height="32" Margin="0,0,7,7" Padding="9,5"
                   Background="{StaticResource AccentBrush}" BorderBrush="{StaticResource AccentBrush}"
                   Foreground="White" FontSize="12" FontWeight="Bold" Cursor="Hand" />
@@ -333,9 +391,9 @@
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <Button Content="다시 찾기" Command="{Binding RecoveryCommand}"
-                  Style="{StaticResource QuietButton}" />
+                  Style="{StaticResource BottomActionButton}" />
           <Button Grid.Column="2" Content="작업 취소" Command="{Binding CancelCommand}"
-                  Style="{StaticResource QuietButton}" />
+                  Style="{StaticResource BottomActionButton}" />
         </Grid>
         <TextBlock Grid.Row="1" Text="표시된 버튼은 사용자가 직접 눌러야 합니다."
                    Foreground="#FF84878E" FontSize="10" TextAlignment="Center" Margin="0,9,0,0" />

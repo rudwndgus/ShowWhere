@@ -21,6 +21,18 @@ public partial class FloatingAssistantWindow : Window
     private Point? _mouseDownPosition;
     private bool _dragging;
 
+    public static readonly DependencyProperty IsStandingProperty = DependencyProperty.Register(
+        nameof(IsStanding),
+        typeof(bool),
+        typeof(FloatingAssistantWindow),
+        new PropertyMetadata(false));
+
+    public bool IsStanding
+    {
+        get => (bool)GetValue(IsStandingProperty);
+        private set => SetValue(IsStandingProperty, value);
+    }
+
     public FloatingAssistantWindow(
         GuidancePanelWindow panel,
         AssistantPositionStore positionStore,
@@ -62,8 +74,11 @@ public partial class FloatingAssistantWindow : Window
         if (Math.Abs(delta.X) + Math.Abs(delta.Y) < 8) return;
 
         _dragging = true;
+        IsStanding = true;
         ReleaseMouseCapture();
-        try { DragMove(); } catch (InvalidOperationException) { }
+        try { DragMove(); }
+        catch (InvalidOperationException) { }
+        finally { IsStanding = false; }
         SnapAndConstrain();
         _positionStore.Save(Left, Top);
     }
@@ -75,6 +90,7 @@ public partial class FloatingAssistantWindow : Window
         if (!_dragging) TogglePanel();
         _mouseDownPosition = null;
         _dragging = false;
+        IsStanding = false;
         eventArgs.Handled = true;
     }
 
