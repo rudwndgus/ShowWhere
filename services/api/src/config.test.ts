@@ -5,6 +5,8 @@ describe('API environment configuration', () => {
   it('starts in mock mode without Featherless credentials', () => {
     const config = loadApiConfig({ SHOWWHERE_AI_MODE: 'mock' });
     expect(config.aiMode).toBe('mock');
+    expect(config.brainMode).toBe('legacy');
+    expect(config.brainV2.modelRoot).toBe('C:\\ShowWhere_Models');
     expect(config.featherless).toBeUndefined();
   });
 

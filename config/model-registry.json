@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "promotionPolicy": {
+    "automaticProductionPromotion": false,
+    "requiredApproval": "human",
+    "candidateMustBeatProduction": true
+  },
+  "models": [],
+  "modelMetadataSchema": {
+    "name": "ShowWhere-Brain-v1",
+    "baseModel": "domyn/Domyn-Small-v1.0",
+    "datasetVersion": "required",
+    "trainingDate": "ISO-8601",
+    "trainingParameters": {},
+    "evalAccuracy": 0,
+    "latencyMs": { "p50": 0, "p95": 0 },
+    "failureRate": 0,
+    "gitCommit": "required",
+    "status": "candidate|approved|production|retired"
+  }
+}

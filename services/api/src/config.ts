@@ -16,6 +16,15 @@ const booleanFromEnvironment = z.preprocess(
 
 const environmentSchema = z.object({
   SHOWWHERE_AI_MODE: z.enum(['mock', 'featherless']).default('mock'),
+  SHOWWHERE_BRAIN_MODE: z.enum(['legacy', 'v2', 'shadow']).default('legacy'),
+  SHOWWHERE_AI_BASE_URL: z.string().url().default('http://127.0.0.1:8790'),
+  SHOWWHERE_AI_TOKEN: z.string().trim().min(16).optional(),
+  SHOWWHERE_MODEL_ROOT: z.string().trim().min(1).default('C:\\ShowWhere_Models'),
+  SHOWWHERE_BRAIN_DATA_ROOT: z.string().trim().min(1).default('data/brain-v2'),
+  SHOWWHERE_LOCAL_AI_TIMEOUT_MS: integerFromEnvironment(500, 300_000).default(30_000),
+  SHOWWHERE_LOCAL_AI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
+  SHOWWHERE_MEMORY_REUSE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
+  SHOWWHERE_RERANK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.62),
   SHOWWHERE_API_HOST: z.string().trim().min(1).default('127.0.0.1'),
   SHOWWHERE_API_PORT: integerFromEnvironment(1, 65_535).default(8787),
   SHOWWHERE_MAX_REQUEST_BYTES: integerFromEnvironment(1_024, 10_000_000).default(10_000_000),
@@ -50,10 +59,21 @@ const environmentSchema = z.object({
 
 export interface ApiConfig {
   aiMode: 'mock' | 'featherless';
+  brainMode: 'legacy' | 'v2' | 'shadow';
   host: string;
   port: number;
   maxRequestBytes: number;
   debug: boolean;
+  brainV2: {
+    baseUrl: string;
+    apiToken?: string;
+    modelRoot: string;
+    dataRoot: string;
+    timeoutMs: number;
+    maxRetries: number;
+    memoryReuseThreshold: number;
+    rerankThreshold: number;
+  };
   featherless?: {
     apiKey: string;
     baseUrl: string;
@@ -72,10 +92,21 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
   const parsed = environmentSchema.parse(environment);
   const config: ApiConfig = {
     aiMode: parsed.SHOWWHERE_AI_MODE,
+    brainMode: parsed.SHOWWHERE_BRAIN_MODE,
     host: parsed.SHOWWHERE_API_HOST,
     port: parsed.SHOWWHERE_API_PORT,
     maxRequestBytes: parsed.SHOWWHERE_MAX_REQUEST_BYTES,
     debug: parsed.SHOWWHERE_DEBUG,
+    brainV2: {
+      baseUrl: parsed.SHOWWHERE_AI_BASE_URL,
+      apiToken: parsed.SHOWWHERE_AI_TOKEN,
+      modelRoot: parsed.SHOWWHERE_MODEL_ROOT,
+      dataRoot: parsed.SHOWWHERE_BRAIN_DATA_ROOT,
+      timeoutMs: parsed.SHOWWHERE_LOCAL_AI_TIMEOUT_MS,
+      maxRetries: parsed.SHOWWHERE_LOCAL_AI_MAX_RETRIES,
+      memoryReuseThreshold: parsed.SHOWWHERE_MEMORY_REUSE_THRESHOLD,
+      rerankThreshold: parsed.SHOWWHERE_RERANK_THRESHOLD,
+    },
   };
 
   if (parsed.SHOWWHERE_AI_MODE === 'featherless') {

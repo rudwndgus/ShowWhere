@@ -1,5 +1,7 @@
 # ShowWhere
 
+ShowWhere 2.0 Brain v2 is documented in [docs/brain-v2.md](docs/brain-v2.md). The legacy AI remains the default while `legacy`, `shadow`, and `v2` modes are evaluated.
+
 The developer-feedback workflow lives in [`training/`](training/README.md). The synthetic generation, independent judging, human review, dataset splitting, and benchmark tools live in [`learning/`](learning/README.md).
 
 화면을 설명하지 않아도 하고 싶은 일만 말하면, Windows 전체 화면에서 다음에 눌러야 할 위치를 직접 표시하는 내비게이션 도우미입니다.

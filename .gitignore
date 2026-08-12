@@ -33,3 +33,19 @@ Thumbs.db
 training/screenshots/
 training/exports/
 training/*.tmp
+
+# Local AI model artifacts must stay outside Git.
+models/
+model-cache/
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+
+# Runtime learning data may contain private UI/session information.
+data/brain-v2/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
