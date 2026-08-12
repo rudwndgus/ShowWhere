@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>ShowWhere</AssemblyName>
+    <RootNamespace>ShowWhere.Desktop</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ShowWhere.Core\ShowWhere.Core.csproj" />
+    <ProjectReference Include="..\ShowWhere.ApiClient\ShowWhere.ApiClient.csproj" />
+    <ProjectReference Include="..\ShowWhere.WindowsAutomation\ShowWhere.WindowsAutomation.csproj" />
+    <ProjectReference Include="..\ShowWhere.Overlay\ShowWhere.Overlay.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\Assistant\*.png" />
+  </ItemGroup>
+</Project>

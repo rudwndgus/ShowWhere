@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ShowWhere Test Shop</title></head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/index.html">Home</a>
+      <button type="button" aria-label="Account" aria-expanded="false" aria-controls="account-menu">Account</button>
+      <div id="account-menu" role="menu" hidden>
+        <a role="menuitem" href="/account.html">Your Account</a>
+        <a role="menuitem" href="/orders.html">Your Orders</a>
+      </div>
+      <label>Search <input type="search" placeholder="Search products"></label>
+    </nav>
+  </header>
+  <main><h1>Test Shop</h1><a href="/product.html">Example Product</a></main>
+  <script>
+    const button = document.querySelector('[aria-controls="account-menu"]');
+    const menu = document.querySelector('#account-menu');
+    button.addEventListener('click', () => {
+      menu.hidden = !menu.hidden;
+      button.setAttribute('aria-expanded', String(!menu.hidden));
+    });
+  </script>
+</body>
+</html>

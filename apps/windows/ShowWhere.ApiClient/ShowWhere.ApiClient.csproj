@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ShowWhere.Core\ShowWhere.Core.csproj" />
+  </ItemGroup>
+</Project>

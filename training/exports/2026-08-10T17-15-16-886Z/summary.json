@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "exportedAtUtc": "2026-08-10T17:15:16.888Z",
+  "verifiedRecords": 10,
+  "answerRatings": 134,
+  "correctAnswers": 112,
+  "incorrectAnswers": 22,
+  "intentExamples": 2,
+  "groundingExamples": 5,
+  "completionExamples": 0,
+  "excludedFeedback": 8
+}

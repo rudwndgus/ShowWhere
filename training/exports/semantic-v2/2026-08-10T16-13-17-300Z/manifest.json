@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "showwhere-semantic-export-v1",
+  "exportedAtUtc": "2026-08-10T16:13:17.305Z",
+  "humanApprovedRecords": 0,
+  "evaluationRecordsIncluded": 0,
+  "coordinatesIncluded": false,
+  "note": "This is fine-tuning-ready data only. No model training was performed."
+}
