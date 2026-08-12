@@ -3,8 +3,44 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $serverEntry = Join-Path $projectRoot 'services\api\dist\server.js'
 $desktopExecutable = Join-Path $projectRoot 'build\windows\ShowWhere.exe'
+$localAiLauncher = Join-Path $PSScriptRoot 'start-local-ai.ps1'
 
 try {
+    $localAiListener = Get-NetTCPConnection -State Listen -LocalPort 8790 -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    if ($null -eq $localAiListener) {
+        $logDirectory = Join-Path $env:LOCALAPPDATA 'ShowWhere'
+        New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+        $localAiOutputLog = Join-Path $logDirectory 'local-bge.out.log'
+        $localAiErrorLog = Join-Path $logDirectory 'local-bge.err.log'
+
+        Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', $localAiLauncher,
+                '-ModelRoot', 'C:\ShowWhere_Models',
+                '-BgeOnly'
+            ) `
+            -WorkingDirectory $projectRoot `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $localAiOutputLog `
+            -RedirectStandardError $localAiErrorLog
+
+        $localAiReady = $false
+        for ($attempt = 0; $attempt -lt 80; $attempt += 1) {
+            Start-Sleep -Milliseconds 250
+            $localAiReady = $null -ne (Get-NetTCPConnection -State Listen -LocalPort 8790 -ErrorAction SilentlyContinue |
+                Select-Object -First 1)
+            if ($localAiReady) { break }
+        }
+
+        if (-not $localAiReady) {
+            throw 'ShowWhere local BGE service did not start.'
+        }
+    }
+
     $listener = Get-NetTCPConnection -State Listen -LocalPort 8787 -ErrorAction SilentlyContinue |
         Select-Object -First 1
 

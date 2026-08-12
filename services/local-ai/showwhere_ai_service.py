@@ -14,7 +14,7 @@ import re
 import tempfile
 import time
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any
 
 import torch
@@ -27,6 +27,16 @@ from transformers import AutoModel, AutoModelForCausalLM, AutoModelForSequenceCl
 MODEL_ROOT = Path(os.getenv("SHOWWHERE_MODEL_ROOT", r"C:\ShowWhere_Models"))
 DEVICE = os.getenv("SHOWWHERE_LOCAL_AI_DEVICE", "auto")
 MAX_LOADED = int(os.getenv("SHOWWHERE_LOCAL_AI_MAX_LOADED", "1"))
+ALLOWED_ROLES = {
+    role.strip()
+    for role in os.getenv("SHOWWHERE_LOCAL_AI_ALLOWED_ROLES", "").split(",")
+    if role.strip()
+}
+PRELOAD_ROLES = [
+    role.strip()
+    for role in os.getenv("SHOWWHERE_LOCAL_AI_PRELOAD", "").split(",")
+    if role.strip()
+]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 with (PROJECT_ROOT / "config" / "models.json").open(encoding="utf-8-sig") as manifest_file:
@@ -70,6 +80,8 @@ class ModelPool:
 
     def get(self, role: str) -> tuple[Any, Any, Any | None]:
         with self.lock:
+            if ALLOWED_ROLES and role not in ALLOWED_ROLES:
+                raise RuntimeError(f"Model role {role} is disabled in this local AI profile")
             if role in self.loaded:
                 self.last_used[role] = time.time()
                 return self.loaded[role]
@@ -120,6 +132,20 @@ class ModelPool:
 
 pool = ModelPool()
 app = FastAPI(title="ShowWhere Local AI", version="2.0")
+
+
+def preload_models() -> None:
+    for role in PRELOAD_ROLES:
+        try:
+            pool.get(role)
+        except Exception as error:
+            print(f"[showwhere:local-ai] preload_failed role={role} error={error}", flush=True)
+
+
+@app.on_event("startup")
+def start_preload() -> None:
+    if PRELOAD_ROLES:
+        Thread(target=preload_models, name="showwhere-model-preload", daemon=True).start()
 
 
 @app.middleware("http")
@@ -189,8 +215,15 @@ def health() -> dict[str, Any]:
         "modelRoot": str(MODEL_ROOT),
         "cuda": torch.cuda.is_available(),
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "allowedRoles": sorted(ALLOWED_ROLES) if ALLOWED_ROLES else sorted(MODEL_PATHS),
+        "preloadRoles": PRELOAD_ROLES,
         "models": {
-            role: {"id": MODEL_IDS[role], "ready": (path / "showwhere-download.json").exists(), "loaded": role in pool.loaded}
+            role: {
+                "id": MODEL_IDS[role],
+                "ready": (path / "showwhere-download.json").exists(),
+                "enabled": not ALLOWED_ROLES or role in ALLOWED_ROLES,
+                "loaded": role in pool.loaded,
+            }
             for role, path in MODEL_PATHS.items()
         },
     }
