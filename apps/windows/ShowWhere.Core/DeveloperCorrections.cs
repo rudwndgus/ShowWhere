@@ -77,6 +77,24 @@ public sealed record AnswerFeedbackRecord(
     string? TargetLabel,
     UiBounds? TargetBounds);
 
+public sealed record DeveloperLearningStatusRecord(
+    int SchemaVersion,
+    string Id,
+    DateTimeOffset CreatedAtUtc,
+    string FeedbackId,
+    bool Active,
+    string? Reason = null);
+
+public sealed record DeveloperLearningHistoryRecord(
+    string FeedbackId,
+    DateTimeOffset CreatedAtUtc,
+    string Rating,
+    string Goal,
+    string Answer,
+    string? TargetLabel,
+    string? Comment,
+    bool Active);
+
 public sealed record RefinedDeveloperComment(
     string Raw,
     string Normalized,
@@ -273,6 +291,12 @@ public interface IDeveloperCorrectionStore
         string goal,
         ApplicationContext context,
         IReadOnlyList<UiCandidate> candidates);
+    IReadOnlyList<DeveloperLearningHistoryRecord> GetHistory();
+    Task SetFeedbackActiveAsync(
+        string feedbackId,
+        bool active,
+        string? reason = null,
+        CancellationToken cancellationToken = default);
     Task<DeveloperCorrectionRecord> SaveAsync(
         DeveloperCorrectionRecord correction,
         string? screenshotDataUrl,
@@ -296,9 +320,11 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     private readonly string _recordsPath;
     private readonly string _feedbackPath;
     private readonly string _completionsPath;
+    private readonly string _statusPath;
     private List<DeveloperCorrectionRecord> _records;
     private List<DeveloperCompletionRecord> _completions;
     private List<AnswerFeedbackRecord> _feedback;
+    private List<DeveloperLearningStatusRecord> _statusChanges;
 
     public JsonlDeveloperCorrectionStore(string? dataDirectory = null)
     {
@@ -306,10 +332,12 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         _recordsPath = Path.Combine(DataDirectory, "corrections.jsonl");
         _feedbackPath = Path.Combine(DataDirectory, "answer-feedback.jsonl");
         _completionsPath = Path.Combine(DataDirectory, "completions.jsonl");
+        _statusPath = Path.Combine(DataDirectory, "learning-status.jsonl");
         Directory.CreateDirectory(DataDirectory);
         _records = LoadRecords(_recordsPath);
         _completions = LoadCompletionRecords(_completionsPath);
         _feedback = LoadFeedbackRecords(_feedbackPath);
+        _statusChanges = LoadStatusRecords(_statusPath);
     }
 
     public string DataDirectory { get; }
@@ -320,6 +348,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             return _records
+                .Where(record => IsFeedbackActive(record.FeedbackId))
                 .Where(record => DeveloperIntentMatcher.IsSameIntent(originalGoal, record.OriginalGoal)
                     || DeveloperIntentMatcher.IsSameIntent(originalGoal, record.EffectiveGoal)
                     || DeveloperIntentMatcher.IsSameIntent(originalGoal, record.CorrectedIntent))
@@ -343,6 +372,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             matchingRecords = _records
+                .Where(record => IsFeedbackActive(record.FeedbackId))
                 .Where(record => record.CorrectTarget is not null)
                 .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
                     || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal)
@@ -381,6 +411,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             var match = _records
+                .Where(record => IsFeedbackActive(record.FeedbackId))
                 .Where(record => record.NormalizedVisualTarget is not null)
                 .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
                     || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal)
@@ -407,6 +438,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             var match = _completions
+                .Where(record => IsFeedbackActive(record.FeedbackId))
                 .Where(record => DeveloperIntentMatcher.IsSameIntent(goal, record.OriginalGoal)
                     || DeveloperIntentMatcher.IsSameIntent(goal, record.EffectiveGoal))
                 .Where(record => string.Equals(
@@ -480,6 +512,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         lock (_gate)
         {
             rejectedIds = _feedback
+                .Where(item => IsFeedbackActive(item.Id))
                 .Where(item => !string.IsNullOrWhiteSpace(item.TargetId)
                     && item.Context is not null
                     && DeveloperIntentMatcher.IsSameIntent(goal, item.OriginalGoal ?? item.EffectiveGoal)
@@ -493,6 +526,56 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         if (rejectedIds.Count == 0) return candidates;
         var filtered = candidates.Where(candidate => !rejectedIds.Contains(candidate.Id)).ToArray();
         return filtered.Length == 0 ? candidates : filtered;
+    }
+
+    public IReadOnlyList<DeveloperLearningHistoryRecord> GetHistory()
+    {
+        lock (_gate)
+        {
+            return _feedback.OrderByDescending(item => item.CreatedAtUtc).Select(item =>
+            {
+                var correction = _records.LastOrDefault(record =>
+                    string.Equals(record.FeedbackId, item.Id, StringComparison.Ordinal));
+                var completion = _completions.LastOrDefault(record =>
+                    string.Equals(record.FeedbackId, item.Id, StringComparison.Ordinal));
+                return new DeveloperLearningHistoryRecord(
+                    item.Id,
+                    item.CreatedAtUtc,
+                    item.Rating,
+                    item.OriginalGoal ?? item.EffectiveGoal ?? "질문 정보 없음",
+                    item.AnswerText,
+                    correction?.CorrectTarget?.Label ?? item.TargetLabel,
+                    correction?.DeveloperComment ?? correction?.RefinedComment ?? completion?.DeveloperComment,
+                    IsFeedbackActive(item.Id));
+            }).ToArray();
+        }
+    }
+
+    public Task SetFeedbackActiveAsync(
+        string feedbackId,
+        bool active,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!_feedback.Any(item => string.Equals(item.Id, feedbackId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("학습 기록을 찾을 수 없습니다.");
+            var record = new DeveloperLearningStatusRecord(
+                1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+                feedbackId, active, string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());
+            File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+            _statusChanges.Add(record);
+        }
+        return Task.CompletedTask;
+    }
+
+    private bool IsFeedbackActive(string? feedbackId)
+    {
+        if (string.IsNullOrWhiteSpace(feedbackId)) return true;
+        return _statusChanges.LastOrDefault(item =>
+            string.Equals(item.FeedbackId, feedbackId, StringComparison.Ordinal))?.Active ?? true;
     }
 
     public Task<DeveloperCompletionRecord> SaveCompletionAsync(
@@ -554,6 +637,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             try
             {
                 var record = JsonSerializer.Deserialize<AnswerFeedbackRecord>(line, JsonOptions);
+                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+            }
+            catch (JsonException) { }
+        }
+        return records;
+    }
+
+    private static List<DeveloperLearningStatusRecord> LoadStatusRecords(string path)
+    {
+        if (!File.Exists(path)) return [];
+        var records = new List<DeveloperLearningStatusRecord>();
+        foreach (var line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var record = JsonSerializer.Deserialize<DeveloperLearningStatusRecord>(line, JsonOptions);
                 if (record is not null && record.SchemaVersion == 1) records.Add(record);
             }
             catch (JsonException) { }

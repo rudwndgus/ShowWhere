@@ -49,6 +49,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private bool _isCorrectionEditorVisible;
     private bool _saveCorrectionScreenshot = true;
     private bool _isDeveloperMode;
+    private bool _isLearningHistoryVisible;
     private string _correctionTaskId = string.Empty;
     private string _correctionStateId = string.Empty;
     private string _correctionTargetConcept = string.Empty;
@@ -94,6 +95,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         MarkAnswerCompletedCommand = new AsyncParameterRelayCommand(MarkAnswerCompletedAsync, CanEvaluateAnswer);
         TogglePauseCommand = new RelayCommand(TogglePause);
         ToggleDeveloperModeCommand = new RelayCommand(ToggleDeveloperMode);
+        ToggleLearningHistoryCommand = new RelayCommand(ToggleLearningHistory);
+        ToggleLearningRecordCommand = new AsyncParameterRelayCommand(ToggleLearningRecordAsync);
         ExitCommand = new RelayCommand(_exit);
         Messages.Add(CreateAssistantMessage(
             "assistant",
@@ -116,9 +119,12 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand MarkAnswerCompletedCommand { get; }
     public ICommand TogglePauseCommand { get; }
     public ICommand ToggleDeveloperModeCommand { get; }
+    public ICommand ToggleLearningHistoryCommand { get; }
+    public ICommand ToggleLearningRecordCommand { get; }
     public ICommand ExitCommand { get; }
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
     public ObservableCollection<ClarificationChoiceItem> ClarificationChoices { get; } = [];
+    public ObservableCollection<DeveloperLearningHistoryItem> LearningHistory { get; } = [];
 
     public string GoalText
     {
@@ -137,8 +143,17 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         {
             if (!Set(ref _isDeveloperMode, value)) return;
             OnPropertyChanged(nameof(DeveloperModeText));
-            if (!value) ResetCorrectionDraft();
+            if (!value)
+            {
+                ResetCorrectionDraft();
+                IsLearningHistoryVisible = false;
+            }
         }
+    }
+    public bool IsLearningHistoryVisible
+    {
+        get => _isLearningHistoryVisible;
+        private set => Set(ref _isLearningHistoryVisible, value);
     }
     public bool IsCorrectionEditorVisible
     {
@@ -175,6 +190,40 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public string CorrectionDataDirectory => _correctionStore.DataDirectory;
     public string PauseMenuText => IsPaused ? "다시 시작" : "일시 정지";
     public string DeveloperModeText => IsDeveloperMode ? "개발자 모드 ON" : "개발자 모드 OFF";
+
+    private void ToggleLearningHistory()
+    {
+        if (!IsDeveloperMode) return;
+        IsLearningHistoryVisible = !IsLearningHistoryVisible;
+        if (IsLearningHistoryVisible) RefreshLearningHistory();
+    }
+
+    private void RefreshLearningHistory()
+    {
+        LearningHistory.Clear();
+        foreach (var record in _correctionStore.GetHistory())
+            LearningHistory.Add(new DeveloperLearningHistoryItem(record));
+    }
+
+    private async Task ToggleLearningRecordAsync(object? parameter)
+    {
+        if (!IsDeveloperMode || parameter is not DeveloperLearningHistoryItem item) return;
+        try
+        {
+            await _correctionStore.SetFeedbackActiveAsync(
+                item.FeedbackId,
+                !item.Active,
+                item.Active ? "Developer revoked this learning record in history." : "Developer restored this learning record in history.");
+            item.Active = !item.Active;
+            _approvedReplays.Clear();
+            StatusText = item.Active ? "학습 기록 다시 적용됨" : "학습 기록 취소됨";
+        }
+        catch (Exception exception)
+        {
+            DesktopDiagnostics.Write(exception);
+            StatusText = "학습 기록 변경 오류";
+        }
+    }
 
     private bool CanSubmit() => !IsPaused && !IsLoading && !string.IsNullOrWhiteSpace(GoalText);
 

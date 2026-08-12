@@ -9,6 +9,7 @@ Runtime order is exact replay, conservative semantic-intent replay, optional Hug
 - `corrections.jsonl`: human-corrected and O-approved target signatures used by runtime memory.
 - `answer-feedback.jsonl`: every developer O/X evaluation.
 - `completions.jsonl`: developer-verified task completion states used to stop repeated guidance.
+- `learning-status.jsonl`: append-only revoke/restore events created from the developer history UI.
 
 These JSONL records stay repository-local so approved learning can be synchronized between development computers. Screenshots remain ignored because they can contain private information. API keys, tokens, cookies, passwords, raw screenshots, and private chain-of-thought must never be written here.
 
@@ -22,4 +23,5 @@ Runtime guarantees:
 - A newer O for that target supersedes the older X.
 - Saved correction comments retain raw text, normalized text, issue tags, semantic target signature, and learning labels.
 - End creates a verified completion record. Completion replay requires specific live evidence; generic titles such as `Settings` are insufficient.
+- The developer-mode `학습 기록` panel lists O/X/end/comment records and can revoke or restore each item. Revocation never destroys the original audit record.
 - Coordinates are observations only. Every replay resolves the semantic target against the current live UI.

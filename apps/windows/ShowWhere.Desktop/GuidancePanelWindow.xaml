@@ -70,6 +70,10 @@
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+          <Button Content="학습 기록" Command="{Binding ToggleLearningHistoryCommand}"
+                  Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
+                  Style="{StaticResource QuietButton}" ToolTip="저장된 O/X/끝/코멘트를 확인하고 취소합니다"
+                  Visibility="{Binding IsDeveloperMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <Button Content="{Binding DeveloperModeText}" Command="{Binding ToggleDeveloperModeCommand}"
                   Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
                   Style="{StaticResource QuietButton}" ToolTip="GPT 답변 평가와 라벨링을 켜거나 끕니다" />
@@ -165,6 +169,60 @@
           </ItemsControl>
         </StackPanel>
       </ScrollViewer>
+
+      <Border Grid.Row="2" Panel.ZIndex="20" Background="#FFF7F7F8"
+              BorderBrush="#FFE0B3B7" BorderThickness="0,0,0,1"
+              Visibility="{Binding IsLearningHistoryVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid Margin="14,12">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+          </Grid.RowDefinitions>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock Text="학습 기록" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
+              <TextBlock Text="잘못 누른 O/X/끝을 취소하면 즉시 다음 판단에서 제외됩니다."
+                         FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,3,8,8" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="닫기" Command="{Binding ToggleLearningHistoryCommand}"
+                    Style="{StaticResource QuietButton}" Padding="8,4" VerticalAlignment="Top" />
+          </Grid>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding LearningHistory}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                          CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                    <StackPanel>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding RatingText}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding TimeText}" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="8,2" />
+                        <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="10" FontWeight="SemiBold" />
+                      </Grid>
+                      <TextBlock Text="{Binding Goal}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,6,0,2" />
+                      <TextBlock Text="{Binding Answer}" TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedBrush}" MaxHeight="48" />
+                      <TextBlock Text="{Binding TargetLabel, StringFormat=대상 · {0}}" FontSize="10" Margin="0,4,0,0" />
+                      <TextBlock Text="{Binding Comment, StringFormat=코멘트 · {0}}" TextWrapping="Wrap" FontSize="10" Margin="0,3,0,0" />
+                      <Button Content="{Binding ToggleText}" Margin="0,8,0,0" HorizontalAlignment="Left"
+                              Command="{Binding DataContext.ToggleLearningRecordCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                              CommandParameter="{Binding}" Style="{StaticResource QuietButton}" Padding="8,4" FontSize="10" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Grid>
+      </Border>
 
       <Border Grid.Row="3" BorderBrush="#FFECEEF1" BorderThickness="0,1,0,0"
               Padding="17,12,17,0" Background="White">

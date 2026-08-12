@@ -276,6 +276,59 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Revoked_completion_is_not_reused_after_restart_and_can_be_restored()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var feedback = Feedback("completed", "완료") with
+        {
+            OriginalGoal = "유튜브 뮤직 열어줘",
+            EffectiveGoal = "유튜브 뮤직 열어줘",
+            Context = context,
+        };
+        await store.SaveFeedbackAsync(feedback);
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            feedback.OriginalGoal!, context, "youtube music", null, null,
+            "completed.youtube_music", "YouTube Music", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            feedback.OriginalGoal!, feedback.EffectiveGoal!, context, "snapshot",
+            ["YouTube Music"], labels, true, feedback.Id));
+        await store.SetFeedbackActiveAsync(feedback.Id, false, "잘못 누른 끝");
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.False(reloaded.TryResolveCompletion(
+            "유튜브 뮤직 열어줘", context, [], out _));
+        Assert.False(Assert.Single(reloaded.GetHistory()).Active);
+
+        await reloaded.SetFeedbackActiveAsync(feedback.Id, true, "복구");
+        var restored = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.True(restored.TryResolveCompletion(
+            "유튜브 뮤직 열어줘", context, [], out _));
+        Assert.True(Assert.Single(restored.GetHistory()).Active);
+    }
+
+    [Fact]
+    public async Task Revoking_O_or_X_removes_its_runtime_effect_without_deleting_history()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var positiveFeedback = Feedback("correct", "설정을 누르세요");
+        await store.SaveFeedbackAsync(positiveFeedback);
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("settings", "설정", "settings", "windows_start"));
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(positiveFeedback, signature)!, null);
+        await store.SetFeedbackActiveAsync(positiveFeedback.Id, false);
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.False(reloaded.TryResolveTarget(
+            positiveFeedback.OriginalGoal!, positiveFeedback.Context!,
+            [Candidate("settings", "설정", "settings", "windows_start")], out _, out _));
+        var history = Assert.Single(reloaded.GetHistory());
+        Assert.Equal("correct", history.Rating);
+        Assert.False(history.Active);
+    }
+
+    [Fact]
     public async Task Generic_settings_title_does_not_complete_a_task_without_specific_live_evidence()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
