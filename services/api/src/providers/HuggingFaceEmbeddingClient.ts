@@ -33,12 +33,38 @@ export function cosineSimilarity(left: number[], right: number[]): number {
 
 export class HuggingFaceEmbeddingClient implements TextEmbeddingProvider {
   private readonly cache = new Map<string, number[]>();
+  private readonly inFlight = new Map<string, Promise<number[]>>();
 
   constructor(private readonly options: HuggingFaceEmbeddingOptions) {}
 
   async embed(texts: string[]): Promise<number[][]> {
-    const missing = [...new Set(texts.filter((text) => !this.cache.has(text)))];
+    const unique = [...new Set(texts)];
+    const missing = unique.filter((text) => !this.cache.has(text) && !this.inFlight.has(text));
     if (missing.length > 0) {
+      // Provider-backed feature extraction is substantially faster and more
+      // reliable with small batches. Warm-up chunks run concurrently.
+      for (let offset = 0; offset < missing.length; offset += 24) {
+        const chunk = missing.slice(offset, offset + 24);
+        const batch = this.fetchEmbeddings(chunk);
+        chunk.forEach((text, index) => {
+          const pending = batch.then((vectors) => vectors[index]);
+          this.inFlight.set(text, pending);
+          void pending.then(
+            () => this.inFlight.delete(text),
+            () => this.inFlight.delete(text),
+          );
+        });
+      }
+    }
+    await Promise.all(unique.map(async (text) => {
+      if (this.cache.has(text)) return;
+      const vector = await this.inFlight.get(text)!;
+      this.cache.set(text, vector);
+    }));
+    return texts.map((text) => this.cache.get(text)!);
+  }
+
+  private async fetchEmbeddings(missing: string[]): Promise<number[][]> {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.options.requestTimeoutMs);
       try {
@@ -53,11 +79,9 @@ export class HuggingFaceEmbeddingClient implements TextEmbeddingProvider {
         const values = missing.length === 1 ? [raw] : raw;
         if (!Array.isArray(values) || values.length !== missing.length)
           throw new Error('Hugging Face returned an unexpected embedding count.');
-        missing.forEach((text, index) => this.cache.set(text, meanVector(values[index])));
+        return missing.map((_, index) => meanVector(values[index]));
       } finally {
         clearTimeout(timeout);
       }
-    }
-    return texts.map((text) => this.cache.get(text)!);
   }
 }

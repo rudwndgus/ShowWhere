@@ -23,6 +23,7 @@ npm run crawl -- --url https://example.com --headed --max-depth 3 --max-states 3
 npm run crawl -- --url https://example.com --locale en-US --channel msedge
 npm run crawl:normalize -- --site example-com
 npm run crawl:patterns
+npm run crawl:compress
 npm run crawl:smoke
 ```
 
@@ -40,6 +41,8 @@ Defaults are 30 unique states, depth 3, and 12 safe actions per state. `--headed
 - complete discovered navigation paths.
 
 Selectors prioritize Playwright's user-facing role, accessible name, label, placeholder, and test ID. CSS IDs are only fallback hints; long DOM CSS/XPath chains are never generated.
+
+Raw runs are written as lossless `.json.gz` files and normalized graphs are compressed as well. Runtime catalogs and common patterns remain plain JSON for immediate startup. The loader remains compatible with legacy `.json` runs, and `crawl:compress` validates every gzip payload before removing the corresponding legacy JSON file.
 
 ## Semantic labeling
 

@@ -10,6 +10,7 @@
     "crawl": "tsx services/crawler/src/cli.ts crawl",
     "crawl:normalize": "tsx services/crawler/src/cli.ts normalize",
     "crawl:patterns": "tsx services/crawler/src/cli.ts patterns",
+    "crawl:compress": "tsx services/crawler/src/cli.ts compress",
     "crawl:install": "playwright install chromium",
     "crawl:smoke": "tsx services/crawler/src/smoke.ts",
     "test": "vitest run",

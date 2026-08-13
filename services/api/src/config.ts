@@ -17,7 +17,7 @@ const environmentSchema = z.object({
   OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),
   OPENAI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
   HF_TOKEN: z.string().trim().min(1).optional(),
-  HF_EMBEDDING_MODEL: z.string().trim().min(1).default('Qwen/Qwen3-Embedding-0.6B'),
+  HF_EMBEDDING_MODEL: z.string().trim().min(1).default('intfloat/multilingual-e5-large'),
   HF_BASE_URL: z.string().url().default('https://router.huggingface.co/hf-inference/models'),
   HF_REQUEST_TIMEOUT_MS: integerFromEnvironment(500, 30_000).default(4_000),
   HF_MIN_SCORE: z.preprocess(

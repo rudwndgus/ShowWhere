@@ -221,6 +221,30 @@ public sealed class DeveloperCorrectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Browser_O_feedback_never_replays_the_same_label_on_another_site()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var learnedContext = new ApplicationContext(
+            Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
+        var feedback = Feedback("correct", "YouTube Music 검색을 누르세요") with
+        {
+            OriginalGoal = "유튜브 뮤직에서 노래 찾아줘",
+            EffectiveGoal = "유튜브 뮤직 노래 검색",
+            Context = learnedContext,
+        };
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("youtube-search", "Search", "search", "browser_content"));
+        await store.SaveFeedbackAsync(feedback);
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(feedback, signature)!, null);
+
+        var amazonContext = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com", "https://www.amazon.com/");
+        Assert.False(store.TryResolveTarget(
+            "유튜브 뮤직에서 노래 찾아줘", amazonContext,
+            [Candidate("amazon-search", "Search", "search", "browser_content")], out _, out _));
+    }
+
+    [Fact]
     public void X_feedback_is_never_promoted_to_positive_memory()
     {
         var feedback = Feedback("incorrect", "잘못된 버튼");

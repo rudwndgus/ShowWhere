@@ -15,7 +15,7 @@ describe('API environment configuration', () => {
 
   it('enables optional Hugging Face semantic routing without exposing it to the client', () => {
     const config = loadApiConfig({ OPENAI_API_KEY: 'openai', HF_TOKEN: 'hf-secret' });
-    expect(config.huggingFace?.model).toBe('Qwen/Qwen3-Embedding-0.6B');
+    expect(config.huggingFace?.model).toBe('intfloat/multilingual-e5-large');
     expect(config.huggingFace?.token).toBe('hf-secret');
   });
 });

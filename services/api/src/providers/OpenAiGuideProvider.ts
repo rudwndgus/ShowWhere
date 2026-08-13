@@ -1,5 +1,6 @@
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import { GuideDecisionSchema, type GuideDecision, type GuideRequest } from '../../../../src/contracts';
+import { normalizeUiName, semanticLabelFromRules } from '../../../../src/web-knowledge';
 
 export interface OpenAiGuideProviderOptions {
   apiKey: string;
@@ -52,6 +53,7 @@ Rules:
 - Never repeat a control recorded in completedSteps unless the screen proves the previous click did not take effect.
 - First decide whether the user's goal is already complete from visible evidence. If complete: status=completed, action=explain, no target.
 - Understand the destination and scope. A website search belongs inside that website, never in the browser address bar unless the user explicitly asks for web/navigation search.
+- Separate the user's FINAL INTENT from controls that merely contain related words. For a generic website login request, choose the site's canonical account/sign-in control (for example Amazon's "Hello, sign in Account & Lists"). Never choose delivery-location, address, shipping, or other contextual "sign in to ..." shortcuts unless the user explicitly asked about that context.
 - For Windows settings tasks, navigation priority is mandatory: (1) the final settings control if visible, (2) a visible/running Settings app or Settings icon, (3) Start, and only then (4) Windows Search. Never choose or instruct typing into Search while a direct Settings control/icon is visible anywhere in the screenshot.
 - When a direct Windows Settings icon/control is clearly visible in pixels but absent from candidates, use highlight_visual around that icon instead of choosing a Search candidate.
 - Select the most direct visible control that advances the goal. Do not select window chrome (back/minimize/maximize/close) unless explicitly requested.
@@ -70,11 +72,24 @@ function candidateScore(request: GuideRequest, index: number): number {
   const searchable = `${candidate.label ?? ''} ${candidate.description ?? ''} ${candidate.role}`.toLowerCase();
   const intentWords = intent.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 2);
   const directMatches = intentWords.filter((word) => searchable.includes(word) || intent.includes(searchable.trim())).length;
+  const intentSemantic = semanticLabelFromRules(intent);
+  const candidateSemantic = semanticLabelFromRules(searchable);
+  const semanticMatch = intentSemantic && candidateSemantic === intentSemantic ? 5_000 : 0;
+  const normalizedCandidate = normalizeUiName(searchable);
+  const contextualLoginPenalty = intentSemantic === 'login'
+    && !/address|location|delivery|shipping|주소|위치|배송/u.test(normalizeUiName(intent))
+    && /address|location|delivery|shipping|주소|위치|배송/u.test(normalizedCandidate)
+    ? 12_000 : 0;
+  const canonicalLoginBonus = intentSemantic === 'login'
+    && (/^(sign in|log in|login|로그인)(?: link| button)?$/u.test(normalizedCandidate)
+      || /hello.*sign in.*account|sign in.*account.*lists/u.test(normalizedCandidate))
+    ? 4_000 : 0;
   const scope = String(candidate.attributes?.sourceScope ?? '');
   const globalEntryScore = scope === 'windows_taskbar' ? 600
     : scope === 'windows_window_overview' ? 450
       : 0;
-  return directMatches * 2_000 + globalEntryScore + Math.max(0, 250 - index);
+  return directMatches * 2_000 + semanticMatch + canonicalLoginBonus
+    - contextualLoginPenalty + globalEntryScore + Math.max(0, 250 - index);
 }
 
 function selectCandidates(request: GuideRequest) {

@@ -797,6 +797,8 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             && !EqualsText(candidateProcess, signature.ProcessName)) return 0;
         if (!string.IsNullOrWhiteSpace(signature.SourceScope)
             && !EqualsText(candidateScope, signature.SourceScope)) return 0;
+        if (string.Equals(signature.SourceScope, "browser_content", StringComparison.OrdinalIgnoreCase)
+            && !MatchesBrowserSite(record.Context, context, signature, candidate)) return 0;
         if (!EqualsText(candidate.Label, signature.Label)
             && !EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) return 0;
 
@@ -815,6 +817,31 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
     private static string? Attribute(UiCandidate candidate, string key) =>
         candidate.Attributes?.TryGetValue(key, out var value) == true ? Convert.ToString(value) : null;
+
+    private static bool MatchesBrowserSite(
+        ApplicationContext learnedContext,
+        ApplicationContext currentContext,
+        CorrectionTargetSignature signature,
+        UiCandidate candidate)
+    {
+        if (Uri.TryCreate(learnedContext.Url, UriKind.Absolute, out var learnedUrl)
+            && Uri.TryCreate(currentContext.Url, UriKind.Absolute, out var currentUrl))
+            return string.Equals(learnedUrl.Host, currentUrl.Host, StringComparison.OrdinalIgnoreCase);
+
+        var learnedSite = signature.ContainerLabel ?? learnedContext.WindowTitle;
+        var currentSite = Attribute(candidate, "containerLabel") ?? currentContext.WindowTitle;
+        if (string.IsNullOrWhiteSpace(learnedSite) || string.IsNullOrWhiteSpace(currentSite)) return true;
+        var learnedTokens = SiteTokens(learnedSite);
+        var currentTokens = SiteTokens(currentSite);
+        return learnedTokens.Count == 0 || currentTokens.Count == 0
+            || learnedTokens.Overlaps(currentTokens);
+    }
+
+    private static HashSet<string> SiteTokens(string value) => value
+        .ToLowerInvariant()
+        .Split([' ', '-', '|', '—', ':'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(token => token.Length >= 3 && token is not ("chrome" or "edge" or "firefox" or "www" or "com"))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static bool EqualsText(string? left, string? right) =>
         !string.IsNullOrWhiteSpace(left)
