@@ -34,6 +34,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private readonly ICorrectionSelectionService _correctionSelection;
     private readonly IDeveloperCorrectionStore _correctionStore;
     private readonly Action _exit;
+    private readonly MobileRemoteCoordinator? _mobileRemote;
     private CancellationTokenSource? _taskCancellation;
     private TaskSession? _session;
     private string _goalText = string.Empty;
@@ -79,7 +80,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         IHighlightOverlay overlay,
         ICorrectionSelectionService correctionSelection,
         IDeveloperCorrectionStore correctionStore,
-        Action exit)
+        Action exit,
+        MobileRemoteCoordinator? mobileRemote = null)
     {
         _observer = observer;
         _changeMonitor = changeMonitor;
@@ -89,6 +91,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _correctionSelection = correctionSelection;
         _correctionStore = correctionStore;
         _exit = exit;
+        _mobileRemote = mobileRemote;
         SubmitCommand = new AsyncRelayCommand(SubmitAsync, CanSubmit);
         SelectClarificationCommand = new AsyncParameterRelayCommand(SelectClarificationAsync);
         RecoveryCommand = new AsyncRelayCommand(
@@ -107,6 +110,19 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ToggleLearningRecordCommand = new AsyncParameterRelayCommand(ToggleLearningRecordAsync);
         SaveLearningRecordCommand = new AsyncParameterRelayCommand(SaveLearningRecordAsync);
         ExitCommand = new RelayCommand(_exit);
+        MobileConnectCommand = new AsyncRelayCommand(
+            () => _mobileRemote?.ShowPairingAsync() ?? Task.CompletedTask);
+        MobileDisconnectCommand = new AsyncRelayCommand(
+            () => _mobileRemote?.DisconnectAsync() ?? Task.CompletedTask);
+        if (_mobileRemote is not null)
+            _mobileRemote.PropertyChanged += (_, eventArgs) =>
+            {
+                if (eventArgs.PropertyName == nameof(MobileRemoteCoordinator.IsConnected))
+                {
+                    OnPropertyChanged(nameof(IsMobileConnected));
+                    OnPropertyChanged(nameof(MobileConnectionText));
+                }
+            };
         Messages.Add(CreateAssistantMessage(
             "assistant",
             "하고 싶은 일을 입력해 주세요. 현재 앱과 Windows 작업표시줄에서 다음에 누를 위치를 찾아드릴게요."));
@@ -132,6 +148,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand ToggleLearningRecordCommand { get; }
     public ICommand SaveLearningRecordCommand { get; }
     public ICommand ExitCommand { get; }
+    public ICommand MobileConnectCommand { get; }
+    public ICommand MobileDisconnectCommand { get; }
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
     public ObservableCollection<ClarificationChoiceItem> ClarificationChoices { get; } = [];
     public ObservableCollection<DeveloperLearningHistoryItem> LearningHistory { get; } = [];
@@ -147,6 +165,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _goalText;
         set { if (Set(ref _goalText, value)) RaiseCommandStates(); }
     }
+    public bool IsMobileConnected => _mobileRemote?.IsConnected == true;
+    public string MobileConnectionText => _mobileRemote?.ConnectionText ?? "모바일 연결";
     public string CurrentApplication { get => _currentApplication; private set => Set(ref _currentApplication, value); }
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
     public string ErrorMessage { get => _errorMessage; private set => Set(ref _errorMessage, value); }
@@ -277,6 +297,19 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     {
         var query = GoalText.Trim();
         if (string.IsNullOrWhiteSpace(query)) return;
+        await SubmitGoalAsync(query);
+    }
+
+    public async Task SubmitRemoteAsync(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return;
+        while (IsLoading) await Task.Delay(100);
+        if (IsPaused) return;
+        await SubmitGoalAsync(query.Trim());
+    }
+
+    private async Task SubmitGoalAsync(string query)
+    {
         var replayObservation = _lastObservation;
         var immediateReplay = TryResolveImmediateReplay(query, replayObservation);
         var immediateSafeReply = TryResolveRecentSafeReply(query, replayObservation);

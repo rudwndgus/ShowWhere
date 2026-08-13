@@ -119,8 +119,18 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel>
+          <StackPanel Orientation="Horizontal">
           <TextBlock Text="SHOWWHERE" Foreground="{StaticResource AccentBrush}"
-                     FontSize="15" FontWeight="Bold" />
+                     FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
+          <Button Command="{Binding MobileConnectCommand}" Margin="9,0,0,0" Padding="7,3"
+                  Style="{StaticResource QuietButton}" ToolTip="QR로 휴대폰 키보드를 연결합니다">
+            <StackPanel Orientation="Horizontal">
+              <Ellipse Width="8" Height="8" Fill="#FF25A65A" Margin="0,0,5,0"
+                       Visibility="{Binding IsMobileConnected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding MobileConnectionText}" FontSize="9"/>
+            </StackPanel>
+          </Button>
+          </StackPanel>
           <TextBlock Text="" Foreground="{StaticResource TextBrush}"
                      FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
         </StackPanel>

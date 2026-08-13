@@ -18,7 +18,7 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/services/api/dist ./services/api/dist
 COPY knowledge/web/catalogs ./knowledge/web/catalogs
 COPY knowledge/web/patterns ./knowledge/web/patterns
+COPY apps/windows/ShowWhere.Desktop/Assets/Assistant/monkey-sit.png ./apps/windows/ShowWhere.Desktop/Assets/Assistant/monkey-sit.png
 
-USER node
 EXPOSE 8787
-CMD ["node", "services/api/dist/server.js"]
+CMD ["sh", "-c", "mkdir -p /data/central && chown -R node:node /data && exec su node -s /bin/sh -c 'node services/api/dist/server.js'"]

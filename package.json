@@ -29,11 +29,15 @@
     "@huggingface/inference": "^4.13.25",
     "dotenv": "^17.4.2",
     "playwright": "^1.62.1",
+    "qrcode": "^1.5.4",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.15.3",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
     "eslint": "^10.8.0",
     "globals": "^17.9.0",
     "tsx": "^4.23.9",

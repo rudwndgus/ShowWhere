@@ -1,8 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import QRCode from 'qrcode';
+import { ZodError } from 'zod';
 import type { AiProvider } from '../../../src/guide-api/AiProvider';
 import { GUIDE_API_PATH, handleGuideApiRequest } from '../../../src/guide-api/handleGuideApiRequest';
 import type { ApiConfig } from './config';
+import { centralRecordBatchSchema, CentralKnowledgeStore } from './CentralKnowledgeStore';
+import { mobilePage } from './mobilePage';
+import { PairingManager } from './PairingManager';
 
 async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -37,6 +44,32 @@ function tokenMatches(request: IncomingMessage, expected: string | undefined): b
   const expectedHash = createHash('sha256').update(expected).digest();
   const suppliedHash = createHash('sha256').update(supplied).digest();
   return timingSafeEqual(expectedHash, suppliedHash);
+}
+
+type ApiRole = 'anonymous' | 'user' | 'developer' | 'admin';
+
+function requestRole(request: IncomingMessage, config: ApiConfig): ApiRole {
+  if (config.security.adminToken && tokenMatches(request, config.security.adminToken)) return 'admin';
+  if (config.security.developerToken && tokenMatches(request, config.security.developerToken)) return 'developer';
+  if (!config.security.clientToken || tokenMatches(request, config.security.clientToken)) return 'user';
+  return 'anonymous';
+}
+
+function roleAtLeast(role: ApiRole, required: ApiRole): boolean {
+  const rank: Record<ApiRole, number> = { anonymous: 0, user: 1, developer: 2, admin: 3 };
+  return rank[role] >= rank[required];
+}
+
+function sendHtml(response: ServerResponse, body: string): void {
+  response.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self' ws: wss:; media-src blob:",
+  });
+  response.end(body);
 }
 
 function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
@@ -76,18 +109,85 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
     config.security.rateLimitWindowMs,
     config.security.rateLimitMaxRequests,
   );
-  return createServer(async (request, response) => {
+  const knowledge = new CentralKnowledgeStore(config.centralDataDirectory);
+  const pairing = new PairingManager(config.pairingTtlSeconds * 1_000);
+  const server = createServer(async (request, response) => {
     const requestStartedAt = performance.now();
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (request.method === 'GET' && url.pathname === '/health') {
-      sendJson(response, 200, { status: 'ok' });
+      sendJson(response, 200, { status: 'ok', services: { guide: true, sync: true, pairing: true } });
+      return;
+    }
+    if (request.method === 'GET' && (url.pathname === '/mobile' || url.pathname === '/mobile/')) {
+      sendHtml(response, mobilePage);
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/mobile/gorilla.png') {
+      try {
+        const image = await readFile(resolve('apps/windows/ShowWhere.Desktop/Assets/Assistant/monkey-sit.png'));
+        response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+        response.end(image);
+      } catch { sendJson(response, 404, { message: '이미지를 찾을 수 없습니다.' }); }
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/api/pairing/claim') {
+      try {
+        const body = await readJsonBody(request, 8_192) as { pairingToken?: unknown; code?: unknown };
+        if (typeof body.pairingToken !== 'string' || typeof body.code !== 'string') throw new Error('invalid');
+        const claimed = pairing.claim(body.pairingToken, body.code);
+        if (!claimed) { sendJson(response, 400, { message: '인증번호가 다르거나 연결 시간이 만료되었습니다.' }); return; }
+        sendJson(response, 200, claimed);
+      } catch { sendJson(response, 400, { message: '연결 정보를 확인해 주세요.' }); }
+      return;
+    }
+
+    const role = requestRole(request, config);
+    if (request.method === 'POST' && url.pathname === '/api/pairing/sessions') {
+      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
+      const protocol = request.headers['x-forwarded-proto']?.toString().split(',')[0] ?? 'http';
+      const host = request.headers['x-forwarded-host']?.toString().split(',')[0] ?? request.headers.host ?? 'localhost';
+      const baseUrl = config.publicBaseUrl ?? `${protocol}://${host}`;
+      const session = pairing.create(baseUrl);
+      const qrDataUrl = await QRCode.toDataURL(session.mobileUrl, { width: 420, margin: 2, errorCorrectionLevel: 'M' });
+      sendJson(response, 201, { ...session, qrDataUrl });
+      return;
+    }
+    if (request.method === 'DELETE' && url.pathname.startsWith('/api/pairing/sessions/')) {
+      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
+      pairing.disconnect(decodeURIComponent(url.pathname.slice('/api/pairing/sessions/'.length)));
+      sendJson(response, 200, { disconnected: true });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/knowledge/sync') {
+      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
+      const cursor = Number(url.searchParams.get('cursor') ?? '0');
+      if (!Number.isSafeInteger(cursor) || cursor < 0) { sendJson(response, 400, { message: '올바르지 않은 동기화 버전입니다.' }); return; }
+      try { sendJson(response, 200, await knowledge.changesAfter(cursor)); }
+      catch {
+        console.error('[showwhere:central] read_failed');
+        sendJson(response, 503, { message: '중앙 학습 데이터를 잠시 불러올 수 없습니다. 로컬 안내는 계속 사용할 수 있습니다.' });
+      }
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/api/knowledge/records') {
+      if (!roleAtLeast(role, 'developer')) { sendJson(response, 403, { message: '개발자 권한이 필요합니다.' }); return; }
+      try {
+        const parsed = centralRecordBatchSchema.parse(await readJsonBody(request, config.maxRequestBytes));
+        sendJson(response, 200, await knowledge.upsert(parsed.records));
+      } catch (error) {
+        if (error instanceof ZodError) sendJson(response, 400, { message: '학습 데이터 형식을 확인해 주세요.' });
+        else {
+          console.error('[showwhere:central] write_failed');
+          sendJson(response, 503, { message: '중앙 저장을 잠시 사용할 수 없습니다. 데이터는 로컬에서 보존됩니다.' });
+        }
+      }
       return;
     }
     if (request.method !== 'POST' || url.pathname !== GUIDE_API_PATH) {
       sendJson(response, 404, { message: '안내 경로를 찾을 수 없어요.' });
       return;
     }
-    if (!tokenMatches(request, config.security.clientToken)) {
+    if (!roleAtLeast(role, 'user')) {
       sendJson(response, 401, {
         status: 'blocked', action: 'explain', message: 'ShowWhere 서버 인증에 실패했어요. 최신 배포본을 사용해 주세요.', confidence: 1,
       });
@@ -147,4 +247,9 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
     }
     sendJson(response, result.status, result.decision);
   });
+  server.on('upgrade', (request, socket, head) => {
+    if (!pairing.handleUpgrade(request, socket, head)) socket.destroy();
+  });
+  server.on('close', () => pairing.close());
+  return server;
 }

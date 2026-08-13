@@ -18,6 +18,8 @@ public partial class App : Application
     private HighlightOverlayWindow? _overlay;
     private GuidancePanelWindow? _panel;
     private FloatingAssistantWindow? _assistant;
+    private MobileRemoteCoordinator? _mobileRemote;
+    private CentralLearningClient? _centralLearning;
 
     protected override void OnStartup(StartupEventArgs eventArgs)
     {
@@ -36,12 +38,17 @@ public partial class App : Application
         var monitor = new WindowsChangeMonitor(observer);
         var screenCapture = new WindowsScreenCaptureService();
         _overlay = new HighlightOverlayWindow();
-        var apiClient = new GuideApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
+        var apiOptions = GuideApiClientOptions.FromEnvironment();
+        var apiClient = new GuideApiClient(_httpClient, apiOptions);
         var correctionSelection = new DeveloperRegionSelectionService();
         var trainingDirectory = JsonlDeveloperCorrectionStore.ResolveDefaultDataDirectory();
         PackagedTrainingSeeder.Seed(trainingDirectory);
         DesktopDiagnostics.WriteEvent("training_store_ready", ("path", trainingDirectory));
-        var correctionStore = new JsonlDeveloperCorrectionStore(trainingDirectory);
+        var localCorrectionStore = new JsonlDeveloperCorrectionStore(trainingDirectory);
+        _centralLearning = new CentralLearningClient(_httpClient, apiOptions, trainingDirectory);
+        _centralLearning.Start(localCorrectionStore);
+        IDeveloperCorrectionStore correctionStore = new SynchronizedDeveloperCorrectionStore(localCorrectionStore, _centralLearning);
+        _mobileRemote = new MobileRemoteCoordinator(_httpClient, apiOptions, Dispatcher);
         var viewModel = new GuidanceViewModel(
             observer,
             monitor,
@@ -50,7 +57,9 @@ public partial class App : Application
             _overlay,
             correctionSelection,
             correctionStore,
-            Shutdown);
+            Shutdown,
+            _mobileRemote);
+        _mobileRemote.Attach(viewModel);
         _panel = new GuidancePanelWindow { DataContext = viewModel };
         _panel.Deactivated += (_, _) => _panel.Dispatcher.BeginInvoke(
             observer.RememberCurrentForegroundWindow,
@@ -83,6 +92,8 @@ public partial class App : Application
     {
         _panel?.CloseForShutdown();
         _overlay?.Close();
+        _mobileRemote?.Dispose();
+        _centralLearning?.Dispose();
         _httpClient?.Dispose();
         if (_ownsSingleInstanceMutex)
         {

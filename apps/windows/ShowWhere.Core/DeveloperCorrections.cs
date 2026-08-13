@@ -425,6 +425,64 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
     public string DataDirectory { get; }
 
+    public Task<bool> ImportCentralRecordAsync(
+        string kind,
+        JsonElement payload,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            switch (kind)
+            {
+                case "feedback":
+                {
+                    var record = payload.Deserialize<AnswerFeedbackRecord>(JsonOptions);
+                    if (record is null || _feedback.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_feedbackPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _feedback.Add(record);
+                    break;
+                }
+                case "correction":
+                {
+                    var record = payload.Deserialize<DeveloperCorrectionRecord>(JsonOptions);
+                    if (record is null || _records.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    record = record with { ScreenshotPath = null };
+                    File.AppendAllText(_recordsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _records.Add(record);
+                    break;
+                }
+                case "completion":
+                {
+                    var record = payload.Deserialize<DeveloperCompletionRecord>(JsonOptions);
+                    if (record is null || _completions.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_completionsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _completions.Add(record);
+                    break;
+                }
+                case "status":
+                {
+                    var record = payload.Deserialize<DeveloperLearningStatusRecord>(JsonOptions);
+                    if (record is null || _statusChanges.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _statusChanges.Add(record);
+                    break;
+                }
+                case "edit":
+                {
+                    var record = payload.Deserialize<DeveloperLearningEditRecord>(JsonOptions);
+                    if (record is null || _edits.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_editsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _edits.Add(record);
+                    break;
+                }
+                default:
+                    return Task.FromResult(false);
+            }
+        }
+        return Task.FromResult(true);
+    }
+
     public string ResolveIntent(string originalGoal)
     {
         if (string.IsNullOrWhiteSpace(originalGoal)) return originalGoal.Trim();

@@ -74,6 +74,31 @@ public sealed class GuidanceViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Mobile_message_uses_the_same_observation_and_guide_pipeline_as_desktop_input()
+    {
+        var api = new CountingGuideApiClient(new GuideDecision(
+            GuideStatuses.NeedsClarification,
+            GuideActions.AskUser,
+            "어느 프린터를 확인할까요?",
+            0.75));
+        var viewModel = new GuidanceViewModel(
+            new FixedObserver(CreateObservation("remote-screen")),
+            new NoChangeMonitor(),
+            new CountingScreenCapture(),
+            api,
+            new RecordingOverlay(),
+            new NoSelectionService(),
+            new JsonlDeveloperCorrectionStore(_directory),
+            () => { });
+
+        await viewModel.SubmitRemoteAsync("프린터 설정 어디야?");
+
+        Assert.Equal(1, api.CallCount);
+        Assert.Contains(viewModel.Messages, item => item.Role == "user" && item.Text == "프린터 설정 어디야?");
+        Assert.Equal("어느 프린터를 확인할까요?", viewModel.Messages[^1].Text);
+    }
+
+    [Fact]
     public async Task Developer_visual_correction_is_saved_and_highlighted_immediately()
     {
         var observation = CreateObservation("correction-screen");

@@ -45,6 +45,11 @@ const environmentSchema = z.object({
   SHOWWHERE_RATE_LIMIT_WINDOW_MS: integerFromEnvironment(1_000, 3_600_000).default(60_000),
   SHOWWHERE_RATE_LIMIT_MAX_REQUESTS: integerFromEnvironment(1, 1_000).default(20),
   SHOWWHERE_TRUST_PROXY: booleanFromEnvironment.default(false),
+  SHOWWHERE_CENTRAL_DATA_DIR: z.string().trim().min(1).default('data/central'),
+  SHOWWHERE_DEVELOPER_TOKEN: optionalSecretFromEnvironment(24),
+  SHOWWHERE_ADMIN_TOKEN: optionalSecretFromEnvironment(24),
+  SHOWWHERE_PUBLIC_BASE_URL: z.string().url().optional(),
+  SHOWWHERE_PAIRING_TTL_SECONDS: integerFromEnvironment(30, 300).default(60),
 });
 
 export interface ApiConfig {
@@ -55,10 +60,15 @@ export interface ApiConfig {
   debug: boolean;
   security: {
     clientToken?: string;
+    developerToken?: string;
+    adminToken?: string;
     rateLimitWindowMs: number;
     rateLimitMaxRequests: number;
     trustProxy: boolean;
   };
+  centralDataDirectory: string;
+  publicBaseUrl?: string;
+  pairingTtlSeconds: number;
   openai: {
     apiKey: string;
     fastModel: string;
@@ -88,10 +98,15 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
     debug: parsed.SHOWWHERE_DEBUG,
     security: {
       clientToken: parsed.SHOWWHERE_CLIENT_TOKEN,
+      developerToken: parsed.SHOWWHERE_DEVELOPER_TOKEN,
+      adminToken: parsed.SHOWWHERE_ADMIN_TOKEN,
       rateLimitWindowMs: parsed.SHOWWHERE_RATE_LIMIT_WINDOW_MS,
       rateLimitMaxRequests: parsed.SHOWWHERE_RATE_LIMIT_MAX_REQUESTS,
       trustProxy: parsed.SHOWWHERE_TRUST_PROXY,
     },
+    centralDataDirectory: parsed.SHOWWHERE_CENTRAL_DATA_DIR,
+    publicBaseUrl: parsed.SHOWWHERE_PUBLIC_BASE_URL?.replace(/\/$/u, ''),
+    pairingTtlSeconds: parsed.SHOWWHERE_PAIRING_TTL_SECONDS,
     openai: {
       apiKey: parsed.OPENAI_API_KEY,
       fastModel: parsed.OPENAI_FAST_MODEL,
