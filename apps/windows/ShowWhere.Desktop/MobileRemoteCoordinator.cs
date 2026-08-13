@@ -89,8 +89,8 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
         if (_disposed) return;
         if (IsConnected)
         {
-            PairingStatus = "이미 휴대폰과 연결되어 있어요.";
-            return;
+            await DisconnectAsync();
+            if (_disposed) return;
         }
         if (_window is null)
         {

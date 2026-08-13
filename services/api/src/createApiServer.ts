@@ -124,6 +124,19 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
       sendHtml(response, mobilePage);
       return;
     }
+    if (request.method === 'GET' && url.pathname === '/mobile/manifest.webmanifest') {
+      response.writeHead(200, {
+        'Content-Type': 'application/manifest+json; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      response.end(JSON.stringify({
+        name: 'ShowWhere', short_name: 'ShowWhere', start_url: '/mobile/', scope: '/mobile/',
+        display: 'standalone', background_color: '#f6f3f3', theme_color: '#472323',
+        icons: [{ src: '/mobile/gorilla.png', sizes: 'any', type: 'image/png', purpose: 'any maskable' }],
+      }));
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/mobile/gorilla.png') {
       try {
         const image = await readFile(resolve('apps/windows/ShowWhere.Desktop/Assets/Assistant/monkey-sit.png'));

@@ -49,7 +49,7 @@ const environmentSchema = z.object({
   SHOWWHERE_DEVELOPER_TOKEN: optionalSecretFromEnvironment(24),
   SHOWWHERE_ADMIN_TOKEN: optionalSecretFromEnvironment(24),
   SHOWWHERE_PUBLIC_BASE_URL: z.string().url().optional(),
-  SHOWWHERE_PAIRING_TTL_SECONDS: integerFromEnvironment(30, 300).default(60),
+  SHOWWHERE_PAIRING_TTL_SECONDS: integerFromEnvironment(10, 300).default(20),
 });
 
 export interface ApiConfig {
