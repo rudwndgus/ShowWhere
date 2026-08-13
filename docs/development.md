@@ -9,7 +9,7 @@ OPENAI_MODEL=gpt-5.6-terra
 OPENAI_STRONG_MODEL=gpt-5.6-sol
 ```
 
-Run `npm test`, `npm run typecheck`, and `npm run test:windows` before pushing. Start the app and API together with `scripts/start-showwhere.ps1`.
+Run `npm test`, `npm run typecheck`, and `npm run test:windows` before pushing. The Windows npm scripts automatically prefer an SDK under `DOTNET_ROOT` or `%LOCALAPPDATA%\ShowWhereDotnet` when the system `dotnet` command exposes only a runtime. Start the app and API together with `scripts/start-showwhere.ps1`; it waits for the API health check before opening the desktop app.
 
 Web crawler validation:
 

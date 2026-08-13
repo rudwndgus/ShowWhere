@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace ShowWhere.Core;
 
@@ -112,6 +113,49 @@ public sealed record RefinedDeveloperComment(
     string Normalized,
     IReadOnlyList<string> IssueTags);
 
+public static partial class DeveloperLearningPrivacy
+{
+    public static string? Redact(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        var result = EmailPattern().Replace(value, "[email]");
+        result = OrderIdPattern().Replace(result, "[order-id]");
+        result = PaymentPattern().Replace(result, "[payment]");
+        result = PhonePattern().Replace(result, "[phone]");
+        return result;
+    }
+
+    public static ApplicationContext Redact(ApplicationContext context) => context with
+    {
+        WindowTitle = Redact(context.WindowTitle),
+        Url = RedactUrl(context.Url),
+    };
+
+    private static string? RedactUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) return Redact(value);
+        try
+        {
+            var builder = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty, Query = string.Empty, Fragment = string.Empty };
+            return builder.Uri.ToString();
+        }
+        catch (UriFormatException) { return Redact(value); }
+    }
+
+    [GeneratedRegex(@"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex EmailPattern();
+
+    [GeneratedRegex(@"\b\d{3}-\d{7}-\d{7}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex OrderIdPattern();
+
+    [GeneratedRegex(@"\b(?:ending\s+in|last\s+four|끝자리)\s*\d{4}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PaymentPattern();
+
+    [GeneratedRegex(@"(?:\+?\d[\s().-]*){9,}", RegexOptions.CultureInvariant)]
+    private static partial Regex PhonePattern();
+}
+
 public static class DeveloperCompletionEvidence
 {
     private static readonly HashSet<string> GenericValues = new(StringComparer.OrdinalIgnoreCase)
@@ -151,7 +195,7 @@ public static class DeveloperCompletionEvidence
 
     private static void Add(List<string> values, string? value, bool allowGeneric = false)
     {
-        var trimmed = value?.Trim();
+        var trimmed = DeveloperLearningPrivacy.Redact(value)?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed) || trimmed.Length < 2) return;
         if (!allowGeneric && !IsStrong(trimmed)) return;
         values.Add(trimmed);
@@ -463,10 +507,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(record => IsFeedbackActive(record.FeedbackId))
                 .Where(record => string.Equals(GetEffectiveRating(record.FeedbackId, "completed"), "completed", StringComparison.OrdinalIgnoreCase))
                 .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, null))
-                .Where(record => string.Equals(
-                    record.Context.ApplicationName,
-                    context.ApplicationName,
-                    StringComparison.OrdinalIgnoreCase))
+                .Where(record => CompletionContextMatches(record.Context, context))
                 .Where(record => record.LearningLabels.ExpectedEvidence.Any(evidence =>
                     DeveloperCompletionEvidence.IsPresent(evidence, context, candidates)))
                 .OrderByDescending(record => record.CreatedAtUtc)
@@ -483,7 +524,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(DataDirectory);
-        var saved = correction;
+        var saved = Sanitize(correction);
         if (!string.IsNullOrWhiteSpace(screenshotDataUrl))
         {
             var separator = screenshotDataUrl.IndexOf(',');
@@ -516,13 +557,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(DataDirectory);
-        var line = JsonSerializer.Serialize(feedback, JsonOptions) + Environment.NewLine;
+        var saved = Sanitize(feedback);
+        var line = JsonSerializer.Serialize(saved, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
             File.AppendAllText(_feedbackPath, line);
-            _feedback.Add(feedback);
+            _feedback.Add(saved);
         }
-        return Task.FromResult(feedback);
+        return Task.FromResult(saved);
     }
 
     public IReadOnlyList<UiCandidate> FilterRejectedCandidates(
@@ -588,7 +630,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 throw new InvalidOperationException("학습 기록을 찾을 수 없습니다.");
             var record = new DeveloperLearningStatusRecord(
                 1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
-                feedbackId, active, string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());
+                feedbackId, active, string.IsNullOrWhiteSpace(reason) ? null : DeveloperLearningPrivacy.Redact(reason.Trim()));
             File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
             _statusChanges.Add(record);
         }
@@ -611,10 +653,10 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             Id = string.IsNullOrWhiteSpace(edit.Id) ? Guid.NewGuid().ToString("D") : edit.Id,
             CreatedAtUtc = edit.CreatedAtUtc == default ? DateTimeOffset.UtcNow : edit.CreatedAtUtc,
             Rating = edit.Rating.Trim().ToLowerInvariant(),
-            Goal = edit.Goal.Trim(),
-            Answer = edit.Answer.Trim(),
-            TargetLabel = string.IsNullOrWhiteSpace(edit.TargetLabel) ? null : edit.TargetLabel.Trim(),
-            Comment = string.IsNullOrWhiteSpace(edit.Comment) ? null : edit.Comment.Trim(),
+            Goal = DeveloperLearningPrivacy.Redact(edit.Goal.Trim())!,
+            Answer = DeveloperLearningPrivacy.Redact(edit.Answer.Trim())!,
+            TargetLabel = string.IsNullOrWhiteSpace(edit.TargetLabel) ? null : DeveloperLearningPrivacy.Redact(edit.TargetLabel.Trim()),
+            Comment = string.IsNullOrWhiteSpace(edit.Comment) ? null : DeveloperLearningPrivacy.Redact(edit.Comment.Trim()),
         };
         lock (_gate)
         {
@@ -677,14 +719,60 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(DataDirectory);
-        var line = JsonSerializer.Serialize(completion, JsonOptions) + Environment.NewLine;
+        var saved = Sanitize(completion);
+        var line = JsonSerializer.Serialize(saved, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
             File.AppendAllText(_completionsPath, line);
-            _completions.Add(completion);
+            _completions.Add(saved);
         }
-        return Task.FromResult(completion);
+        return Task.FromResult(saved);
     }
+
+    private static DeveloperCorrectionRecord Sanitize(DeveloperCorrectionRecord value) => value with
+    {
+        OriginalGoal = DeveloperLearningPrivacy.Redact(value.OriginalGoal)!,
+        EffectiveGoal = DeveloperLearningPrivacy.Redact(value.EffectiveGoal)!,
+        CorrectedIntent = DeveloperLearningPrivacy.Redact(value.CorrectedIntent),
+        Context = DeveloperLearningPrivacy.Redact(value.Context),
+        PreviousTargetLabel = DeveloperLearningPrivacy.Redact(value.PreviousTargetLabel),
+        CorrectTarget = value.CorrectTarget is null ? null : value.CorrectTarget with
+        {
+            Label = DeveloperLearningPrivacy.Redact(value.CorrectTarget.Label),
+            Description = DeveloperLearningPrivacy.Redact(value.CorrectTarget.Description),
+            AutomationId = DeveloperLearningPrivacy.Redact(value.CorrectTarget.AutomationId),
+            ContainerLabel = DeveloperLearningPrivacy.Redact(value.CorrectTarget.ContainerLabel),
+        },
+        DeveloperComment = DeveloperLearningPrivacy.Redact(value.DeveloperComment),
+        RefinedComment = DeveloperLearningPrivacy.Redact(value.RefinedComment),
+        LearningLabels = value.LearningLabels is null ? null : Sanitize(value.LearningLabels),
+    };
+
+    private static AnswerFeedbackRecord Sanitize(AnswerFeedbackRecord value) => value with
+    {
+        AnswerText = DeveloperLearningPrivacy.Redact(value.AnswerText)!,
+        OriginalGoal = DeveloperLearningPrivacy.Redact(value.OriginalGoal),
+        EffectiveGoal = DeveloperLearningPrivacy.Redact(value.EffectiveGoal),
+        Context = value.Context is null ? null : DeveloperLearningPrivacy.Redact(value.Context),
+        TargetLabel = DeveloperLearningPrivacy.Redact(value.TargetLabel),
+    };
+
+    private static DeveloperCompletionRecord Sanitize(DeveloperCompletionRecord value) => value with
+    {
+        OriginalGoal = DeveloperLearningPrivacy.Redact(value.OriginalGoal)!,
+        EffectiveGoal = DeveloperLearningPrivacy.Redact(value.EffectiveGoal)!,
+        Context = DeveloperLearningPrivacy.Redact(value.Context),
+        VisibleEvidence = value.VisibleEvidence.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
+        LearningLabels = Sanitize(value.LearningLabels),
+        DeveloperComment = DeveloperLearningPrivacy.Redact(value.DeveloperComment),
+    };
+
+    private static DeveloperLearningLabels Sanitize(DeveloperLearningLabels value) => value with
+    {
+        TargetConcept = DeveloperLearningPrivacy.Redact(value.TargetConcept)!,
+        ExpectedNextState = DeveloperLearningPrivacy.Redact(value.ExpectedNextState)!,
+        ExpectedEvidence = value.ExpectedEvidence.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
+    };
 
     private static List<DeveloperCorrectionRecord> LoadRecords(string path)
     {
@@ -771,7 +859,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return records;
     }
 
-    private static string ResolveDefaultDataDirectory()
+    public static string ResolveDefaultDataDirectory()
     {
         var configured = Environment.GetEnvironmentVariable("SHOWWHERE_TRAINING_DIR");
         if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured.Trim());
@@ -845,6 +933,38 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return learnedTokens.Count == 0 || currentTokens.Count == 0
             || learnedTokens.Overlaps(currentTokens);
     }
+
+    private static bool CompletionContextMatches(
+        ApplicationContext learnedContext,
+        ApplicationContext currentContext)
+    {
+        if (!string.Equals(
+                learnedContext.ApplicationName,
+                currentContext.ApplicationName,
+                StringComparison.OrdinalIgnoreCase)) return false;
+
+        if (!IsBrowserApplication(currentContext.ApplicationName)) return true;
+
+        // A browser window title or a site-wide navigation label is not proof that
+        // a web task is complete. Browser completion replay is allowed only when
+        // both observations identify the same concrete URL path. This prevents a
+        // home page accidentally marked "complete" from stopping every later run.
+        if (!Uri.TryCreate(learnedContext.Url, UriKind.Absolute, out var learnedUrl)
+            || !Uri.TryCreate(currentContext.Url, UriKind.Absolute, out var currentUrl)) return false;
+        return string.Equals(learnedUrl.Host, currentUrl.Host, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                learnedUrl.AbsolutePath.TrimEnd('/'),
+                currentUrl.AbsolutePath.TrimEnd('/'),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsBrowserApplication(string applicationName) =>
+        applicationName.Contains("chrome", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("msedge", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Equals("edge", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("firefox", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("brave", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("opera", StringComparison.OrdinalIgnoreCase);
 
     private static HashSet<string> SiteTokens(string value) => value
         .ToLowerInvariant()

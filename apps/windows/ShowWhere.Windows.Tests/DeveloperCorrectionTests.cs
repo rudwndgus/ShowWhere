@@ -287,7 +287,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
     public async Task Developer_completed_state_is_persisted_and_reused_for_the_same_intent()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
-        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
         var labels = DeveloperLabeling.CreateCorrectionLabels(
             "크롬에서 유튜브 뮤직 틀어줘", context, "open:youtube_music",
             "task.open.youtube_music", null, "completed.youtube_music", "YouTube Music", "task_completed");
@@ -312,7 +312,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
     public async Task Revoked_completion_is_not_reused_after_restart_and_can_be_restored()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
-        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
         var feedback = Feedback("completed", "완료") with
         {
             OriginalGoal = "유튜브 뮤직 열어줘",
@@ -394,7 +394,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
     public async Task Changing_log_rating_from_completed_stops_completion_replay()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
-        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
         var feedback = Feedback("completed", "완료") with
         {
             OriginalGoal = "유튜브 뮤직 열어줘",
@@ -451,6 +451,77 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.DoesNotContain("설정", evidence);
         Assert.DoesNotContain("닫기", evidence);
         Assert.Contains("프린터 및 스캐너", evidence);
+    }
+
+    [Fact]
+    public async Task Browser_homepage_completion_without_a_url_is_never_replayed()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com. Spend less. Smile more. - Chrome");
+        var goal = "Where do I sign in on Amazon?";
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            goal, context, "amazon login", null, null,
+            "completed.amazon", "Amazon.com", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            goal, goal, context, "homepage-snapshot", ["Amazon.com"], labels));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.False(reloaded.TryResolveCompletion(
+            goal, context,
+            [Candidate("signin", "Hello, sign in Account & Lists", "nav-link", "browser_content")],
+            out _));
+    }
+
+    [Fact]
+    public async Task Browser_completion_requires_the_same_concrete_url_path()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var goal = "Where do I sign in on Amazon?";
+        var learnedContext = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon Sign-In - Chrome", "https://www.amazon.com/ap/signin");
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            goal, learnedContext, "amazon login", null, null,
+            "completed.amazon.signin", "Email or mobile phone number", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            goal, goal, learnedContext, "signin-snapshot",
+            ["Email or mobile phone number"], labels));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        var evidence = new[] {
+            Candidate("email", "Email or mobile phone number", "email", "browser_content"),
+        };
+        Assert.True(reloaded.TryResolveCompletion(goal, learnedContext, evidence, out _));
+        Assert.False(reloaded.TryResolveCompletion(
+            goal,
+            learnedContext with { Url = "https://www.amazon.com/" },
+            evidence,
+            out _));
+    }
+
+    [Fact]
+    public async Task Stored_learning_data_redacts_personal_identifiers_and_url_parameters()
+    {
+        var evidence = DeveloperCompletionEvidence.Build(
+            new ApplicationContext(Platforms.Windows, "chrome", "Account for person@example.com"),
+            [Candidate("account", "person@example.com", "account", "browser_content")]);
+        Assert.DoesNotContain(evidence, item => item.Contains("person@example.com", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(evidence, item => item.Contains("[email]", StringComparison.Ordinal));
+
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var saved = await store.SaveFeedbackAsync(new AnswerFeedbackRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            "correct", "answer", "Use person@example.com", "Open person@example.com", "Open person@example.com",
+            new ApplicationContext(Platforms.Windows, "chrome", "person@example.com",
+                "https://example.com/account?token=private#details"),
+            "snapshot", GuideActions.Highlight, "account", "person@example.com",
+            new UiBounds(0, 0, 10, 10)));
+
+        Assert.DoesNotContain("person@example.com", saved.AnswerText + saved.OriginalGoal + saved.TargetLabel);
+        Assert.Equal("[email]", saved.TargetLabel);
+        Assert.Equal("https://example.com/account", saved.Context?.Url?.TrimEnd('/'));
     }
 
     [Fact]

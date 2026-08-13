@@ -1,28 +1,11 @@
-# Fresh GPT feedback data
+# ShowWhere Learning
 
-This directory intentionally starts empty on the `ShowWhere2.0` branch.
-The Windows developer-mode O/X/completion controls create new JSONL records here at runtime.
-No legacy provider, synthetic, or previous gold records are retained.
+ShowWhere가 더 정확한 길잡이로 성장하려면, AI가 만든 답보다 사람이 직접 확인하고 바로잡은 경험이 중요합니다.
 
-Runtime order is exact replay, conservative semantic-intent replay, optional Hugging Face candidate ranking, then GPT fallback.
+이 공간은 사용자의 질문, 그 순간의 화면 단계, 개발자가 검증한 올바른 다음 행동을 축적하는 학습 공간입니다. 좌표를 외우는 대신 사용자의 의도와 화면의 의미를 배우고, 목표에 도달했을 때 멈춰야 한다는 판단까지 발전시키는 것이 목적입니다.
 
-- `corrections.jsonl`: human-corrected and O-approved target signatures used by runtime memory.
-- `answer-feedback.jsonl`: every developer O/X evaluation.
-- `completions.jsonl`: developer-verified task completion states used to stop repeated guidance.
-- `learning-status.jsonl`: append-only revoke/restore events created from the developer history UI.
-- `learning-edits.jsonl`: append-only edits to question, answer, O/X/end rating, target label, and developer comment made in `LOG`.
+ShowWhere는 검증되지 않은 추측을 정답으로 취급하지 않습니다. 개발자가 승인하거나 수정한 기록만 신뢰할 수 있는 학습 경험으로 사용하며, 잘못된 기록은 다시 검토하고 제외할 수 있어야 합니다.
 
-These JSONL records stay repository-local so approved learning can be synchronized between development computers. Screenshots remain ignored because they can contain private information. API keys, tokens, cookies, passwords, raw screenshots, and private chain-of-thought must never be written here.
+개인정보와 비밀정보는 학습보다 중요합니다. 비밀번호, API 키, 인증 토큰, 쿠키와 개인 화면 이미지는 이 공간에 남기지 않습니다.
 
-An O record is replayed only when its semantic action/target intent is compatible and its target signature can be resolved again from the current live UI. X records are negative feedback and never become positive runtime memory automatically.
-
-Runtime guarantees:
-
-- O immediately creates a `human_gold` correction and is available in the current process and after restart.
-- Similar wording can reuse O when action and target concepts remain compatible; different actions remain separate.
-- X is reloaded as negative memory and removes the same rejected target ID for the same intent/application.
-- A newer O for that target supersedes the older X.
-- Saved correction comments retain raw text, normalized text, issue tags, semantic target signature, and learning labels.
-- End creates a verified completion record. Completion replay requires specific live evidence; generic titles such as `Settings` are insufficient.
-- The developer-mode `LOG` panel lists O/X/end/comment records. Each field can be corrected and saved, or the whole record can be revoked/restored. Original records are never overwritten; the latest edit/status event becomes the effective runtime value.
-- Coordinates are observations only. Every replay resolves the semantic target against the current live UI.
+우리가 쌓는 것은 버튼 좌표가 아니라, **사람이 원하는 일을 이해하고 끝까지 안전하게 안내하는 경험**입니다.

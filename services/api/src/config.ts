@@ -10,6 +10,11 @@ const booleanFromEnvironment = z.preprocess(
   z.boolean(),
 );
 
+const optionalSecretFromEnvironment = (minimum: number) => z.preprocess(
+  (value) => value === undefined || String(value).trim() === '' ? undefined : value,
+  z.string().trim().min(minimum).optional(),
+);
+
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),
   OPENAI_FAST_MODEL: z.string().trim().min(1).default('gpt-5.6-luna'),
@@ -18,7 +23,7 @@ const environmentSchema = z.object({
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),
   OPENAI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
-  HF_TOKEN: z.string().trim().min(1).optional(),
+  HF_TOKEN: optionalSecretFromEnvironment(1),
   HF_EMBEDDING_MODEL: z.string().trim().min(1).default('intfloat/multilingual-e5-large'),
   HF_BASE_URL: z.string().url().default('https://router.huggingface.co/hf-inference/models'),
   HF_REQUEST_TIMEOUT_MS: integerFromEnvironment(500, 30_000).default(4_000),
@@ -32,9 +37,14 @@ const environmentSchema = z.object({
   ).default(0.08),
   SHOWWHERE_API_HOST: z.string().trim().min(1).default('127.0.0.1'),
   SHOWWHERE_API_PORT: integerFromEnvironment(1, 65_535).default(8787),
+  PORT: integerFromEnvironment(1, 65_535).optional(),
   SHOWWHERE_MAX_REQUEST_BYTES: integerFromEnvironment(1_024, 20_000_000).default(12_000_000),
   SHOWWHERE_WEB_KNOWLEDGE_DIR: z.string().trim().min(1).default('knowledge/web'),
   SHOWWHERE_DEBUG: booleanFromEnvironment.default(false),
+  SHOWWHERE_CLIENT_TOKEN: optionalSecretFromEnvironment(24),
+  SHOWWHERE_RATE_LIMIT_WINDOW_MS: integerFromEnvironment(1_000, 3_600_000).default(60_000),
+  SHOWWHERE_RATE_LIMIT_MAX_REQUESTS: integerFromEnvironment(1, 1_000).default(20),
+  SHOWWHERE_TRUST_PROXY: booleanFromEnvironment.default(false),
 });
 
 export interface ApiConfig {
@@ -43,6 +53,12 @@ export interface ApiConfig {
   maxRequestBytes: number;
   webKnowledgeDirectory: string;
   debug: boolean;
+  security: {
+    clientToken?: string;
+    rateLimitWindowMs: number;
+    rateLimitMaxRequests: number;
+    trustProxy: boolean;
+  };
   openai: {
     apiKey: string;
     fastModel: string;
@@ -65,11 +81,17 @@ export interface ApiConfig {
 export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
   const parsed = environmentSchema.parse(environment);
   return {
-    host: parsed.SHOWWHERE_API_HOST,
-    port: parsed.SHOWWHERE_API_PORT,
+    host: parsed.PORT === undefined ? parsed.SHOWWHERE_API_HOST : '0.0.0.0',
+    port: parsed.PORT ?? parsed.SHOWWHERE_API_PORT,
     maxRequestBytes: parsed.SHOWWHERE_MAX_REQUEST_BYTES,
     webKnowledgeDirectory: parsed.SHOWWHERE_WEB_KNOWLEDGE_DIR,
     debug: parsed.SHOWWHERE_DEBUG,
+    security: {
+      clientToken: parsed.SHOWWHERE_CLIENT_TOKEN,
+      rateLimitWindowMs: parsed.SHOWWHERE_RATE_LIMIT_WINDOW_MS,
+      rateLimitMaxRequests: parsed.SHOWWHERE_RATE_LIMIT_MAX_REQUESTS,
+      trustProxy: parsed.SHOWWHERE_TRUST_PROXY,
+    },
     openai: {
       apiKey: parsed.OPENAI_API_KEY,
       fastModel: parsed.OPENAI_FAST_MODEL,

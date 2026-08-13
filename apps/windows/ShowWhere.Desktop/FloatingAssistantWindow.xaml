@@ -7,6 +7,7 @@
         ShowInTaskbar="False" ShowActivated="False" Focusable="False"
         MouseLeftButtonDown="OnMouseLeftButtonDown"
         MouseLeftButtonUp="OnMouseLeftButtonUp"
+        MouseRightButtonUp="OnMouseRightButtonUp"
         MouseMove="OnMouseMove">
   <Grid ToolTip="ShowWhere — 하고 싶은 일을 말해보세요">
     <local:AssistantGlyph />

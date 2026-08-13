@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { AiProvider } from '../../../src/guide-api/AiProvider';
 import { GUIDE_API_PATH, handleGuideApiRequest } from '../../../src/guide-api/handleGuideApiRequest';
 import type { ApiConfig } from './config';
@@ -22,16 +23,81 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   });
   response.end(JSON.stringify(body));
 }
 
+function tokenMatches(request: IncomingMessage, expected: string | undefined): boolean {
+  if (!expected) return true;
+  const authorization = request.headers.authorization;
+  const supplied = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  const expectedHash = createHash('sha256').update(expected).digest();
+  const suppliedHash = createHash('sha256').update(supplied).digest();
+  return timingSafeEqual(expectedHash, suppliedHash);
+}
+
+function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
+  if (trustProxy) {
+    const forwarded = request.headers['x-forwarded-for'];
+    const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return request.socket.remoteAddress ?? 'unknown';
+}
+
+class FixedWindowRateLimiter {
+  private readonly buckets = new Map<string, { startedAt: number; requests: number }>();
+
+  constructor(private readonly windowMs: number, private readonly maximum: number) {}
+
+  allow(key: string, now = Date.now()): boolean {
+    const bucket = this.buckets.get(key);
+    if (!bucket || now - bucket.startedAt >= this.windowMs) {
+      this.buckets.set(key, { startedAt: now, requests: 1 });
+      if (this.buckets.size > 10_000) this.prune(now);
+      return true;
+    }
+    if (bucket.requests >= this.maximum) return false;
+    bucket.requests += 1;
+    return true;
+  }
+
+  private prune(now: number): void {
+    for (const [key, bucket] of this.buckets)
+      if (now - bucket.startedAt >= this.windowMs) this.buckets.delete(key);
+  }
+}
+
 export function createApiServer(config: ApiConfig, provider: AiProvider) {
+  const limiter = new FixedWindowRateLimiter(
+    config.security.rateLimitWindowMs,
+    config.security.rateLimitMaxRequests,
+  );
   return createServer(async (request, response) => {
     const requestStartedAt = performance.now();
     const url = new URL(request.url ?? '/', 'http://localhost');
+    if (request.method === 'GET' && url.pathname === '/health') {
+      sendJson(response, 200, { status: 'ok' });
+      return;
+    }
     if (request.method !== 'POST' || url.pathname !== GUIDE_API_PATH) {
       sendJson(response, 404, { message: '안내 경로를 찾을 수 없어요.' });
+      return;
+    }
+    if (!tokenMatches(request, config.security.clientToken)) {
+      sendJson(response, 401, {
+        status: 'blocked', action: 'explain', message: 'ShowWhere 서버 인증에 실패했어요. 최신 배포본을 사용해 주세요.', confidence: 1,
+      });
+      return;
+    }
+    if (!limiter.allow(clientAddress(request, config.security.trustProxy))) {
+      response.setHeader('Retry-After', String(Math.ceil(config.security.rateLimitWindowMs / 1_000)));
+      sendJson(response, 429, {
+        status: 'blocked', action: 'explain', message: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', confidence: 1,
+      });
       return;
     }
 

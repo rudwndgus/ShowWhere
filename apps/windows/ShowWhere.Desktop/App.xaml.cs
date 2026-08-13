@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using ShowWhere.ApiClient;
@@ -10,6 +11,9 @@ namespace ShowWhere.Desktop;
 
 public partial class App : Application
 {
+    private const string SingleInstanceMutexName = "Local\\ShowWhere.Desktop.SingleInstance.v1";
+    private Mutex? _singleInstanceMutex;
+    private bool _ownsSingleInstanceMutex;
     private HttpClient? _httpClient;
     private HighlightOverlayWindow? _overlay;
     private GuidancePanelWindow? _panel;
@@ -17,6 +21,15 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs eventArgs)
     {
+        _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out var createdNew);
+        if (!createdNew)
+        {
+            _singleInstanceMutex.Dispose();
+            _singleInstanceMutex = null;
+            Shutdown();
+            return;
+        }
+        _ownsSingleInstanceMutex = true;
         base.OnStartup(eventArgs);
         _httpClient = new HttpClient();
         var observer = new WindowsUiObserver();
@@ -25,7 +38,9 @@ public partial class App : Application
         _overlay = new HighlightOverlayWindow();
         var apiClient = new GuideApiClient(_httpClient, GuideApiClientOptions.FromEnvironment());
         var correctionSelection = new DeveloperRegionSelectionService();
-        var correctionStore = new JsonlDeveloperCorrectionStore();
+        var trainingDirectory = JsonlDeveloperCorrectionStore.ResolveDefaultDataDirectory();
+        PackagedTrainingSeeder.Seed(trainingDirectory);
+        var correctionStore = new JsonlDeveloperCorrectionStore(trainingDirectory);
         var viewModel = new GuidanceViewModel(
             observer,
             monitor,
@@ -68,6 +83,12 @@ public partial class App : Application
         _panel?.CloseForShutdown();
         _overlay?.Close();
         _httpClient?.Dispose();
+        if (_ownsSingleInstanceMutex)
+        {
+            _singleInstanceMutex?.ReleaseMutex();
+            _ownsSingleInstanceMutex = false;
+        }
+        _singleInstanceMutex?.Dispose();
         base.OnExit(eventArgs);
     }
 }

@@ -382,6 +382,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         out _);
                 if (storedCompletion)
                 {
+                    DesktopDiagnostics.WriteEvent(
+                        "stored_completion_replay_hit",
+                        ("goal", _session.OriginalUserMessage),
+                        ("application", currentObservation.Context.ApplicationName),
+                        ("url", currentObservation.Context.Url));
                     const string completionMessage = "완료됐어요. 개발자가 검증한 최종 상태에 도착했습니다.";
                     var completionDecision = new GuideDecision(
                         GuideStatuses.Completed,
@@ -464,6 +469,12 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 }
                 _lastObservation = currentObservation;
                 _lastDecision = decision;
+                DesktopDiagnostics.WriteEvent(
+                    "guide_decision",
+                    ("status", decision.Status),
+                    ("action", decision.Action),
+                    ("targetId", decision.TargetId),
+                    ("confidence", decision.Confidence));
                 pendingMessage.Text = decision.Message;
                 AttachTrainingContext(pendingMessage, decision);
                 pendingMessage.IsPending = false;

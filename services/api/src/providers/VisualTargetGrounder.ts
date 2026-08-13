@@ -57,6 +57,8 @@ function proximity(left: Bounds, right: Bounds, screenshot: Bounds): number {
 interface RankedCandidate {
   candidate: UiCandidate;
   text: number;
+  coverage: number;
+  areaRatio: number;
   geometry: number;
   score: number;
 }
@@ -73,10 +75,14 @@ export function matchVisualTargetToCandidate(request: GuideRequest, target: Visu
       const text = textSimilarity(targetLabel, label);
       const coverage = intersectionCoverage(visualBounds, candidate.bounds);
       const near = proximity(visualBounds, candidate.bounds, request.screenshotBounds!);
+      const visualArea = visualBounds.width * visualBounds.height;
+      const candidateArea = candidate.bounds.width * candidate.bounds.height;
       const browserContentBonus = candidate.attributes?.sourceScope === 'browser_content' ? 0.025 : 0;
       return {
         candidate,
         text,
+        coverage,
+        areaRatio: visualArea <= 0 ? Number.POSITIVE_INFINITY : candidateArea / visualArea,
         geometry: Math.max(coverage, near * 0.55),
         score: text * 0.78 + coverage * 0.14 + near * 0.08 + browserContentBonus,
       };
@@ -93,7 +99,12 @@ export function matchVisualTargetToCandidate(request: GuideRequest, target: Visu
   const strongGeometry = best.geometry >= 0.72 && best.text >= 0.45;
   const unambiguous = exactLabel || !second || best.score - second.score >= 0.045
     || best.text - second.text >= 0.12;
-  return (unambiguous && (strongText || strongGeometry)) ? best.candidate : undefined;
+  const comparableVisualBox = best.areaRatio >= 0.2 && best.areaRatio <= 5;
+  const uniqueGeometricHit = best.coverage >= 0.65 && comparableVisualBox
+    && (!second || second.coverage < 0.5 || best.coverage - second.coverage >= 0.2);
+  return ((unambiguous && (strongText || strongGeometry)) || uniqueGeometricHit)
+    ? best.candidate
+    : undefined;
 }
 
 export function groundVisualDecision(request: GuideRequest, decision: GuideDecision): GuideDecision {

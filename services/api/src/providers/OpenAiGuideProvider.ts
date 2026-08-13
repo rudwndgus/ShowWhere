@@ -61,6 +61,7 @@ Rules:
 - Never repeat a control recorded in completedSteps unless the screen proves the previous click did not take effect.
 - First decide whether the user's goal is already complete from visible evidence. If complete: status=completed, action=explain, no target.
 - Understand the destination and scope. A website search belongs inside that website, never in the browser address bar unless the user explicitly asks for web/navigation search.
+- The application named in context is the active work scope. Never point to pixels in another visible app, window, or monitor. Leave the active app only for an explicit taskbar, Start, Search, or app-switching step.
 - Separate the user's FINAL INTENT from controls that merely contain related words. For a generic website login request, choose the site's canonical account/sign-in control (for example Amazon's "Hello, sign in Account & Lists"). Never choose delivery-location, address, shipping, or other contextual "sign in to ..." shortcuts unless the user explicitly asked about that context.
 - For Windows settings tasks, navigation priority is mandatory: (1) the final settings control if visible, (2) a visible/running Settings app or Settings icon, (3) Start, and only then (4) Windows Search. Never choose or instruct typing into Search while a direct Settings control/icon is visible anywhere in the screenshot.
 - When a direct Windows Settings icon/control is clearly visible in pixels but absent from candidates, use highlight_visual around that icon instead of choosing a Search candidate.

@@ -5,7 +5,13 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>ShowWhere</AssemblyName>
     <RootNamespace>ShowWhere.Desktop</RootNamespace>
+    <ShowWhereBackendUrl Condition="'$(ShowWhereBackendUrl)' == ''">http://127.0.0.1:8787/api/guide</ShowWhereBackendUrl>
+    <ShowWhereClientToken Condition="'$(ShowWhereClientToken)' == ''"></ShowWhereClientToken>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="ShowWhereBackendUrl" Value="$(ShowWhereBackendUrl)" />
+    <AssemblyMetadata Include="ShowWhereClientToken" Value="$(ShowWhereClientToken)" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShowWhere.Core\ShowWhere.Core.csproj" />
     <ProjectReference Include="..\ShowWhere.ApiClient\ShowWhere.ApiClient.csproj" />
@@ -14,5 +20,10 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\Assistant\*.png" />
+    <EmbeddedResource Include="..\..\..\training\answer-feedback.jsonl" LogicalName="ShowWhere.Training.answer-feedback.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\completions.jsonl" LogicalName="ShowWhere.Training.completions.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\corrections.jsonl" LogicalName="ShowWhere.Training.corrections.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\learning-edits.jsonl" LogicalName="ShowWhere.Training.learning-edits.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\learning-status.jsonl" LogicalName="ShowWhere.Training.learning-status.jsonl" />
   </ItemGroup>
 </Project>

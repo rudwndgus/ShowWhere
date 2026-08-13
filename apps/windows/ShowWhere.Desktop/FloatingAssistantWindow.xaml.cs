@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 
@@ -8,6 +10,8 @@ namespace ShowWhere.Desktop;
 public partial class FloatingAssistantWindow : Window
 {
     private const int GwlExStyle = -20;
+    private const int WmRButtonUp = 0x0205;
+    private const int WmContextMenu = 0x007B;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
     private const uint MonitorDefaultToNearest = 0x00000002;
@@ -18,6 +22,8 @@ public partial class FloatingAssistantWindow : Window
     private readonly GuidancePanelWindow _panel;
     private readonly AssistantPositionStore _positionStore;
     private readonly Action _rememberForegroundWindow;
+    private HwndSource? _windowSource;
+    private DateTime _lastContextMenuOpenedUtc = DateTime.MinValue;
     private Point? _mouseDownPosition;
     private bool _dragging;
 
@@ -51,6 +57,8 @@ public partial class FloatingAssistantWindow : Window
     {
         base.OnSourceInitialized(eventArgs);
         var handle = new WindowInteropHelper(this).Handle;
+        _windowSource = HwndSource.FromHwnd(handle);
+        _windowSource?.AddHook(WindowMessageHook);
         WindowCaptureProtection.Apply(handle);
         var style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
         _ = SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExToolWindow | WsExNoActivate));
@@ -92,6 +100,56 @@ public partial class FloatingAssistantWindow : Window
         _dragging = false;
         IsStanding = false;
         eventArgs.Handled = true;
+    }
+
+    private void OnMouseRightButtonUp(object sender, MouseButtonEventArgs eventArgs)
+    {
+        OpenContextMenu();
+        eventArgs.Handled = true;
+    }
+
+    private IntPtr WindowMessageHook(
+        IntPtr windowHandle,
+        int message,
+        IntPtr wordParameter,
+        IntPtr longParameter,
+        ref bool handled)
+    {
+        if (message is not (WmRButtonUp or WmContextMenu)) return IntPtr.Zero;
+
+        Dispatcher.BeginInvoke(OpenContextMenu);
+        handled = true;
+        return IntPtr.Zero;
+    }
+
+    private void OpenContextMenu()
+    {
+        if (DataContext is not GuidanceViewModel viewModel) return;
+        var now = DateTime.UtcNow;
+        if (now - _lastContextMenuOpenedUtc < TimeSpan.FromMilliseconds(250)) return;
+        _lastContextMenuOpenedUtc = now;
+
+        var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
+        menu.Items.Add(new MenuItem
+        {
+            Header = viewModel.PauseMenuText,
+            Command = viewModel.TogglePauseCommand,
+        });
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem
+        {
+            Header = "종료",
+            Command = viewModel.ExitCommand,
+        });
+        ContextMenu = menu;
+        menu.IsOpen = true;
+    }
+
+    protected override void OnClosed(EventArgs eventArgs)
+    {
+        _windowSource?.RemoveHook(WindowMessageHook);
+        _windowSource = null;
+        base.OnClosed(eventArgs);
     }
 
     private void TogglePanel()

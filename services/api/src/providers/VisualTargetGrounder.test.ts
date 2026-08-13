@@ -44,4 +44,32 @@ describe('VisualTargetGrounder', () => {
 
     expect(groundVisualDecision(request, decision)).toEqual(decision);
   });
+
+  it('snaps a translated visual label to one uniquely overlapping live control', () => {
+    const candidate = {
+      ...guideRequestFixture.candidates[0],
+      id: 'account-menu', label: 'Account & Lists', role: 'link',
+      bounds: { x: 1570, y: 22, width: 150, height: 48 },
+      attributes: { sourceScope: 'browser_content', processName: 'chrome' },
+    };
+    const request = { ...guideRequestFixture, screenshotBounds, candidates: [candidate] };
+
+    expect(matchVisualTargetToCandidate(request, {
+      x: 1565 / 1920, y: 18 / 1080, width: 160 / 1920, height: 56 / 1080,
+      label: '계정 메뉴',
+    })?.id).toBe('account-menu');
+  });
+
+  it('does not geometry-snap when nested overlapping controls are ambiguous', () => {
+    const candidates = [
+      { ...guideRequestFixture.candidates[0], id: 'outer', label: 'Unknown outer', bounds: { x: 600, y: 300, width: 180, height: 70 } },
+      { ...guideRequestFixture.candidates[0], id: 'inner', label: 'Unknown inner', bounds: { x: 610, y: 310, width: 160, height: 50 } },
+    ];
+    const request = { ...guideRequestFixture, screenshotBounds, candidates };
+
+    expect(matchVisualTargetToCandidate(request, {
+      x: 610 / 1920, y: 310 / 1080, width: 160 / 1920, height: 50 / 1080,
+      label: '전혀 다른 이름',
+    })).toBeUndefined();
+  });
 });
