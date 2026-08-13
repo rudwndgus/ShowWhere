@@ -149,6 +149,27 @@ public sealed class CandidateNormalizerTests
         Assert.Contains(merged, item => item.Candidate.Label == "Network ebluu.com");
     }
 
+    [Fact]
+    public void Prioritize_keeps_a_goal_relevant_web_control_on_dense_pages()
+    {
+        var unrelated = Enumerable.Range(0, 220)
+            .Select(index => Candidate($"item-{index}", $"item-{index}", true, true, new UiBounds(10, index + 100, 100, 30)) with
+            {
+                Label = $"Product {index}",
+                SourceScope = "browser_content",
+            });
+        var login = Candidate("amazon-login", "amazon-login", true, true, new UiBounds(1600, 20, 170, 45)) with
+        {
+            Label = "Hello, sign in Account & Lists",
+            SourceScope = "browser_content",
+        };
+        var normalized = CandidateNormalizer.Normalize(unrelated.Append(login), 500);
+
+        var prioritized = CandidatePrioritizer.Prioritize(normalized, "아마존에서 로그인 어디서 해?", 180);
+
+        Assert.Contains(prioritized, item => item.Candidate.Label == "Hello, sign in Account & Lists");
+    }
+
     private static RawAutomationCandidate Candidate(
         string sourceKey,
         string clickableSourceKey,

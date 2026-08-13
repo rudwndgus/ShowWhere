@@ -8,7 +8,7 @@ The API uses a cost-ordered router:
 2. `WebKnowledgeResolver` searches Git-tracked site navigation maps and cross-site patterns against live browser candidates.
 3. `LocalGuideResolver` selects only unique, visible, interactive, semantically explicit targets (zero model calls).
 4. When `HF_TOKEN` is configured, `HuggingFaceEmbeddingClient` ranks otherwise unresolved candidates. A result is used only when its absolute score and margin over the runner-up exceed configured thresholds.
-5. `OpenAiGuideProvider` handles novel intent reasoning, troubleshooting, ambiguous state, and visual grounding. It calls the OpenAI Responses API with a compact candidate set, low-detail full-desktop image, and strict JSON Schema output.
+5. `OpenAiGuideProvider` handles novel intent reasoning, troubleshooting, ambiguous state, and visual grounding. It calls the OpenAI Responses API with a compact candidate set, full-desktop image, and strict JSON Schema output. The cost-aware model router uses Luna with no reasoning for one dominant live candidate, Terra with low reasoning for ordinary ambiguous screens, and Sol with low reasoning only when no live UI Automation candidate exists and pure visual grounding is required. It selects one tier per request rather than chaining model calls.
 
 The independent `services/crawler` Playwright pipeline creates Web Knowledge. It stores sanitized observations, normalizes semantic controls, records state transitions, builds navigation routes, and derives shared patterns only after multiple sites support a sequence. Runtime never reuses crawler coordinates or selectors directly; it matches semantic names and roles against the current live UI Automation candidates.
 

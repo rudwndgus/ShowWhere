@@ -126,6 +126,75 @@ public static class CandidateNormalizer
     }
 }
 
+public static class CandidatePrioritizer
+{
+    private static readonly string[] ActionRoles =
+    [
+        "button", "link", "edit", "checkbox", "radio", "combobox", "menuitem",
+        "tab", "listitem", "treeitem", "dataitem", "slider",
+    ];
+
+    public static IReadOnlyList<NormalizedAutomationCandidate> Prioritize(
+        IEnumerable<NormalizedAutomationCandidate> source,
+        string? goal,
+        int maximumCandidates)
+    {
+        if (maximumCandidates <= 0) return [];
+        var goalText = Normalize(goal);
+        var goalWords = goalText.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => word.Length >= 2)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return source.Select((item, index) => new
+            {
+                Item = item,
+                Index = index,
+                Score = Score(item.Candidate, goalText, goalWords),
+            })
+            .OrderByDescending(item => item.Score)
+            .ThenBy(item => item.Index)
+            .Take(maximumCandidates)
+            .Select(item => item.Item)
+            .ToArray();
+    }
+
+    private static double Score(UiCandidate candidate, string goal, IReadOnlyList<string> goalWords)
+    {
+        var text = Normalize($"{candidate.Label} {candidate.Description}");
+        double score = candidate.Clickable ? 500 : 0;
+        if (ActionRoles.Contains(candidate.Role, StringComparer.Ordinal)) score += 400;
+        if (!string.IsNullOrWhiteSpace(candidate.Label)) score += 150;
+        if (candidate.Attributes?.TryGetValue("inViewport", out var viewport) == true && viewport is true)
+            score += 600;
+        if (candidate.Attributes?.TryGetValue("sourceScope", out var scope) == true
+            && string.Equals(Convert.ToString(scope), "browser_content", StringComparison.Ordinal))
+            score += 250;
+
+        score += goalWords.Count(word => text.Contains(word, StringComparison.Ordinal)) * 1_500;
+        if (MatchesConcept(goal, text, "로그인", "login", "log in", "sign in", "account", "계정")) score += 12_000;
+        if (MatchesConcept(goal, text, "검색", "search", "찾아", "find")) score += 10_000;
+        if (MatchesConcept(goal, text, "설정", "settings", "setting", "preferences", "환경설정")) score += 10_000;
+        if (MatchesConcept(goal, text, "장바구니", "cart", "basket")) score += 10_000;
+        if (MatchesConcept(goal, text, "주문", "order", "orders", "구매")) score += 8_000;
+
+        var area = candidate.Bounds.Width * candidate.Bounds.Height;
+        if (candidate.Role is "pane" or "document" or "window") score -= 1_000;
+        if (area > 0) score -= Math.Min(300, Math.Log10(area + 1) * 35);
+        return score;
+    }
+
+    private static bool MatchesConcept(string goal, string candidate, params string[] aliases)
+    {
+        var goalMatches = aliases.Any(alias => goal.Contains(alias, StringComparison.Ordinal));
+        return goalMatches && aliases.Any(alias => candidate.Contains(alias, StringComparison.Ordinal));
+    }
+
+    private static string Normalize(string? value) => string.Join(' ',
+        (value ?? string.Empty).Normalize(NormalizationForm.FormKC).ToLowerInvariant()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+}
+
 public sealed record AutomationAncestorDescriptor(string Key, string Role, bool SupportsAction);
 
 public static class ClickableParentResolver

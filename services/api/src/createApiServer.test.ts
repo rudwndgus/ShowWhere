@@ -13,7 +13,9 @@ const config: ApiConfig = {
   debug: false,
   openai: {
     apiKey: 'test-key',
-    model: 'gpt-5.6',
+    fastModel: 'gpt-5.6-luna',
+    model: 'gpt-5.6-terra',
+    strongModel: 'gpt-5.6-sol',
     baseUrl: 'https://api.openai.com/v1',
     requestTimeoutMs: 30_000,
     maxRetries: 1,

@@ -10,11 +10,12 @@ import {
   rebuildCommonPatterns,
   saveCatalog,
   saveRawRun,
+  compressKnowledgeArtifacts,
 } from './storage';
 import { siteIdFromUrl } from '../../../src/web-knowledge';
 
 interface CliArguments {
-  command: 'crawl' | 'normalize' | 'patterns';
+  command: 'crawl' | 'normalize' | 'patterns' | 'compress';
   url?: string;
   site?: string;
   maxStates: number;
@@ -26,6 +27,7 @@ interface CliArguments {
   storageState?: string;
   delayMs: number;
   timeoutMs: number;
+  skipNormalize: boolean;
 }
 
 function positiveInteger(value: string | undefined, name: string, fallback: number, minimum = 1): number {
@@ -41,7 +43,7 @@ function parseArguments(argv: string[]): CliArguments {
   let command: CliArguments['command'] = 'crawl';
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index];
-    if (['crawl', 'normalize', 'patterns'].includes(value)) {
+    if (['crawl', 'normalize', 'patterns', 'compress'].includes(value)) {
       command = value as CliArguments['command'];
       continue;
     }
@@ -67,6 +69,7 @@ function parseArguments(argv: string[]): CliArguments {
     storageState: argumentsByName.get('storage-state'),
     delayMs: positiveInteger(argumentsByName.get('delay-ms'), '--delay-ms', 900, 100),
     timeoutMs: positiveInteger(argumentsByName.get('timeout-ms'), '--timeout-ms', 15_000, 1_000),
+    skipNormalize: flags.has('skip-normalize'),
   };
 }
 
@@ -79,7 +82,8 @@ function usage(): string {
     '  npm run crawl:normalize -- --site example-com',
     '',
     'Options: --max-states, --max-depth, --max-actions, --locale, --headed,',
-    '         --channel msedge|chrome, --storage-state <private-file>, --delay-ms, --timeout-ms',
+    '         --channel msedge|chrome, --storage-state <private-file>, --delay-ms, --timeout-ms,',
+    '         --skip-normalize (batch collection; normalize once after all runs)',
   ].join('\n');
 }
 
@@ -104,6 +108,12 @@ async function buildKnowledge(siteId: string): Promise<void> {
 
 async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
+  if (args.command === 'compress') {
+    const result = await compressKnowledgeArtifacts(knowledgePaths());
+    const saved = result.beforeBytes - result.afterBytes;
+    console.log(`Compressed ${result.files} files; ${result.beforeBytes} -> ${result.afterBytes} bytes (saved ${saved}).`);
+    return;
+  }
   if (args.command === 'patterns') {
     const paths = knowledgePaths();
     const patterns = await rebuildCommonPatterns(paths, await loadCatalogs(paths));
@@ -134,7 +144,8 @@ async function main(): Promise<void> {
   const path = await saveRawRun(knowledgePaths(), run);
   console.log(`Raw crawl: ${path}`);
   console.log(`Collected ${run.states.length} states, ${run.transitions.length} transitions; ${run.failures.length} failures.`);
-  await buildKnowledge(run.siteId);
+  if (args.skipNormalize) console.log('Deferred Knowledge normalization for batch collection.');
+  else await buildKnowledge(run.siteId);
 }
 
 main().catch((error) => {

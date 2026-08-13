@@ -23,7 +23,14 @@ export function normalizeUiName(value: string): string {
 export function redactWebText(value: string): string {
   return value
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[email]')
+    .replace(/\b\d{3}-\d{7}-\d{7}\b/gu, '[order-id]')
     .replace(/(?:\+?\d[\s().-]*){9,}/gu, '[phone]')
+    .replace(/\b(?:ending\s+in|last\s+four|끝자리)\s*\d{4}\b/giu, '[payment]')
+    .replace(/\b\d{1,6}\s+[\p{L}0-9.' -]{2,60}\s(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b/giu, '[address]')
+    .replace(/\b(?:hello|hi|deliver(?:ing)?\s+to)\s*,?\s+[\p{L}][\p{L}.' -]{1,60}(?=\s*(?:account|$|[|,;]))/giu, (match) => {
+      const prefix = match.match(/^(hello|hi|deliver(?:ing)?\s+to)/iu)?.[0] ?? 'Account';
+      return `${prefix} [name]${/\s$/u.test(match) ? ' ' : ''}`;
+    })
     .replace(/\b(?:\d[ -]*?){13,19}\b/gu, '[number]')
     .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/giu, '[id]')
     .replace(/\baccount\s+for\s+[^|,;]{2,80}$/iu, 'Account')
@@ -48,6 +55,12 @@ export function stableWebId(prefix: string, ...parts: string[]): string {
 export function semanticLabelFromRules(value: string): string | undefined {
   const normalized = normalizeUiName(value);
   if (!normalized) return undefined;
+
+  // Resolve action phrases before generic nouns. Controls such as
+  // "Hello, sign in Account & Lists" contain both "sign in" and "account";
+  // the action is login, while account is merely the surrounding destination.
+  if (/(?:sign out|log out|logout|로그아웃)/u.test(normalized)) return 'logout';
+  if (/(?:sign in|log in|login|로그인)/u.test(normalized)) return 'login';
   let best: { id: string; score: number } | undefined;
   for (const label of webSemanticTaxonomy) {
     for (const aliasValue of label.aliases) {
@@ -91,6 +104,10 @@ export function safeUrlForStorage(value: string): string {
     url.password = '';
     url.search = '';
     url.hash = '';
+    url.pathname = url.pathname
+      .replace(/\b\d{3}-\d{7}-\d{7}\b/gu, ':id')
+      .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/giu, ':id')
+      .replace(/\/(?=\d{8,}(?:\/|$))\d+/gu, '/:id');
     return url.toString();
   } catch {
     return value.split(/[?#]/u)[0];
