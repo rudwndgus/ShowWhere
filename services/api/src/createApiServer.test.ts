@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -40,6 +40,7 @@ const servers: ReturnType<typeof createApiServer>[] = [];
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(servers.splice(0).map((server) =>
     new Promise<void>((resolve) => server.close(() => resolve()))));
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -269,6 +270,47 @@ describe('mobile pairing API', () => {
     expect(await response.json()).toEqual({ text: '프린터 연결 상태 확인하고 싶어', providerLatencyMs: 321 });
     expect(receivedBytes).toBe(1_024);
     desktop.close(); mobile.close();
+  });
+
+  it('uses the dedicated STT model rather than the guide model', async () => {
+    const nativeFetch = globalThis.fetch.bind(globalThis);
+    let requestedModel = '';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/audio/transcriptions')) {
+        requestedModel = String((init?.body as FormData).get('model'));
+        return Response.json({ text: 'transcribed' });
+      }
+      return nativeFetch(input, init);
+    });
+    const guide = await listenWithConfig({
+      ...config,
+      openai: { ...config.openai, model: 'guide-only-model', sttModel: 'speech-only-model' },
+    }, { async decideNextAction() { return {}; } });
+    const base = guide.replace('/api/guide', '');
+    const created = await (await fetch(`${base}/api/pairing/sessions`, { method: 'POST' })).json() as {
+      sessionId: string; desktopSecret: string; pairingToken: string; code: string;
+    };
+    const claim = await (await fetch(`${base}/api/pairing/claim`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pairingToken: created.pairingToken, code: created.code }),
+    })).json() as { sessionId: string; mobileSecret: string };
+    const wsBase = base.replace('http:', 'ws:');
+    const desktop = new WebSocket(`${wsBase}/api/pairing/ws?role=desktop&sessionId=${created.sessionId}`, ['showwhere-v1', created.desktopSecret]);
+    const mobile = new WebSocket(`${wsBase}/api/pairing/ws?role=mobile&sessionId=${claim.sessionId}`, ['showwhere-v1', claim.mobileSecret]);
+    await Promise.all([desktop, mobile].map((socket) => new Promise<void>((resolve, reject) => {
+      socket.once('open', resolve); socket.once('error', reject);
+    })));
+
+    const response = await fetch(`${base}/api/mobile/transcribe?sessionId=${claim.sessionId}`, {
+      method: 'POST',
+      headers: { 'content-type': 'audio/webm', 'x-showwhere-pairing-secret': claim.mobileSecret },
+      body: Buffer.alloc(1_024),
+    });
+
+    expect(response.status).toBe(200);
+    expect(requestedModel).toBe('speech-only-model');
+    desktop.close(); mobile.close(); fetchSpy.mockRestore();
   });
 
   it('requires the per-session desktop secret to disconnect', async () => {

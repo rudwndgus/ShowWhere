@@ -120,7 +120,12 @@ class FixedWindowRateLimiter {
 export function createApiServer(
   config: ApiConfig,
   provider: AiProvider,
-  speechTranscriber: SpeechTranscriber = new OpenAiSpeechTranscriber(config.openai),
+  speechTranscriber: SpeechTranscriber = new OpenAiSpeechTranscriber({
+    apiKey: config.openai.apiKey,
+    baseUrl: config.openai.baseUrl,
+    model: config.openai.sttModel,
+    requestTimeoutMs: config.openai.sttTimeoutMs,
+  }),
 ) {
   const limiter = new FixedWindowRateLimiter(
     config.security.rateLimitWindowMs,
