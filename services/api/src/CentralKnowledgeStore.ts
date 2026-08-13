@@ -6,12 +6,71 @@ export const centralRecordKindSchema = z.enum([
   'feedback', 'correction', 'completion', 'status', 'edit',
 ]);
 
+const centralContextSchema = z.object({
+  platform: z.literal('windows'),
+  applicationName: z.string().trim().min(1).max(300),
+}).passthrough();
+
+const centralPayloadSchemas = {
+  feedback: z.object({
+    rating: z.enum(['correct', 'incorrect', 'completed']),
+    answerId: z.string().trim().min(1),
+    answerText: z.string().trim().min(1),
+  }).passthrough(),
+  correction: z.object({
+    originalGoal: z.string().trim().min(1),
+    effectiveGoal: z.string().trim().min(1),
+    context: centralContextSchema,
+    developerVerified: z.literal(true),
+  }).passthrough(),
+  completion: z.object({
+    originalGoal: z.string().trim().min(1),
+    effectiveGoal: z.string().trim().min(1),
+    context: centralContextSchema,
+    visibleEvidence: z.array(z.string()),
+    learningLabels: z.object({
+      taskId: z.string().trim().min(1),
+      stateId: z.string().trim().min(1),
+      outcomeLabel: z.string().trim().min(1),
+      authority: z.literal('human_gold'),
+    }).passthrough(),
+    developerVerified: z.literal(true),
+  }).passthrough(),
+  status: z.object({ feedbackId: z.string().trim().min(1), active: z.boolean() }).passthrough(),
+  edit: z.object({
+    feedbackId: z.string().trim().min(1),
+    rating: z.enum(['correct', 'incorrect', 'completed']),
+    goal: z.string().trim().min(1),
+    answer: z.string().trim().min(1),
+  }).passthrough(),
+} satisfies Record<z.infer<typeof centralRecordKindSchema>, z.ZodType>;
+
 export const centralRecordInputSchema = z.object({
   id: z.string().trim().min(1).max(200),
   kind: centralRecordKindSchema,
   updatedAt: z.iso.datetime({ offset: true }),
   payload: z.record(z.string(), z.unknown()),
-}).strict();
+}).strict().superRefine((record, context) => {
+  const payload = record.payload;
+  const base = z.object({
+    schemaVersion: z.literal(1),
+    id: z.string().trim().min(1).max(200),
+    createdAtUtc: z.iso.datetime({ offset: true }),
+  }).passthrough().safeParse(payload);
+  if (!base.success) {
+    context.addIssue({ code: 'custom', path: ['payload'], message: 'Invalid learning record metadata.' });
+    return;
+  }
+  if (base.data.id !== record.id) {
+    context.addIssue({ code: 'custom', path: ['payload', 'id'], message: 'Payload ID must match the envelope ID.' });
+  }
+  const feedbackId = payload.feedbackId;
+  if (typeof feedbackId === 'string' && feedbackId.startsWith('__'))
+    context.addIssue({ code: 'custom', path: ['payload', 'feedbackId'], message: 'Reserved feedback IDs cannot be synchronized.' });
+  const kindResult = centralPayloadSchemas[record.kind].safeParse(payload);
+  if (!kindResult.success)
+    context.addIssue({ code: 'custom', path: ['payload'], message: `Invalid ${record.kind} learning record.` });
+});
 
 export const centralRecordBatchSchema = z.object({
   records: z.array(centralRecordInputSchema).min(1).max(100),

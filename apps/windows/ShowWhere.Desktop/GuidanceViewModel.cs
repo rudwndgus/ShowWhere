@@ -304,11 +304,16 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         await SubmitGoalAsync(query);
     }
 
-    public async Task SubmitRemoteAsync(string query)
+    public async Task SubmitRemoteAsync(string query, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query)) return;
-        while (IsLoading) await Task.Delay(100);
-        if (IsPaused) return;
+        while (IsLoading) await Task.Delay(100, cancellationToken);
+        if (IsPaused)
+        {
+            Messages.Add(new ChatMessageItem("user", query.Trim()));
+            Messages.Add(CreateAssistantMessage("assistant", "지금은 안내가 일시 정지되어 있어요. PC에서 계속 버튼을 누른 뒤 다시 말씀해 주세요."));
+            return;
+        }
         await SubmitGoalAsync(query.Trim());
     }
 

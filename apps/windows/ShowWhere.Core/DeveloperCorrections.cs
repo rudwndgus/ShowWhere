@@ -438,7 +438,11 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 case "feedback":
                 {
                     var record = payload.Deserialize<AnswerFeedbackRecord>(JsonOptions);
-                    if (record is null || _feedback.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    if (record is null || record.SchemaVersion != 1 || string.IsNullOrWhiteSpace(record.Id)
+                        || record.CreatedAtUtc == default || string.IsNullOrWhiteSpace(record.AnswerId)
+                        || string.IsNullOrWhiteSpace(record.AnswerText)
+                        || !new[] { "correct", "incorrect", "completed" }.Contains(record.Rating, StringComparer.OrdinalIgnoreCase)
+                        || _feedback.Any(item => item.Id == record.Id)) return Task.FromResult(false);
                     File.AppendAllText(_feedbackPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
                     _feedback.Add(record);
                     break;
@@ -446,7 +450,10 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 case "correction":
                 {
                     var record = payload.Deserialize<DeveloperCorrectionRecord>(JsonOptions);
-                    if (record is null || _records.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    if (record is null || record.SchemaVersion != 1 || !record.DeveloperVerified
+                        || string.IsNullOrWhiteSpace(record.Id) || record.CreatedAtUtc == default
+                        || string.IsNullOrWhiteSpace(record.OriginalGoal) || string.IsNullOrWhiteSpace(record.EffectiveGoal)
+                        || record.Context is null || _records.Any(item => item.Id == record.Id)) return Task.FromResult(false);
                     record = record with { ScreenshotPath = null };
                     File.AppendAllText(_recordsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
                     _records.Add(record);
@@ -455,7 +462,11 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 case "completion":
                 {
                     var record = payload.Deserialize<DeveloperCompletionRecord>(JsonOptions);
-                    if (record is null || _completions.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    if (record is null || record.SchemaVersion != 1 || !record.DeveloperVerified
+                        || string.IsNullOrWhiteSpace(record.Id) || record.CreatedAtUtc == default
+                        || string.IsNullOrWhiteSpace(record.OriginalGoal) || string.IsNullOrWhiteSpace(record.EffectiveGoal)
+                        || record.Context is null || record.LearningLabels is null
+                        || _completions.Any(item => item.Id == record.Id)) return Task.FromResult(false);
                     File.AppendAllText(_completionsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
                     _completions.Add(record);
                     break;
@@ -463,7 +474,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 case "status":
                 {
                     var record = payload.Deserialize<DeveloperLearningStatusRecord>(JsonOptions);
-                    if (record is null || _statusChanges.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    if (record is null || record.SchemaVersion != 1 || string.IsNullOrWhiteSpace(record.Id)
+                        || record.CreatedAtUtc == default || string.IsNullOrWhiteSpace(record.FeedbackId)
+                        || _statusChanges.Any(item => item.Id == record.Id)) return Task.FromResult(false);
                     File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
                     _statusChanges.Add(record);
                     break;
@@ -471,7 +484,11 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 case "edit":
                 {
                     var record = payload.Deserialize<DeveloperLearningEditRecord>(JsonOptions);
-                    if (record is null || _edits.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    if (record is null || record.SchemaVersion != 1 || string.IsNullOrWhiteSpace(record.Id)
+                        || record.CreatedAtUtc == default || string.IsNullOrWhiteSpace(record.FeedbackId)
+                        || string.IsNullOrWhiteSpace(record.Goal) || string.IsNullOrWhiteSpace(record.Answer)
+                        || !new[] { "correct", "incorrect", "completed" }.Contains(record.Rating, StringComparer.OrdinalIgnoreCase)
+                        || _edits.Any(item => item.Id == record.Id)) return Task.FromResult(false);
                     File.AppendAllText(_editsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
                     _edits.Add(record);
                     break;

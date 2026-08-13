@@ -36,6 +36,7 @@ knowledge/web/private/
 training/*.tmp
 training/central-sync-state.json
 training/central-sync-outbox.jsonl
+training/central-sync-quarantine.jsonl
 
 # Python runtime artifacts
 __pycache__/

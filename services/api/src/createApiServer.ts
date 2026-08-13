@@ -109,6 +109,8 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
     config.security.rateLimitWindowMs,
     config.security.rateLimitMaxRequests,
   );
+  const pairingCreateLimiter = new FixedWindowRateLimiter(60_000, 20);
+  const pairingClaimLimiter = new FixedWindowRateLimiter(60_000, 20);
   const knowledge = new CentralKnowledgeStore(config.centralDataDirectory);
   const pairing = new PairingManager(config.pairingTtlSeconds * 1_000);
   const server = createServer(async (request, response) => {
@@ -131,6 +133,11 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/pairing/claim') {
+      if (!pairingClaimLimiter.allow(clientAddress(request, config.security.trustProxy))) {
+        response.setHeader('Retry-After', '60');
+        sendJson(response, 429, { message: '연결 시도가 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+        return;
+      }
       try {
         const body = await readJsonBody(request, 8_192) as { pairingToken?: unknown; code?: unknown };
         if (typeof body.pairingToken !== 'string' || typeof body.code !== 'string') throw new Error('invalid');
@@ -143,18 +150,36 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
 
     const role = requestRole(request, config);
     if (request.method === 'POST' && url.pathname === '/api/pairing/sessions') {
+      if (!pairingCreateLimiter.allow(clientAddress(request, config.security.trustProxy))) {
+        response.setHeader('Retry-After', '60');
+        sendJson(response, 429, { message: '새 연결 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+        return;
+      }
       if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
       const protocol = request.headers['x-forwarded-proto']?.toString().split(',')[0] ?? 'http';
       const host = request.headers['x-forwarded-host']?.toString().split(',')[0] ?? request.headers.host ?? 'localhost';
       const baseUrl = config.publicBaseUrl ?? `${protocol}://${host}`;
       const session = pairing.create(baseUrl);
+      if (!session) {
+        sendJson(response, 503, { message: '현재 연결이 많아요. 잠시 후 다시 시도해 주세요.' });
+        return;
+      }
       const qrDataUrl = await QRCode.toDataURL(session.mobileUrl, { width: 420, margin: 2, errorCorrectionLevel: 'M' });
       sendJson(response, 201, { ...session, qrDataUrl });
       return;
     }
     if (request.method === 'DELETE' && url.pathname.startsWith('/api/pairing/sessions/')) {
       if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
-      pairing.disconnect(decodeURIComponent(url.pathname.slice('/api/pairing/sessions/'.length)));
+      const suppliedSecret = request.headers['x-showwhere-pairing-secret'];
+      const desktopSecret = Array.isArray(suppliedSecret) ? suppliedSecret[0] : suppliedSecret ?? '';
+      const disconnected = pairing.disconnect(
+        decodeURIComponent(url.pathname.slice('/api/pairing/sessions/'.length)),
+        desktopSecret,
+      );
+      if (!disconnected) {
+        sendJson(response, 404, { message: '이미 종료되었거나 유효하지 않은 연결입니다.' });
+        return;
+      }
       sendJson(response, 200, { disconnected: true });
       return;
     }

@@ -138,7 +138,11 @@ describe('central knowledge API', () => {
     const guide = await listenWithConfig(securedConfig, { async decideNextAction() { return {}; } });
     const base = guide.replace('/api/guide', '');
     const body = JSON.stringify({ records: [{
-      id: 'feedback-1', kind: 'feedback', updatedAt: '2026-08-13T12:00:00.000Z', payload: { rating: 'correct' },
+      id: 'feedback-1', kind: 'feedback', updatedAt: '2026-08-13T12:00:00.000Z',
+      payload: {
+        schemaVersion: 1, id: 'feedback-1', createdAtUtc: '2026-08-13T12:00:00.000Z',
+        rating: 'correct', answerId: 'answer-1', answerText: 'correct answer',
+      },
     }] });
     const userUpload = await fetch(`${base}/api/knowledge/records`, {
       method: 'POST', headers: { authorization: 'Bearer user-client-token-at-least-24-characters', 'content-type': 'application/json' }, body,
@@ -167,9 +171,10 @@ describe('mobile pairing API', () => {
     };
     expect(created.code).toMatch(/^\d{6}$/u);
     expect(created.qrDataUrl).toMatch(/^data:image\/png;base64,/u);
+    const wrongCode = created.code === '999999' ? '000000' : '999999';
     expect((await fetch(`${base}/api/pairing/claim`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pairingToken: created.pairingToken, code: '999999' }),
+      body: JSON.stringify({ pairingToken: created.pairingToken, code: wrongCode }),
     })).status).toBe(400);
     const claimResponse = await fetch(`${base}/api/pairing/claim`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -183,8 +188,8 @@ describe('mobile pairing API', () => {
     })).status).toBe(400);
 
     const wsBase = base.replace('http:', 'ws:');
-    const desktop = new WebSocket(`${wsBase}/api/pairing/ws?role=desktop&sessionId=${created.sessionId}&secret=${created.desktopSecret}`);
-    const mobile = new WebSocket(`${wsBase}/api/pairing/ws?role=mobile&sessionId=${claim.sessionId}&secret=${claim.mobileSecret}`);
+    const desktop = new WebSocket(`${wsBase}/api/pairing/ws?role=desktop&sessionId=${created.sessionId}`, ['showwhere-v1', created.desktopSecret]);
+    const mobile = new WebSocket(`${wsBase}/api/pairing/ws?role=mobile&sessionId=${claim.sessionId}`, ['showwhere-v1', claim.mobileSecret]);
     await Promise.all([desktop, mobile].map((socket) => new Promise<void>((resolve, reject) => {
       socket.once('open', resolve); socket.once('error', reject);
     })));
@@ -197,5 +202,55 @@ describe('mobile pairing API', () => {
     mobile.send(JSON.stringify({ type: 'user_message', id: 'm1', text: '프린터 설정 어디야?' }));
     await expect(relayed).resolves.toMatchObject({ id: 'm1', text: '프린터 설정 어디야?' });
     desktop.close(); mobile.close();
+  });
+
+  it('invalidates a QR session after five wrong verification codes', async () => {
+    const guide = await listen({ async decideNextAction() { return {}; } });
+    const base = guide.replace('/api/guide', '');
+    const created = await (await fetch(`${base}/api/pairing/sessions`, { method: 'POST' })).json() as {
+      pairingToken: string; code: string;
+    };
+    const wrongCode = created.code === '111111' ? '222222' : '111111';
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(`${base}/api/pairing/claim`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pairingToken: created.pairingToken, code: wrongCode }),
+      });
+      expect(response.status).toBe(400);
+    }
+    const correctAfterLockout = await fetch(`${base}/api/pairing/claim`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pairingToken: created.pairingToken, code: created.code }),
+    });
+    expect(correctAfterLockout.status).toBe(400);
+  });
+
+  it('requires the per-session desktop secret to disconnect', async () => {
+    const guide = await listen({ async decideNextAction() { return {}; } });
+    const base = guide.replace('/api/guide', '');
+    const created = await (await fetch(`${base}/api/pairing/sessions`, { method: 'POST' })).json() as {
+      sessionId: string; desktopSecret: string;
+    };
+    const endpoint = `${base}/api/pairing/sessions/${created.sessionId}`;
+
+    expect((await fetch(endpoint, { method: 'DELETE' })).status).toBe(404);
+    expect((await fetch(endpoint, {
+      method: 'DELETE', headers: { 'x-showwhere-pairing-secret': created.desktopSecret },
+    })).status).toBe(200);
+    expect((await fetch(endpoint, {
+      method: 'DELETE', headers: { 'x-showwhere-pairing-secret': created.desktopSecret },
+    })).status).toBe(404);
+  });
+
+  it('serves a mobile client with bounded connection recovery', async () => {
+    const guide = await listen({ async decideNextAction() { return {}; } });
+    const response = await fetch(guide.replace('/api/guide', '/mobile/'));
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('휴대폰을 키보드처럼 연결해');
+    expect(html).toContain('controller.abort()');
+    expect(html).toContain('연결 시간이 초과됐어요');
+    expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' ws: wss:");
   });
 });

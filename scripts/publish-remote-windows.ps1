@@ -11,8 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $dotnetRunner = Join-Path $PSScriptRoot 'dotnet.ps1'
-if ([string]::IsNullOrWhiteSpace($ClientToken) -or $ClientToken.Trim().Length -lt 24) {
-    throw 'Set SHOWWHERE_CLIENT_TOKEN to the same 24+ character token configured on the server.'
+if (-not [string]::IsNullOrWhiteSpace($ClientToken) -and $ClientToken.Trim().Length -lt 24) {
+    throw 'SHOWWHERE_CLIENT_TOKEN must contain at least 24 characters when server authentication is enabled.'
 }
 if (-not $BackendUrl.EndsWith('/api/guide', [StringComparison]::OrdinalIgnoreCase)) {
     $BackendUrl = $BackendUrl.TrimEnd('/') + '/api/guide'
@@ -24,7 +24,10 @@ elseif (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
     $OutputDirectory = Join-Path $projectRoot $OutputDirectory
 }
 
-$properties = "/property:PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;DebugType=None;DebugSymbols=false;ShowWhereBackendUrl=$BackendUrl;ShowWhereClientToken=$($ClientToken.Trim())"
+$properties = "/property:PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;DebugType=None;DebugSymbols=false;ShowWhereBackendUrl=$BackendUrl"
+if (-not [string]::IsNullOrWhiteSpace($ClientToken)) {
+    $properties += ";ShowWhereClientToken=$($ClientToken.Trim())"
+}
 & powershell -NoProfile -ExecutionPolicy Bypass -File $dotnetRunner publish `
     (Join-Path $projectRoot 'apps\windows\ShowWhere.Desktop\ShowWhere.Desktop.csproj') `
     -c Release -r win-x64 --self-contained true `

@@ -9,7 +9,7 @@
         MouseLeftButtonUp="OnMouseLeftButtonUp"
         MouseRightButtonUp="OnMouseRightButtonUp"
         MouseMove="OnMouseMove">
-  <Grid ToolTip="ShowWhere — 하고 싶은 일을 말해보세요">
+  <Grid Background="Transparent" ToolTip="ShowWhere — 하고 싶은 일을 말해보세요">
     <local:AssistantGlyph />
     <Grid.ContextMenu>
       <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
