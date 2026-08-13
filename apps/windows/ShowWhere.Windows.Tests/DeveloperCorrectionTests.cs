@@ -10,6 +10,15 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void Candidate_backed_O_replay_survives_unrelated_snapshot_changes()
+    {
+        Assert.True(DeveloperReplayPolicy.CanReuseImmediately(
+            "live-candidate", snapshotMatches: false, liveTargetResolved: true));
+        Assert.False(DeveloperReplayPolicy.CanReuseImmediately(
+            targetId: null, snapshotMatches: false, liveTargetResolved: true));
+    }
+
+    [Fact]
     public async Task Intent_correction_persists_across_store_instances()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);

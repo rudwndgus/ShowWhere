@@ -33,7 +33,7 @@ describe('OpenAiGuideProvider', () => {
     expect(JSON.stringify(body)).toContain('data:image/jpeg;base64,abc');
     expect(JSON.stringify(body)).toContain('json_schema');
     expect(JSON.stringify(body)).toContain('Missing, hidden, or not-yet-visible controls are navigation problems');
-    expect(JSON.stringify(body)).toContain('"detail":"low"');
+    expect(JSON.stringify(body)).toContain('"detail":"auto"');
     expect(JSON.stringify(body)).not.toContain('localScore');
   });
 

@@ -420,6 +420,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     out var correctedTarget,
                     out _))
                 {
+                    DesktopDiagnostics.WriteEvent(
+                        "persisted_gold_replay_hit",
+                        ("targetId", correctedTarget.Id),
+                        ("label", correctedTarget.Label));
                     decision = new GuideDecision(
                         GuideStatuses.InProgress,
                         GuideActions.Highlight,
@@ -730,6 +734,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     message.Decision?.VisualTarget) is { } positiveCorrection)
                 await _correctionStore.SaveAsync(positiveCorrection, null);
             RememberApprovedReplay(message);
+            DesktopDiagnostics.WriteEvent(
+                "approved_replay_saved",
+                ("targetId", message.Decision?.TargetId),
+                ("label", message.TargetLabel),
+                ("snapshotHash", message.SnapshotHash));
             message.MarkEvaluated("correct");
             StatusText = message.TargetSignature is null
                 ? "정답으로 영구 저장됨"
@@ -1100,16 +1109,34 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _approvedReplays.TryGetValue(NormalizeGoal(goal), out var replay);
         replay ??= _approvedReplays.Values.LastOrDefault(item =>
             DeveloperIntentMatcher.IsSameIntent(goal, item.Goal));
-        if (observation is null
-            || replay is null
-            || !string.Equals(replay.SnapshotHash, observation.SnapshotHash, StringComparison.Ordinal)) return null;
-        if (replay.TargetId is null) return replay.TargetBounds is null ? null : replay;
-        if (!observation.Registry.TryResolveState(replay.TargetId, out _, out var isOffscreen)
-            || isOffscreen
-            || !observation.Candidates.Any(candidate =>
+        if (observation is null || replay is null) return null;
+        var snapshotMatches = string.Equals(
+            replay.SnapshotHash,
+            observation.SnapshotHash,
+            StringComparison.Ordinal);
+        // Pixel-only feedback is tied to the exact screenshot. Candidate-backed feedback
+        // is safer and more durable: verify the live UIA element instead of rejecting it
+        // whenever ads, clocks, cart counts, or other unrelated pixels change the hash.
+        if (replay.TargetId is null)
+            return replay.TargetBounds is not null
+                && DeveloperReplayPolicy.CanReuseImmediately(replay.TargetId, snapshotMatches, false)
+                    ? replay
+                    : null;
+        var liveTargetResolved = observation.Registry.TryResolveState(
+                replay.TargetId,
+                out var liveBounds,
+                out var isOffscreen)
+            && !isOffscreen
+            && observation.Candidates.Any(candidate =>
                 string.Equals(candidate.Id, replay.TargetId, StringComparison.Ordinal)
-                && candidate.Visible && candidate.Enabled && candidate.Clickable)) return null;
-        return replay;
+                && candidate.Visible && candidate.Enabled && candidate.Clickable);
+        if (!DeveloperReplayPolicy.CanReuseImmediately(replay.TargetId, snapshotMatches, liveTargetResolved))
+            return null;
+        DesktopDiagnostics.WriteEvent(
+            "approved_replay_hit",
+            ("targetId", replay.TargetId),
+            ("snapshotChanged", !snapshotMatches));
+        return replay with { TargetBounds = liveBounds };
     }
 
     private static string NormalizeGoal(string value) => string.Concat(

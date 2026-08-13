@@ -1,6 +1,7 @@
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import { GuideDecisionSchema, type GuideDecision, type GuideRequest } from '../../../../src/contracts';
 import { normalizeUiName, semanticLabelFromRules } from '../../../../src/web-knowledge';
+import { groundVisualDecision } from './VisualTargetGrounder';
 
 export interface OpenAiGuideProviderOptions {
   apiKey: string;
@@ -58,6 +59,7 @@ Rules:
 - When a direct Windows Settings icon/control is clearly visible in pixels but absent from candidates, use highlight_visual around that icon instead of choosing a Search candidate.
 - Select the most direct visible control that advances the goal. Do not select window chrome (back/minimize/maximize/close) unless explicitly requested.
 - Prefer action=highlight with a candidate targetId only when the candidate label, role, app/scope, and screenshot all agree.
+- If the right control is represented by a candidate, always return highlight with its targetId so ShowWhere can use the live clickable rectangle. Use highlight_visual only when no matching candidate exists.
 - If the right control is visible in pixels but absent/unsafe in candidates, use highlight_visual with one tight normalized box around only that clickable control.
 - Coordinates are fractions of the entire supplied screenshot. Never use a whole window, panel, card, or guessed off-screen location.
 - If intent has multiple materially different meanings, ask one concise Korean clarification question. Do not guess.
@@ -180,9 +182,9 @@ export class OpenAiGuideProvider implements AiProvider {
               { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
               { role: 'user', content: [
                 { type: 'input_text', text: JSON.stringify(compactRequest(request)) },
-                // Keep the entire virtual desktop, but use the low vision token budget.
-                // Exact UIA bounds remain available for pixel-accurate highlighting.
-                { type: 'input_image', image_url: request.screenshot, detail: 'low' },
+                // Auto preserves enough source detail for small controls. Whenever UIA exposes
+                // the control, the model's visual box is snapped back to its live click bounds.
+                { type: 'input_image', image_url: request.screenshot, detail: 'auto' },
               ] },
             ],
             text: { format: { type: 'json_schema', name: 'showwhere_next_action', strict: true, schema: decisionJsonSchema } },
@@ -190,7 +192,7 @@ export class OpenAiGuideProvider implements AiProvider {
         });
         if (!response.ok) throw new Error(`OpenAI API ${response.status}: ${(await response.text()).slice(0, 500)}`);
         const parsed = JSON.parse(extractOutputText(await response.json())) as Record<string, unknown>;
-        return GuideDecisionSchema.parse(removeNulls(parsed));
+        return groundVisualDecision(request, GuideDecisionSchema.parse(removeNulls(parsed)));
       } catch (error) {
         lastError = error;
         if (attempt < this.options.maxRetries && shouldRetry(error))

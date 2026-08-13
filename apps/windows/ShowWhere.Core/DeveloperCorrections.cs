@@ -206,6 +206,15 @@ public static class DeveloperPositiveFeedback
     }
 }
 
+public static class DeveloperReplayPolicy
+{
+    public static bool CanReuseImmediately(
+        string? targetId,
+        bool snapshotMatches,
+        bool liveTargetResolved) =>
+        string.IsNullOrWhiteSpace(targetId) ? snapshotMatches : liveTargetResolved;
+}
+
 public static class DeveloperLabeling
 {
     public static readonly string[] OutcomeLabels =

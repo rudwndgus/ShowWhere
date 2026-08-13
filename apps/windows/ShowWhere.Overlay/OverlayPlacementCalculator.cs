@@ -37,7 +37,9 @@ public static class OverlayPlacementCalculator
         double tooltipWidth = 280,
         double tooltipHeight = 72)
     {
-        const double padding = 8;
+        // UI Automation already reports the physical clickable rectangle. Expanding it
+        // made a correct target look offset or as though adjacent controls were included.
+        const double padding = 0;
         const double gap = 14;
         var highlightX = Math.Max(workingArea.X, target.X - padding);
         var highlightY = Math.Max(workingArea.Y, target.Y - padding);
