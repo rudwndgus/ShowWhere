@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -16,12 +17,31 @@ public partial class GuidancePanelWindow : Window
     private INotifyCollectionChanged? _observedMessages;
 
     public AssistantCharacterStore CharacterStore { get; }
+    public event Action? GoalSubmittedFromKeyboard;
 
     public GuidancePanelWindow(AssistantCharacterStore characterStore)
     {
         CharacterStore = characterStore;
         InitializeComponent();
+        CharacterStore.PropertyChanged += OnCharacterStorePropertyChanged;
+        ApplyCharacterTheme();
         DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnCharacterStorePropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (eventArgs.PropertyName == nameof(AssistantCharacterStore.SelectedCharacterKey))
+            ApplyCharacterTheme();
+    }
+
+    private void ApplyCharacterTheme()
+    {
+        var accent = CharacterStore.SelectedCharacterKey == "robot"
+            ? Color.FromRgb(0x3D, 0x8B, 0xEF)
+            : Color.FromRgb(0x47, 0x23, 0x23);
+        Resources["AccentBrush"] = new SolidColorBrush(accent);
+        Resources["AccentDarkBrush"] = new SolidColorBrush(accent);
+        Resources["AccentSoftBrush"] = new SolidColorBrush(Color.FromArgb(0x80, accent.R, accent.G, accent.B));
     }
 
     protected override void OnSourceInitialized(EventArgs eventArgs)
@@ -112,7 +132,18 @@ public partial class GuidancePanelWindow : Window
     {
         if (eventArgs.Key != Key.Enter || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
         eventArgs.Handled = true;
-        if (DataContext is not GuidanceViewModel viewModel) return;
-        if (viewModel.SubmitCommand.CanExecute(null)) viewModel.SubmitCommand.Execute(null);
+        if (DataContext is not GuidanceViewModel viewModel || !viewModel.SubmitCommand.CanExecute(null)) return;
+        viewModel.SubmitCommand.Execute(null);
+        GoalSubmittedFromKeyboard?.Invoke();
+    }
+
+    private void OnBubbleActionClick(object sender, RoutedEventArgs eventArgs) =>
+        GoalSubmittedFromKeyboard?.Invoke();
+
+    private void OnCharacterSelectionChanged(object sender, SelectionChangedEventArgs eventArgs)
+    {
+        if (!IsLoaded || SettingsPopup is null) return;
+        SettingsPopup.IsOpen = false;
+        SettingsButton.IsChecked = false;
     }
 }
