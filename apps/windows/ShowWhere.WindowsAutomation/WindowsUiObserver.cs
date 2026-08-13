@@ -264,12 +264,18 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                 var visible = !rectangle.IsEmpty;
                 var clickable = IsActionable(target, role);
                 var candidateScope = ClassifyCandidateScope(target, walker, processName);
+                var label = ClickableParentResolver.PreferAccessibleText(
+                    Read(() => target.Current.Name),
+                    Read(() => element.Current.Name));
+                var description = ClickableParentResolver.PreferAccessibleText(
+                    Read(() => target.Current.HelpText),
+                    Read(() => element.Current.HelpText));
                 elementsBySource[sourceKey] = target;
                 result.Add(new RawAutomationCandidate(
                     sourceKey,
                     sourceKey,
-                    Read(() => target.Current.Name),
-                    Read(() => target.Current.HelpText),
+                    label,
+                    description,
                     role,
                     target.Current.IsEnabled,
                     visible,

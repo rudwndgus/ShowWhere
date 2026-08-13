@@ -51,6 +51,36 @@ public sealed class CandidateNormalizerTests
     }
 
     [Fact]
+    public void Normalize_keeps_the_named_child_for_an_unnamed_clickable_parent()
+    {
+        var parent = Candidate("button-parent", "button-parent", true, true, new UiBounds(14, 180, 296, 42)) with
+        {
+            Label = null,
+        };
+        var namedChild = Candidate("bluetooth-text", "button-parent", true, true, new UiBounds(14, 180, 296, 42)) with
+        {
+            Label = "Bluetooth & devices",
+        };
+
+        var result = CandidateNormalizer.Normalize([parent, namedChild]);
+
+        Assert.Single(result);
+        Assert.Equal("Bluetooth & devices", result[0].Candidate.Label);
+        Assert.Equal(new UiBounds(14, 180, 296, 42), result[0].Candidate.Bounds);
+    }
+
+    [Fact]
+    public void Clickable_parent_uses_child_text_when_its_own_name_is_empty()
+    {
+        Assert.Equal(
+            "Bluetooth & devices",
+            ClickableParentResolver.PreferAccessibleText(null, "Bluetooth & devices"));
+        Assert.Equal(
+            "Named parent",
+            ClickableParentResolver.PreferAccessibleText("Named parent", "Child"));
+    }
+
+    [Fact]
     public void Normalize_generates_a_stable_candidate_id()
     {
         var source = new[] { Candidate("button", "button", true, true, new UiBounds(10, 10, 100, 30)) };

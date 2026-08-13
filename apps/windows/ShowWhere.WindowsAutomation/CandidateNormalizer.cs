@@ -42,7 +42,17 @@ public static class CandidateNormalizer
         var clickableSources = new HashSet<string>(StringComparer.Ordinal);
         var fingerprints = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var raw in source)
+        var preferredSources = source
+            .Select((candidate, index) => new { Candidate = candidate, Index = index })
+            .GroupBy(item => item.Candidate.ClickableSourceKey, StringComparer.Ordinal)
+            .Select(group => group
+                .OrderByDescending(item => AccessibleTextScore(item.Candidate))
+                .ThenBy(item => item.Index)
+                .First())
+            .OrderBy(item => item.Index)
+            .Select(item => item.Candidate);
+
+        foreach (var raw in preferredSources)
         {
             if (result.Count >= maximumCandidates) break;
             if (!raw.Visible || !raw.Enabled || raw.Bounds.Width <= 1 || raw.Bounds.Height <= 1) continue;
@@ -92,6 +102,10 @@ public static class CandidateNormalizer
 
         return result;
     }
+
+    private static int AccessibleTextScore(RawAutomationCandidate candidate) =>
+        (string.IsNullOrWhiteSpace(candidate.Label) ? 0 : 10_000 + candidate.Label.Length)
+        + (string.IsNullOrWhiteSpace(candidate.Description) ? 0 : 1_000 + candidate.Description.Length);
 
     public static IReadOnlyList<NormalizedAutomationCandidate> MergeWithReservedSecondaryScope(
         IEnumerable<NormalizedAutomationCandidate> primary,
@@ -199,6 +213,11 @@ public sealed record AutomationAncestorDescriptor(string Key, string Role, bool 
 
 public static class ClickableParentResolver
 {
+    public static string? PreferAccessibleText(string? clickableParentText, string? childText) =>
+        !string.IsNullOrWhiteSpace(clickableParentText) ? clickableParentText
+        : !string.IsNullOrWhiteSpace(childText) ? childText
+        : null;
+
     public static string? Resolve(IEnumerable<AutomationAncestorDescriptor> elementAndAncestors, int maximumDepth = 5)
     {
         foreach (var descriptor in elementAndAncestors.Take(maximumDepth))
