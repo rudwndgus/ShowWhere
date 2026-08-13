@@ -253,4 +253,18 @@ describe('mobile pairing API', () => {
     expect(html).toContain('연결 시간이 초과됐어요');
     expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' ws: wss:");
   });
+
+  it('serves the built-in iPhone QR decoder', async () => {
+    const guide = await listen({ async decideNextAction() { return {}; } });
+    const base = guide.replace('/api/guide', '');
+    const page = await (await fetch(`${base}/mobile/`)).text();
+    const decoder = await fetch(`${base}/mobile/jsqr.js`);
+
+    expect(page).toContain('src="/mobile/jsqr.js"');
+    expect(page).toContain('globalThis.jsQR');
+    expect(page).not.toContain("setTimeout(()=>$('scan').click()");
+    expect(decoder.status).toBe(200);
+    expect(decoder.headers.get('content-type')).toContain('text/javascript');
+    expect((await decoder.text()).length).toBeGreaterThan(10_000);
+  });
 });

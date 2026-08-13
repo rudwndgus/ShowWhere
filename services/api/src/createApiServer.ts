@@ -67,7 +67,7 @@ function sendHtml(response: ServerResponse, body: string): void {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self' ws: wss:; media-src blob:",
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; media-src blob:",
   });
   response.end(body);
 }
@@ -135,6 +135,18 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
         display: 'standalone', background_color: '#f6f3f3', theme_color: '#472323',
         icons: [{ src: '/mobile/gorilla.png', sizes: 'any', type: 'image/png', purpose: 'any maskable' }],
       }));
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/mobile/jsqr.js') {
+      try {
+        const script = await readFile(resolve('node_modules/jsqr/dist/jsQR.js'));
+        response.writeHead(200, {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Cache-Control': 'public, max-age=86400',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        response.end(script);
+      } catch { sendJson(response, 404, { message: 'QR 판독기를 찾을 수 없습니다.' }); }
       return;
     }
     if (request.method === 'GET' && url.pathname === '/mobile/gorilla.png') {
