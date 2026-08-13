@@ -111,7 +111,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         SaveLearningRecordCommand = new AsyncParameterRelayCommand(SaveLearningRecordAsync);
         ExitCommand = new RelayCommand(_exit);
         MobileConnectCommand = new AsyncRelayCommand(
-            () => _mobileRemote?.ShowPairingAsync() ?? Task.CompletedTask);
+            () => _mobileRemote is null
+                ? Task.CompletedTask
+                : _mobileRemote.IsConnected
+                    ? _mobileRemote.DisconnectAsync()
+                    : _mobileRemote.ShowPairingAsync());
         MobileDisconnectCommand = new AsyncRelayCommand(
             () => _mobileRemote?.DisconnectAsync() ?? Task.CompletedTask);
         if (_mobileRemote is not null)

@@ -123,7 +123,7 @@
           <TextBlock Text="SHOWWHERE" Foreground="{StaticResource AccentBrush}"
                      FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
           <Button Command="{Binding MobileConnectCommand}" Margin="9,0,0,0" Padding="7,3"
-                  Style="{StaticResource QuietButton}" ToolTip="QR로 휴대폰 키보드를 연결합니다">
+                  Style="{StaticResource QuietButton}" ToolTip="QR로 휴대폰을 연결하거나 현재 연결을 끊습니다">
             <StackPanel Orientation="Horizontal">
               <Ellipse Width="8" Height="8" Fill="#FF25A65A" Margin="0,0,5,0"
                        Visibility="{Binding IsMobileConnected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
