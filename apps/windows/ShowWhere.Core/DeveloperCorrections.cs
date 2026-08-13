@@ -255,8 +255,19 @@ public static class DeveloperReplayPolicy
     public static bool CanReuseImmediately(
         string? targetId,
         bool snapshotMatches,
-        bool liveTargetResolved) =>
-        string.IsNullOrWhiteSpace(targetId) ? snapshotMatches : liveTargetResolved;
+        bool liveTargetResolved,
+        bool developerVerified = true) =>
+        string.IsNullOrWhiteSpace(targetId)
+            ? snapshotMatches
+            : liveTargetResolved && (developerVerified || snapshotMatches);
+
+    public static bool CanReuseSafeReply(
+        string action,
+        string status,
+        bool snapshotMatches) =>
+        snapshotMatches
+        && action is GuideActions.AskUser or GuideActions.Explain
+        && status is not GuideStatuses.Completed and not GuideStatuses.Blocked;
 }
 
 public static class DeveloperLabeling
@@ -882,12 +893,15 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             "training");
     }
 
-    private static int ScoreTarget(
+    private int ScoreTarget(
         UiCandidate candidate,
         DeveloperCorrectionRecord record,
         ApplicationContext context)
     {
         var signature = record.CorrectTarget!;
+        var editedTargetLabel = GetLatestEdit(record.FeedbackId)?.TargetLabel?.Trim();
+        var targetLabel = string.IsNullOrWhiteSpace(editedTargetLabel) ? signature.Label : editedTargetLabel;
+        var targetLabelWasEdited = !string.IsNullOrWhiteSpace(editedTargetLabel);
         var candidateProcess = Attribute(candidate, "processName");
         var candidateScope = Attribute(candidate, "sourceScope");
         if (!string.IsNullOrWhiteSpace(signature.ProcessName)
@@ -896,12 +910,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             && !EqualsText(candidateScope, signature.SourceScope)) return 0;
         if (string.Equals(signature.SourceScope, "browser_content", StringComparison.OrdinalIgnoreCase)
             && !MatchesBrowserSite(record.Context, context, signature, candidate)) return 0;
-        if (!EqualsText(candidate.Label, signature.Label)
+        if (targetLabelWasEdited && !EqualsText(candidate.Label, targetLabel)) return 0;
+        if (!targetLabelWasEdited
+            && !EqualsText(candidate.Label, targetLabel)
             && !EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) return 0;
 
         var score = 0;
-        if (EqualsText(candidate.Label, signature.Label)) score += 220;
-        if (EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) score += 360;
+        if (EqualsText(candidate.Label, targetLabel)) score += targetLabelWasEdited ? 600 : 220;
+        if (!targetLabelWasEdited && EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) score += 360;
         if (EqualsText(candidateProcess, signature.ProcessName)) score += 140;
         if (EqualsText(candidateScope, signature.SourceScope)) score += 130;
         if (EqualsText(candidate.Role, signature.Role)) score += 50;
@@ -1136,13 +1152,7 @@ public static class DeveloperCorrectionMatcher
         Attribute(candidate, "containerLabel"));
 
     public static VisualTarget NormalizeSelection(UiBounds screen, UiBounds selection, string label)
-    {
-        var width = Math.Clamp(selection.Width / screen.Width, 0, 1);
-        var height = Math.Clamp(selection.Height / screen.Height, 0, 1);
-        var x = Math.Clamp((selection.X - screen.X) / screen.Width, 0, 1 - width);
-        var y = Math.Clamp((selection.Y - screen.Y) / screen.Height, 0, 1 - height);
-        return new VisualTarget(x, y, width, height, label);
-    }
+        => ScreenCoordinateMapper.NormalizeSelection(screen, selection, label);
 
     private static bool Contains(UiBounds bounds, double x, double y) =>
         x >= bounds.X && x <= bounds.X + bounds.Width

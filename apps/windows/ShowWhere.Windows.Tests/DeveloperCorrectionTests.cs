@@ -16,6 +16,16 @@ public sealed class DeveloperCorrectionTests : IDisposable
             "live-candidate", snapshotMatches: false, liveTargetResolved: true));
         Assert.False(DeveloperReplayPolicy.CanReuseImmediately(
             targetId: null, snapshotMatches: false, liveTargetResolved: true));
+        Assert.True(DeveloperReplayPolicy.CanReuseImmediately(
+            "live-candidate", snapshotMatches: true, liveTargetResolved: true, developerVerified: false));
+        Assert.False(DeveloperReplayPolicy.CanReuseImmediately(
+            "live-candidate", snapshotMatches: false, liveTargetResolved: true, developerVerified: false));
+        Assert.True(DeveloperReplayPolicy.CanReuseSafeReply(
+            GuideActions.AskUser, GuideStatuses.NeedsClarification, snapshotMatches: true));
+        Assert.False(DeveloperReplayPolicy.CanReuseSafeReply(
+            GuideActions.AskUser, GuideStatuses.NeedsClarification, snapshotMatches: false));
+        Assert.False(DeveloperReplayPolicy.CanReuseSafeReply(
+            GuideActions.Explain, GuideStatuses.Completed, snapshotMatches: true));
     }
 
     [Fact]
@@ -384,10 +394,36 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal("YouTube Music 검색", history.TargetLabel);
         Assert.True(reloaded.TryResolveTarget(
             history.Goal, feedback.Context!,
-            [Candidate("music-new", "검색", "ytmusic-search", "browser_content")], out _, out _));
+            [Candidate("music-new", "YouTube Music 검색", "new-search", "browser_content")], out _, out _));
 
         Assert.Single(File.ReadAllLines(Path.Combine(_directory, "learning-edits.jsonl")));
         Assert.Single(File.ReadAllLines(Path.Combine(_directory, "answer-feedback.jsonl")));
+    }
+
+    [Fact]
+    public async Task Editing_the_target_label_replaces_the_old_runtime_target_immediately()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var feedback = Feedback("correct", "기존 버튼을 누르세요");
+        await store.SaveFeedbackAsync(feedback);
+        var original = Candidate("old", "Old target", "old-automation", "settings");
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(
+            feedback,
+            DeveloperCorrectionMatcher.CreateSignature(original))!, null);
+
+        await store.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            feedback.Id, "correct", feedback.OriginalGoal!,
+            "새 버튼을 누르세요", "New target", "target corrected"));
+
+        Assert.True(store.TryResolveTarget(
+            feedback.OriginalGoal!, feedback.Context!,
+            [
+                Candidate("old-live", "Old target", "old-automation", "settings"),
+                Candidate("new-live", "New target", "new-automation", "settings"),
+            ],
+            out var resolved, out _));
+        Assert.Equal("new-live", resolved.Id);
     }
 
     [Fact]

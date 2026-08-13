@@ -72,4 +72,22 @@ describe('VisualTargetGrounder', () => {
       label: '전혀 다른 이름',
     })).toBeUndefined();
   });
+
+  it('maps normalized vision coordinates through a negative virtual-screen origin', () => {
+    const negativeScreen = { x: -1920, y: -240, width: 4480, height: 1680 };
+    const candidate = {
+      ...guideRequestFixture.candidates[0],
+      id: 'left-monitor-button', label: 'Advanced display',
+      bounds: { x: -1710, y: 120, width: 210, height: 52 },
+    };
+    const request = { ...guideRequestFixture, screenshotBounds: negativeScreen, candidates: [candidate] };
+
+    expect(matchVisualTargetToCandidate(request, {
+      x: (-1710 - negativeScreen.x) / negativeScreen.width,
+      y: (120 - negativeScreen.y) / negativeScreen.height,
+      width: 210 / negativeScreen.width,
+      height: 52 / negativeScreen.height,
+      label: 'Advanced display',
+    })?.id).toBe('left-monitor-button');
+  });
 });

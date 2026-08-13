@@ -328,6 +328,9 @@
           <TextBlock Text="X로 선택한 답변을 수정합니다. 질문의 정확한 뜻이 다르면 아래에 적어 주세요."
                      TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
                      Margin="0,4,0,7" />
+          <TextBlock Text="{Binding CorrectionDataDirectory, StringFormat=이 PC의 학습 저장 위치 · {0}}"
+                     TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource MutedBrush}"
+                     Margin="0,0,0,7" ToolTip="EXE에서도 이 폴더에 저장되며 즉시 현재 실행에 반영됩니다" />
           <TextBox Text="{Binding CorrectionIntentText, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
                    ToolTip="예: 유튜브 뮤직 웹페이지 안에서 음악을 검색한다" />

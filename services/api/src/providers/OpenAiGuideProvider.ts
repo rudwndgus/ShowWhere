@@ -70,6 +70,7 @@ Rules:
 - If the right control is represented by a candidate, always return highlight with its targetId so ShowWhere can use the live clickable rectangle. Use highlight_visual only when no matching candidate exists.
 - If the right control is visible in pixels but absent/unsafe in candidates, use highlight_visual with one tight normalized box around only that clickable control.
 - Coordinates are fractions of the entire supplied screenshot. Never use a whole window, panel, card, or guessed off-screen location.
+- screenshotBounds is the physical Windows virtual-desktop rectangle. Candidate bounds are absolute physical screen coordinates; compare them to the image by subtracting screenshotBounds.x/y. This is mandatory when a monitor is left of or above the primary display and coordinates are negative.
 - If intent has multiple materially different meanings, ask one concise Korean clarification question. Do not guess.
 - If the goal cannot yet be completed, give only the immediate next click. Do not keep guiding after completion.
 - Write the user-facing message in natural, concise Korean and name the visible target.
@@ -142,6 +143,10 @@ function compactRequest(request: GuideRequest) {
   return {
     session: request.session,
     context: request.context,
+    screenshotBounds: request.screenshotBounds
+      ? Object.fromEntries(Object.entries(request.screenshotBounds)
+        .map(([key, value]) => [key, Math.round(value)]))
+      : null,
     candidates: selectCandidates(request).map((candidate) => ({
       id: candidate.id,
       label: candidate.label?.slice(0, 160) ?? null,

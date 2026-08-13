@@ -40,6 +40,7 @@ public partial class App : Application
         var correctionSelection = new DeveloperRegionSelectionService();
         var trainingDirectory = JsonlDeveloperCorrectionStore.ResolveDefaultDataDirectory();
         PackagedTrainingSeeder.Seed(trainingDirectory);
+        DesktopDiagnostics.WriteEvent("training_store_ready", ("path", trainingDirectory));
         var correctionStore = new JsonlDeveloperCorrectionStore(trainingDirectory);
         var viewModel = new GuidanceViewModel(
             observer,

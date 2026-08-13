@@ -28,6 +28,42 @@ describe('hybrid guide provider', () => {
     expect(fallback.decideNextAction).toHaveBeenCalledOnce();
   });
 
+  it('reuses a validated remote answer for the same goal and exact screen state', async () => {
+    const expected = { status: 'needs_clarification', action: 'ask_user', message: '어떤 항목인가요?', confidence: 0.7 };
+    const fallback: AiProvider = { decideNextAction: vi.fn().mockResolvedValue(expected) };
+    const provider = new HybridGuideProvider(fallback);
+    const request = {
+      ...guideRequestFixture,
+      session: { ...guideRequestFixture.session, originalUserMessage: '그 항목을 도와줘', goal: '그 항목을 도와줘' },
+      screenshot: 'data:image/jpeg;base64,same-screen',
+      screenshotBounds: { x: -1920, y: 0, width: 4480, height: 1440 },
+    };
+
+    expect(await provider.decideNextAction(request)).toEqual(expected);
+    expect(await provider.decideNextAction({
+      ...request,
+      session: { ...request.session, sessionId: 'another-session' },
+    })).toEqual(expected);
+    expect(fallback.decideNextAction).toHaveBeenCalledOnce();
+  });
+
+  it('does not reuse a remote answer after the screenshot changes', async () => {
+    const expected = { status: 'needs_clarification', action: 'ask_user', message: '확인할게요.', confidence: 0.7 };
+    const fallback: AiProvider = { decideNextAction: vi.fn().mockResolvedValue(expected) };
+    const provider = new HybridGuideProvider(fallback);
+    const request = {
+      ...guideRequestFixture,
+      session: { ...guideRequestFixture.session, originalUserMessage: '그 항목', goal: '그 항목' },
+      screenshot: 'data:image/jpeg;base64,screen-one',
+      screenshotBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    };
+
+    await provider.decideNextAction(request);
+    await provider.decideNextAction({ ...request, screenshot: 'data:image/jpeg;base64,screen-two' });
+
+    expect(fallback.decideNextAction).toHaveBeenCalledTimes(2);
+  });
+
   it('routes known Windows settings before local, Hugging Face, or GPT', async () => {
     const fallback: AiProvider = { decideNextAction: vi.fn() };
     const provider = new HybridGuideProvider(fallback);
