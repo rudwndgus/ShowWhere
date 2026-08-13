@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { AiProvider } from '../../../src/guide-api/AiProvider';
 import type { ApiConfig } from './config';
 import { createApiServer } from './createApiServer';
+import type { SpeechTranscriber } from './OpenAiSpeechTranscriber';
 import { guideRequestFixture } from './testFixtures';
 
 const config: ApiConfig = {
@@ -27,6 +28,8 @@ const config: ApiConfig = {
     fastModel: 'gpt-5.6-luna',
     model: 'gpt-5.6-terra',
     strongModel: 'gpt-5.6-sol',
+    sttModel: 'gpt-4o-transcribe',
+    sttTimeoutMs: 25_000,
     baseUrl: 'https://api.openai.com/v1',
     requestTimeoutMs: 30_000,
     maxRetries: 1,
@@ -46,8 +49,12 @@ async function listen(provider: AiProvider): Promise<string> {
   return listenWithConfig(config, provider);
 }
 
-async function listenWithConfig(serverConfig: ApiConfig, provider: AiProvider): Promise<string> {
-  const server = createApiServer(serverConfig, provider);
+async function listenWithConfig(
+  serverConfig: ApiConfig,
+  provider: AiProvider,
+  speechTranscriber?: SpeechTranscriber,
+): Promise<string> {
+  const server = createApiServer(serverConfig, provider, speechTranscriber);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;
@@ -225,6 +232,45 @@ describe('mobile pairing API', () => {
     expect(correctAfterLockout.status).toBe(400);
   });
 
+  it('transcribes only for the connected mobile session without exposing provider credentials', async () => {
+    let receivedBytes = 0;
+    const guide = await listenWithConfig(config, { async decideNextAction() { return {}; } }, {
+      async transcribe(audio) {
+        receivedBytes = audio.byteLength;
+        return { text: '프린터 연결 상태 확인하고 싶어', providerLatencyMs: 321 };
+      },
+    });
+    const base = guide.replace('/api/guide', '');
+    const created = await (await fetch(`${base}/api/pairing/sessions`, { method: 'POST' })).json() as {
+      sessionId: string; desktopSecret: string; pairingToken: string; code: string;
+    };
+    const claim = await (await fetch(`${base}/api/pairing/claim`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pairingToken: created.pairingToken, code: created.code }),
+    })).json() as { sessionId: string; mobileSecret: string };
+    const wsBase = base.replace('http:', 'ws:');
+    const desktop = new WebSocket(`${wsBase}/api/pairing/ws?role=desktop&sessionId=${created.sessionId}`, ['showwhere-v1', created.desktopSecret]);
+    const mobile = new WebSocket(`${wsBase}/api/pairing/ws?role=mobile&sessionId=${claim.sessionId}`, ['showwhere-v1', claim.mobileSecret]);
+    await Promise.all([desktop, mobile].map((socket) => new Promise<void>((resolve, reject) => {
+      socket.once('open', resolve); socket.once('error', reject);
+    })));
+    const endpoint = `${base}/api/mobile/transcribe?sessionId=${claim.sessionId}`;
+    const unauthorized = await fetch(endpoint, {
+      method: 'POST', headers: { 'content-type': 'audio/webm' }, body: Buffer.alloc(1_024),
+    });
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'audio/webm', 'x-showwhere-pairing-secret': claim.mobileSecret },
+      body: Buffer.alloc(1_024),
+    });
+
+    expect(unauthorized.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: '프린터 연결 상태 확인하고 싶어', providerLatencyMs: 321 });
+    expect(receivedBytes).toBe(1_024);
+    desktop.close(); mobile.close();
+  });
+
   it('requires the per-session desktop secret to disconnect', async () => {
     const guide = await listen({ async decideNextAction() { return {}; } });
     const base = guide.replace('/api/guide', '');
@@ -252,6 +298,15 @@ describe('mobile pairing API', () => {
     expect(html).toContain('controller.abort()');
     expect(html).toContain('연결 시간이 초과됐어요');
     expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' ws: wss:");
+    expect(response.headers.get('permissions-policy')).toContain('microphone=(self)');
+    expect(html).toContain('id="mic"');
+    expect(html).toContain('navigator.mediaDevices.getUserMedia({audio:');
+    expect(html).toContain('/api/mobile/transcribe?sessionId=');
+    expect(html).toContain("$('message').value=(current?current+' ':'')+transcript");
+    expect(html).not.toContain('send();await uploadSpeech');
+    const inlineScript = /<script>([\s\S]+)<\/script>/u.exec(html)?.[1];
+    expect(inlineScript).toBeTruthy();
+    expect(() => new Function(inlineScript!)).not.toThrow();
   });
 
   it('serves the built-in iPhone QR decoder', async () => {

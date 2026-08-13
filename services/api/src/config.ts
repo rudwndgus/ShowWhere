@@ -20,6 +20,8 @@ const environmentSchema = z.object({
   OPENAI_FAST_MODEL: z.string().trim().min(1).default('gpt-5.6-luna'),
   OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.6-terra'),
   OPENAI_STRONG_MODEL: z.string().trim().min(1).default('gpt-5.6-sol'),
+  OPENAI_STT_MODEL: z.string().trim().min(1).default('gpt-4o-transcribe'),
+  OPENAI_STT_TIMEOUT_MS: integerFromEnvironment(3_000, 60_000).default(25_000),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),
   OPENAI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
@@ -74,6 +76,8 @@ export interface ApiConfig {
     fastModel: string;
     model: string;
     strongModel: string;
+    sttModel: string;
+    sttTimeoutMs: number;
     baseUrl: string;
     requestTimeoutMs: number;
     maxRetries: number;
@@ -112,6 +116,8 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
       fastModel: parsed.OPENAI_FAST_MODEL,
       model: parsed.OPENAI_MODEL,
       strongModel: parsed.OPENAI_STRONG_MODEL,
+      sttModel: parsed.OPENAI_STT_MODEL,
+      sttTimeoutMs: parsed.OPENAI_STT_TIMEOUT_MS,
       baseUrl: parsed.OPENAI_BASE_URL.replace(/\/$/u, ''),
       requestTimeoutMs: parsed.OPENAI_REQUEST_TIMEOUT_MS,
       maxRetries: parsed.OPENAI_MAX_RETRIES,

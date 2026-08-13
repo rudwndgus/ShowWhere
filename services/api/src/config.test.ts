@@ -7,6 +7,7 @@ describe('API environment configuration', () => {
     expect(config.openai.fastModel).toBe('gpt-5.6-luna');
     expect(config.openai.model).toBe('gpt-5.6-terra');
     expect(config.openai.strongModel).toBe('gpt-5.6-sol');
+    expect(config.openai.sttModel).toBe('gpt-4o-transcribe');
     expect(config.host).toBe('127.0.0.1');
     expect(config.port).toBe(8787);
     expect(config.openai.baseUrl).toBe('https://api.openai.com/v1');

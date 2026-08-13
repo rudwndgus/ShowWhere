@@ -95,6 +95,15 @@ export class PairingManager {
     return true;
   }
 
+  authorizeConnectedMobile(sessionId: string, mobileSecret: string): boolean {
+    this.prune();
+    const session = this.sessions.get(sessionId);
+    return Boolean(session?.claimed && session.mobileSecret
+      && safeEqual(session.mobileSecret, mobileSecret)
+      && session.desktop?.readyState === WebSocket.OPEN
+      && session.mobile?.readyState === WebSocket.OPEN);
+  }
+
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): boolean {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname !== '/api/pairing/ws') return false;

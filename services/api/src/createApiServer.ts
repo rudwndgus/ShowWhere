@@ -10,6 +10,7 @@ import type { ApiConfig } from './config';
 import { centralRecordBatchSchema, CentralKnowledgeStore } from './CentralKnowledgeStore';
 import { mobilePage } from './mobilePage';
 import { PairingManager } from './PairingManager';
+import { OpenAiSpeechTranscriber, type SpeechTranscriber } from './OpenAiSpeechTranscriber';
 
 async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -23,6 +24,18 @@ async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise
   }
 
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+}
+
+async function readBinaryBody(request: IncomingMessage, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.byteLength;
+    if (size > maxBytes) throw new Error('request_too_large');
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -66,7 +79,7 @@ function sendHtml(response: ServerResponse, body: string): void {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
-    'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
+    'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=()',
     'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; media-src blob:",
   });
   response.end(body);
@@ -104,13 +117,18 @@ class FixedWindowRateLimiter {
   }
 }
 
-export function createApiServer(config: ApiConfig, provider: AiProvider) {
+export function createApiServer(
+  config: ApiConfig,
+  provider: AiProvider,
+  speechTranscriber: SpeechTranscriber = new OpenAiSpeechTranscriber(config.openai),
+) {
   const limiter = new FixedWindowRateLimiter(
     config.security.rateLimitWindowMs,
     config.security.rateLimitMaxRequests,
   );
   const pairingCreateLimiter = new FixedWindowRateLimiter(60_000, 20);
   const pairingClaimLimiter = new FixedWindowRateLimiter(60_000, 20);
+  const speechLimiter = new FixedWindowRateLimiter(60_000, 20);
   const knowledge = new CentralKnowledgeStore(config.centralDataDirectory);
   const pairing = new PairingManager(config.pairingTtlSeconds * 1_000);
   const server = createServer(async (request, response) => {
@@ -170,6 +188,46 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
         if (!claimed) { sendJson(response, 400, { message: '인증번호가 다르거나 연결 시간이 만료되었습니다.' }); return; }
         sendJson(response, 200, claimed);
       } catch { sendJson(response, 400, { message: '연결 정보를 확인해 주세요.' }); }
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/api/mobile/transcribe') {
+      const sessionId = url.searchParams.get('sessionId') ?? '';
+      const supplied = request.headers['x-showwhere-pairing-secret'];
+      const mobileSecret = Array.isArray(supplied) ? supplied[0] : supplied ?? '';
+      if (!pairing.authorizeConnectedMobile(sessionId, mobileSecret)) {
+        sendJson(response, 401, { message: 'PC 연결을 다시 확인해 주세요.' });
+        return;
+      }
+      if (!speechLimiter.allow(`${clientAddress(request, config.security.trustProxy)}:${sessionId}`)) {
+        sendJson(response, 429, { message: '음성 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+        return;
+      }
+      const contentType = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() ?? '';
+      if (!['audio/mp4', 'audio/x-m4a', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'].includes(contentType)) {
+        sendJson(response, 415, { message: '이 휴대폰의 음성 형식을 처리할 수 없어요.' });
+        return;
+      }
+      try {
+        const audio = await readBinaryBody(request, 5_000_000);
+        if (audio.byteLength < 512) {
+          sendJson(response, 400, { message: '음성이 너무 짧아요. 조금 더 길게 말해 주세요.' });
+          return;
+        }
+        const transcription = await speechTranscriber.transcribe(audio, contentType);
+        if (!transcription.text) {
+          sendJson(response, 422, { message: '음성을 듣지 못했어요. 다시 말해 주세요.' });
+          return;
+        }
+        if (config.debug)
+          console.log(`[showwhere:stt] duration_ms=${transcription.providerLatencyMs} bytes=${audio.byteLength}`);
+        sendJson(response, 200, transcription);
+      } catch (error) {
+        const status = error instanceof Error && error.message === 'request_too_large' ? 413 : 502;
+        console.error(`[showwhere:stt] failed=${status}`);
+        sendJson(response, status, {
+          message: status === 413 ? '음성이 너무 길어요. 짧게 나누어 말해 주세요.' : '음성을 변환하지 못했어요. 다시 시도해 주세요.',
+        });
+      }
       return;
     }
 
