@@ -1,12 +1,21 @@
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import { GuideDecisionSchema, type GuideDecision, type GuideRequest } from '../../../../src/contracts';
+import { normalizeUiName, semanticLabelFromRules } from '../../../../src/web-knowledge';
+import { groundVisualDecision } from './VisualTargetGrounder';
 
 export interface OpenAiGuideProviderOptions {
   apiKey: string;
+  fastModel?: string;
   model: string;
+  strongModel?: string;
   baseUrl: string;
   requestTimeoutMs: number;
   maxRetries: number;
+}
+
+interface ModelRoute {
+  model: string;
+  reasoningEffort: 'none' | 'low';
 }
 
 const decisionJsonSchema = {
@@ -52,10 +61,12 @@ Rules:
 - Never repeat a control recorded in completedSteps unless the screen proves the previous click did not take effect.
 - First decide whether the user's goal is already complete from visible evidence. If complete: status=completed, action=explain, no target.
 - Understand the destination and scope. A website search belongs inside that website, never in the browser address bar unless the user explicitly asks for web/navigation search.
+- Separate the user's FINAL INTENT from controls that merely contain related words. For a generic website login request, choose the site's canonical account/sign-in control (for example Amazon's "Hello, sign in Account & Lists"). Never choose delivery-location, address, shipping, or other contextual "sign in to ..." shortcuts unless the user explicitly asked about that context.
 - For Windows settings tasks, navigation priority is mandatory: (1) the final settings control if visible, (2) a visible/running Settings app or Settings icon, (3) Start, and only then (4) Windows Search. Never choose or instruct typing into Search while a direct Settings control/icon is visible anywhere in the screenshot.
 - When a direct Windows Settings icon/control is clearly visible in pixels but absent from candidates, use highlight_visual around that icon instead of choosing a Search candidate.
 - Select the most direct visible control that advances the goal. Do not select window chrome (back/minimize/maximize/close) unless explicitly requested.
 - Prefer action=highlight with a candidate targetId only when the candidate label, role, app/scope, and screenshot all agree.
+- If the right control is represented by a candidate, always return highlight with its targetId so ShowWhere can use the live clickable rectangle. Use highlight_visual only when no matching candidate exists.
 - If the right control is visible in pixels but absent/unsafe in candidates, use highlight_visual with one tight normalized box around only that clickable control.
 - Coordinates are fractions of the entire supplied screenshot. Never use a whole window, panel, card, or guessed off-screen location.
 - If intent has multiple materially different meanings, ask one concise Korean clarification question. Do not guess.
@@ -70,11 +81,24 @@ function candidateScore(request: GuideRequest, index: number): number {
   const searchable = `${candidate.label ?? ''} ${candidate.description ?? ''} ${candidate.role}`.toLowerCase();
   const intentWords = intent.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 2);
   const directMatches = intentWords.filter((word) => searchable.includes(word) || intent.includes(searchable.trim())).length;
+  const intentSemantic = semanticLabelFromRules(intent);
+  const candidateSemantic = semanticLabelFromRules(searchable);
+  const semanticMatch = intentSemantic && candidateSemantic === intentSemantic ? 5_000 : 0;
+  const normalizedCandidate = normalizeUiName(searchable);
+  const contextualLoginPenalty = intentSemantic === 'login'
+    && !/address|location|delivery|shipping|주소|위치|배송/u.test(normalizeUiName(intent))
+    && /address|location|delivery|shipping|주소|위치|배송/u.test(normalizedCandidate)
+    ? 12_000 : 0;
+  const canonicalLoginBonus = intentSemantic === 'login'
+    && (/^(sign in|log in|login|로그인)(?: link| button)?$/u.test(normalizedCandidate)
+      || /hello.*sign in.*account|sign in.*account.*lists/u.test(normalizedCandidate))
+    ? 4_000 : 0;
   const scope = String(candidate.attributes?.sourceScope ?? '');
   const globalEntryScore = scope === 'windows_taskbar' ? 600
     : scope === 'windows_window_overview' ? 450
       : 0;
-  return directMatches * 2_000 + globalEntryScore + Math.max(0, 250 - index);
+  return directMatches * 2_000 + semanticMatch + canonicalLoginBonus
+    - contextualLoginPenalty + globalEntryScore + Math.max(0, 250 - index);
 }
 
 function selectCandidates(request: GuideRequest) {
@@ -84,6 +108,29 @@ function selectCandidates(request: GuideRequest) {
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .slice(0, 32)
     .map(({ candidate }) => candidate);
+}
+
+function selectModelRoute(request: GuideRequest, options: OpenAiGuideProviderOptions): ModelRoute {
+  const fastModel = options.fastModel ?? options.model;
+  const strongModel = options.strongModel ?? options.model;
+
+  // A screenshot with no live UI Automation candidates requires pure visual
+  // grounding. This is the rare case where flagship reasoning is worth its cost.
+  if (request.candidates.length === 0)
+    return { model: strongModel, reasoningEffort: 'low' };
+
+  const scores = request.candidates
+    .map((_, index) => candidateScore(request, index))
+    .sort((left, right) => right - left);
+  const best = scores[0] ?? 0;
+  const runnerUp = scores[1] ?? Number.NEGATIVE_INFINITY;
+
+  // Luna is used only when the user's wording has one clearly dominant live
+  // candidate. The model still verifies it against the screenshot and schema.
+  if (best >= 2_000 && best - runnerUp >= 750)
+    return { model: fastModel, reasoningEffort: 'none' };
+
+  return { model: options.model, reasoningEffort: 'low' };
 }
 
 function compactRequest(request: GuideRequest) {
@@ -147,6 +194,7 @@ export class OpenAiGuideProvider implements AiProvider {
 
   async decideNextAction(request: GuideRequest): Promise<GuideDecision> {
     if (!request.screenshot) throw new Error('A full desktop screenshot is required for GPT guidance.');
+    const route = selectModelRoute(request, this.options);
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
       const controller = new AbortController();
@@ -157,17 +205,17 @@ export class OpenAiGuideProvider implements AiProvider {
           headers: { Authorization: `Bearer ${this.options.apiKey}`, 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            model: this.options.model,
+            model: route.model,
             store: false,
-            reasoning: { effort: 'low' },
+            reasoning: { effort: route.reasoningEffort },
             max_output_tokens: 300,
             input: [
               { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
               { role: 'user', content: [
                 { type: 'input_text', text: JSON.stringify(compactRequest(request)) },
-                // Keep the entire virtual desktop, but use the low vision token budget.
-                // Exact UIA bounds remain available for pixel-accurate highlighting.
-                { type: 'input_image', image_url: request.screenshot, detail: 'low' },
+                // Auto preserves enough source detail for small controls. Whenever UIA exposes
+                // the control, the model's visual box is snapped back to its live click bounds.
+                { type: 'input_image', image_url: request.screenshot, detail: 'auto' },
               ] },
             ],
             text: { format: { type: 'json_schema', name: 'showwhere_next_action', strict: true, schema: decisionJsonSchema } },
@@ -175,7 +223,7 @@ export class OpenAiGuideProvider implements AiProvider {
         });
         if (!response.ok) throw new Error(`OpenAI API ${response.status}: ${(await response.text()).slice(0, 500)}`);
         const parsed = JSON.parse(extractOutputText(await response.json())) as Record<string, unknown>;
-        return GuideDecisionSchema.parse(removeNulls(parsed));
+        return groundVisualDecision(request, GuideDecisionSchema.parse(removeNulls(parsed)));
       } catch (error) {
         lastError = error;
         if (attempt < this.options.maxRetries && shouldRetry(error))

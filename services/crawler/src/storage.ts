@@ -1,5 +1,7 @@
-import { appendFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { promisify } from 'node:util';
+import { gzip, gunzip } from 'node:zlib';
 import {
   CommonWebPatternsFileSchema,
   RawWebCrawlRunSchema,
@@ -9,6 +11,9 @@ import {
   type RawWebCrawlRun,
   type WebKnowledgeCatalog,
 } from '../../../src/web-knowledge';
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
 
 export interface KnowledgePaths {
   root: string;
@@ -37,10 +42,24 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await rename(temporary, path);
 }
 
+async function writeJsonGzipAtomic(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  const contents = Buffer.from(`${JSON.stringify(value)}\n`, 'utf8');
+  await writeFile(temporary, await gzipAsync(contents, { level: 9 }));
+  await rename(temporary, path);
+}
+
+async function readJson(path: string): Promise<unknown> {
+  const contents = await readFile(path);
+  const decoded = path.endsWith('.gz') ? await gunzipAsync(contents) : contents;
+  return JSON.parse(decoded.toString('utf8')) as unknown;
+}
+
 export async function saveRawRun(paths: KnowledgePaths, run: RawWebCrawlRun): Promise<string> {
   const validated = RawWebCrawlRunSchema.parse(run);
-  const path = join(paths.raw, validated.siteId, `${validated.runId}.json`);
-  await writeJsonAtomic(path, validated);
+  const path = join(paths.raw, validated.siteId, `${validated.runId}.json.gz`);
+  await writeJsonGzipAtomic(path, validated);
   await appendTrainingEvent(paths, {
     schemaVersion: 1,
     type: 'crawl_run',
@@ -59,17 +78,20 @@ export async function loadRawRuns(paths: KnowledgePaths, siteId: string): Promis
   let names: string[];
   try { names = await readdir(directory); } catch { return []; }
   const result: RawWebCrawlRun[] = [];
-  for (const name of names.filter((value) => value.endsWith('.json')).sort()) {
-    result.push(RawWebCrawlRunSchema.parse(JSON.parse(await readFile(join(directory, name), 'utf8'))));
+  const byRunId = new Map<string, RawWebCrawlRun>();
+  for (const name of names.filter((value) => value.endsWith('.json') || value.endsWith('.json.gz')).sort()) {
+    const run = RawWebCrawlRunSchema.parse(await readJson(join(directory, name)));
+    byRunId.set(run.runId, run);
   }
-  return result;
+  result.push(...byRunId.values());
+  return result.sort((left, right) => left.runId.localeCompare(right.runId));
 }
 
 export async function saveCatalog(paths: KnowledgePaths, catalog: WebKnowledgeCatalog): Promise<string> {
   const validated = WebKnowledgeCatalogSchema.parse(catalog);
-  const normalizedPath = join(paths.normalized, `${validated.siteId}.json`);
+  const normalizedPath = join(paths.normalized, `${validated.siteId}.json.gz`);
   const catalogPath = join(paths.catalogs, `${validated.siteId}.json`);
-  await writeJsonAtomic(normalizedPath, validated);
+  await writeJsonGzipAtomic(normalizedPath, validated);
   await writeJsonAtomic(catalogPath, validated);
   await appendTrainingEvent(paths, {
     schemaVersion: 1,
@@ -85,12 +107,43 @@ export async function saveCatalog(paths: KnowledgePaths, catalog: WebKnowledgeCa
   return catalogPath;
 }
 
+export async function compressKnowledgeArtifacts(paths: KnowledgePaths): Promise<{ files: number; beforeBytes: number; afterBytes: number }> {
+  let files = 0;
+  let beforeBytes = 0;
+  let afterBytes = 0;
+  const directories = [paths.raw, paths.normalized];
+  for (const root of directories) {
+    const pending = [root];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries;
+      try { entries = await readdir(directory, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) { pending.push(path); continue; }
+        if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+        const original = await readFile(path);
+        const parsed = JSON.parse(original.toString('utf8')) as unknown;
+        const compressedPath = `${path}.gz`;
+        await writeJsonGzipAtomic(compressedPath, parsed);
+        await readJson(compressedPath);
+        const compressed = await readFile(compressedPath);
+        await unlink(path);
+        files++;
+        beforeBytes += original.byteLength;
+        afterBytes += compressed.byteLength;
+      }
+    }
+  }
+  return { files, beforeBytes, afterBytes };
+}
+
 export async function loadCatalogs(paths: KnowledgePaths): Promise<WebKnowledgeCatalog[]> {
   let names: string[];
   try { names = await readdir(paths.catalogs); } catch { return []; }
   const catalogs: WebKnowledgeCatalog[] = [];
   for (const name of names.filter((value) => value.endsWith('.json')).sort()) {
-    catalogs.push(WebKnowledgeCatalogSchema.parse(JSON.parse(await readFile(join(paths.catalogs, name), 'utf8'))));
+    catalogs.push(WebKnowledgeCatalogSchema.parse(await readJson(join(paths.catalogs, name))));
   }
   return catalogs;
 }

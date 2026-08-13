@@ -1,0 +1,1458 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T04:51:39.583Z",
+  "patterns": [
+    {
+      "id": "common.product_detail.product.detail",
+      "intentLabel": "product_detail",
+      "aliases": [
+        "details",
+        "item detail",
+        "product detail",
+        "상세보기",
+        "상품 상세",
+        "제품 상세"
+      ],
+      "sequence": [
+        "product_detail"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.best_sellers.site.best.sellers",
+      "intentLabel": "site.best_sellers",
+      "aliases": [
+        "site best sellers"
+      ],
+      "sequence": [
+        "site.best_sellers"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.language.language",
+      "intentLabel": "language",
+      "aliases": [
+        "language",
+        "locale",
+        "region",
+        "언어",
+        "언어 설정",
+        "지역"
+      ],
+      "sequence": [
+        "language"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.gift_cards.gift.cards",
+      "intentLabel": "gift_cards",
+      "aliases": [
+        "gift card balance",
+        "gift cards",
+        "redeem gift card",
+        "reload your balance",
+        "기프트 카드",
+        "기프트카드 잔액",
+        "상품권"
+      ],
+      "sequence": [
+        "gift_cards"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon.product.detail.site.amazon",
+      "intentLabel": "site.amazon",
+      "aliases": [
+        "site amazon"
+      ],
+      "sequence": [
+        "product_detail",
+        "site.amazon"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.product.detail.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "product_detail",
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.product.detail.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "product_detail",
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.accessories.site.amazon.haul.site.accessories",
+      "intentLabel": "site.accessories",
+      "aliases": [
+        "site accessories"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "site.accessories"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.site.amazon.haul.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.conditions_of_use.site.conditions.of.use",
+      "intentLabel": "site.conditions_of_use",
+      "aliases": [
+        "site conditions of use"
+      ],
+      "sequence": [
+        "site.conditions_of_use"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.privacy.privacy",
+      "intentLabel": "privacy",
+      "aliases": [
+        "data controls",
+        "privacy",
+        "privacy settings",
+        "개인 정보 설정",
+        "개인정보",
+        "데이터 설정"
+      ],
+      "sequence": [
+        "privacy"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.account.account",
+      "intentLabel": "account",
+      "aliases": [
+        "account",
+        "account & lists",
+        "account and lists",
+        "my account",
+        "계정",
+        "내 계정",
+        "마이",
+        "마이페이지"
+      ],
+      "sequence": [
+        "account"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.help.help",
+      "intentLabel": "help",
+      "aliases": [
+        "contact us",
+        "customer service",
+        "help",
+        "help center",
+        "support",
+        "고객 지원",
+        "고객센터",
+        "도움말",
+        "문의하기"
+      ],
+      "sequence": [
+        "help"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.conditions_of_use.privacy.site.conditions.of.use",
+      "intentLabel": "site.conditions_of_use",
+      "aliases": [
+        "site conditions of use"
+      ],
+      "sequence": [
+        "privacy",
+        "site.conditions_of_use"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon.site.amazon",
+      "intentLabel": "site.amazon",
+      "aliases": [
+        "site amazon"
+      ],
+      "sequence": [
+        "site.amazon"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.music.site.music",
+      "intentLabel": "site.music",
+      "aliases": [
+        "site music"
+      ],
+      "sequence": [
+        "site.music"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.prime.site.prime",
+      "intentLabel": "site.prime",
+      "aliases": [
+        "site prime"
+      ],
+      "sequence": [
+        "site.prime"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.registry.site.registry",
+      "intentLabel": "site.registry",
+      "aliases": [
+        "site registry"
+      ],
+      "sequence": [
+        "site.registry"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.order_history.order.history",
+      "intentLabel": "order_history",
+      "aliases": [
+        "order history",
+        "orders",
+        "purchase history",
+        "purchases",
+        "returns & orders",
+        "your orders",
+        "구매 내역",
+        "구매내역",
+        "주문",
+        "주문 내역"
+      ],
+      "sequence": [
+        "order_history"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.sell.site.sell",
+      "intentLabel": "site.sell",
+      "aliases": [
+        "site sell"
+      ],
+      "sequence": [
+        "site.sell"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.sports_outdoors.site.sports.outdoors",
+      "intentLabel": "site.sports_outdoors",
+      "aliases": [
+        "site sports outdoors"
+      ],
+      "sequence": [
+        "site.sports_outdoors"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.today_s_deals.site.today.s.deals",
+      "intentLabel": "site.today_s_deals",
+      "aliases": [
+        "site today s deals"
+      ],
+      "sequence": [
+        "site.today_s_deals"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.conditions_of_use.site.amazon.site.conditions.of.use",
+      "intentLabel": "site.conditions_of_use",
+      "aliases": [
+        "site conditions of use"
+      ],
+      "sequence": [
+        "site.amazon",
+        "site.conditions_of_use"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.privacy.site.amazon.privacy",
+      "intentLabel": "privacy",
+      "aliases": [
+        "data controls",
+        "privacy",
+        "privacy settings",
+        "개인 정보 설정",
+        "개인정보",
+        "데이터 설정"
+      ],
+      "sequence": [
+        "site.amazon",
+        "privacy"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.product_detail.site.amazon.haul.product.detail",
+      "intentLabel": "product_detail",
+      "aliases": [
+        "details",
+        "item detail",
+        "product detail",
+        "상세보기",
+        "상품 상세",
+        "제품 상세"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "product_detail"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.site.amazon.haul.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.site.amazon.haul.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.best_sellers.site.amazon.haul.site.best.sellers",
+      "intentLabel": "site.best_sellers",
+      "aliases": [
+        "site best sellers"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "site.best_sellers"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.crazy_low.site.amazon.haul.site.crazy.low",
+      "intentLabel": "site.crazy_low",
+      "aliases": [
+        "site crazy low"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "site.crazy_low"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.gift_cards.site.amazon.haul.gift.cards",
+      "intentLabel": "gift_cards",
+      "aliases": [
+        "gift card balance",
+        "gift cards",
+        "redeem gift card",
+        "reload your balance",
+        "기프트 카드",
+        "기프트카드 잔액",
+        "상품권"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "gift_cards"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.product_detail.site.amazon.product.detail",
+      "intentLabel": "product_detail",
+      "aliases": [
+        "details",
+        "item detail",
+        "product detail",
+        "상세보기",
+        "상품 상세",
+        "제품 상세"
+      ],
+      "sequence": [
+        "site.amazon",
+        "product_detail"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.site.amazon.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "site.amazon",
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.site.amazon.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "site.amazon",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.site.amazon.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "site.amazon",
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.prime.site.amazon.site.prime",
+      "intentLabel": "site.prime",
+      "aliases": [
+        "site prime"
+      ],
+      "sequence": [
+        "site.amazon",
+        "site.prime"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon.site.amazon.haul.site.amazon",
+      "intentLabel": "site.amazon",
+      "aliases": [
+        "site amazon"
+      ],
+      "sequence": [
+        "site.amazon_haul",
+        "site.amazon"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.search.search",
+      "intentLabel": "search",
+      "aliases": [
+        "find",
+        "lookup",
+        "search",
+        "검색",
+        "조회",
+        "찾기"
+      ],
+      "sequence": [
+        "search"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.gift_cards.gift.cards.gift.cards",
+      "intentLabel": "gift_cards",
+      "aliases": [
+        "gift card balance",
+        "gift cards",
+        "redeem gift card",
+        "reload your balance",
+        "기프트 카드",
+        "기프트카드 잔액",
+        "상품권"
+      ],
+      "sequence": [
+        "gift_cards",
+        "gift_cards"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.be_informed.gift.cards.site.be.informed",
+      "intentLabel": "site.be_informed",
+      "aliases": [
+        "site be informed"
+      ],
+      "sequence": [
+        "gift_cards",
+        "site.be_informed"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.account.gift.cards.account",
+      "intentLabel": "account",
+      "aliases": [
+        "account",
+        "account & lists",
+        "account and lists",
+        "my account",
+        "계정",
+        "내 계정",
+        "마이",
+        "마이페이지"
+      ],
+      "sequence": [
+        "gift_cards",
+        "account"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.language.gift.cards.language",
+      "intentLabel": "language",
+      "aliases": [
+        "language",
+        "locale",
+        "region",
+        "언어",
+        "언어 설정",
+        "지역"
+      ],
+      "sequence": [
+        "gift_cards",
+        "language"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.order_tracking.gift.cards.order.tracking",
+      "intentLabel": "order_tracking",
+      "aliases": [
+        "delivery status",
+        "order tracking",
+        "shipment tracking",
+        "track order",
+        "track package",
+        "tracking",
+        "내 배송",
+        "배송 조회",
+        "배송 현황",
+        "배송조회",
+        "주문 추적",
+        "택배 조회"
+      ],
+      "sequence": [
+        "gift_cards",
+        "order_tracking"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon.gift.cards.site.amazon",
+      "intentLabel": "site.amazon",
+      "aliases": [
+        "site amazon"
+      ],
+      "sequence": [
+        "gift_cards",
+        "site.amazon"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.gift.cards.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "gift_cards",
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.gift_cards.search.gift.cards",
+      "intentLabel": "gift_cards",
+      "aliases": [
+        "gift card balance",
+        "gift cards",
+        "redeem gift card",
+        "reload your balance",
+        "기프트 카드",
+        "기프트카드 잔액",
+        "상품권"
+      ],
+      "sequence": [
+        "search",
+        "gift_cards"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.search.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "search",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.search.gift.cards.search",
+      "intentLabel": "search",
+      "aliases": [
+        "find",
+        "lookup",
+        "search",
+        "검색",
+        "조회",
+        "찾기"
+      ],
+      "sequence": [
+        "gift_cards",
+        "search"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.gift.cards.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "gift_cards",
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.privacy.order.history.privacy",
+      "intentLabel": "privacy",
+      "aliases": [
+        "data controls",
+        "privacy",
+        "privacy settings",
+        "개인 정보 설정",
+        "개인정보",
+        "데이터 설정"
+      ],
+      "sequence": [
+        "order_history",
+        "privacy"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.conditions_of_use.order.history.site.conditions.of.use",
+      "intentLabel": "site.conditions_of_use",
+      "aliases": [
+        "site conditions of use"
+      ],
+      "sequence": [
+        "order_history",
+        "site.conditions_of_use"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.subscriptions.subscriptions",
+      "intentLabel": "subscriptions",
+      "aliases": [
+        "billing",
+        "membership",
+        "plans",
+        "subscriptions",
+        "구독",
+        "멤버십",
+        "요금제"
+      ],
+      "sequence": [
+        "subscriptions"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.order_tracking.order.tracking",
+      "intentLabel": "order_tracking",
+      "aliases": [
+        "delivery status",
+        "order tracking",
+        "shipment tracking",
+        "track order",
+        "track package",
+        "tracking",
+        "내 배송",
+        "배송 조회",
+        "배송 현황",
+        "배송조회",
+        "주문 추적",
+        "택배 조회"
+      ],
+      "sequence": [
+        "order_tracking"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.are_you_18_24_years_old_or_a_student.site.are.you.18.24.years.old.or.a.student",
+      "intentLabel": "site.are_you_18_24_years_old_or_a_student",
+      "aliases": [
+        "site are you 18 24 years old or a student"
+      ],
+      "sequence": [
+        "site.are_you_18_24_years_old_or_a_student"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.gift.cards.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "gift_cards",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.product_detail.gift.cards.product.detail",
+      "intentLabel": "product_detail",
+      "aliases": [
+        "details",
+        "item detail",
+        "product detail",
+        "상세보기",
+        "상품 상세",
+        "제품 상세"
+      ],
+      "sequence": [
+        "gift_cards",
+        "product_detail"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.safety_information_recalls_and_legal_notices_page.site.safety.information.recalls.and.legal.notices.page",
+      "intentLabel": "site.safety_information_recalls_and_legal_notices_page",
+      "aliases": [
+        "site safety information recalls and legal notices page"
+      ],
+      "sequence": [
+        "site.safety_information_recalls_and_legal_notices_page"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.prime.gift.cards.site.prime",
+      "intentLabel": "site.prime",
+      "aliases": [
+        "site prime"
+      ],
+      "sequence": [
+        "gift_cards",
+        "site.prime"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.gift_cards.home.gift.cards",
+      "intentLabel": "gift_cards",
+      "aliases": [
+        "gift card balance",
+        "gift cards",
+        "redeem gift card",
+        "reload your balance",
+        "기프트 카드",
+        "기프트카드 잔액",
+        "상품권"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.device_management.home.device.management",
+      "intentLabel": "device_management",
+      "aliases": [
+        "content and devices",
+        "device management",
+        "devices",
+        "digital content",
+        "manage your content and devices",
+        "registered devices",
+        "기기 관리",
+        "디지털 콘텐츠",
+        "콘텐츠 및 기기"
+      ],
+      "sequence": [
+        "home",
+        "device_management"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.home.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "home",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.language.home.language",
+      "intentLabel": "language",
+      "aliases": [
+        "language",
+        "locale",
+        "region",
+        "언어",
+        "언어 설정",
+        "지역"
+      ],
+      "sequence": [
+        "home",
+        "language"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.account.home.account",
+      "intentLabel": "account",
+      "aliases": [
+        "account",
+        "account & lists",
+        "account and lists",
+        "my account",
+        "계정",
+        "내 계정",
+        "마이",
+        "마이페이지"
+      ],
+      "sequence": [
+        "home",
+        "account"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.prime.home.site.prime",
+      "intentLabel": "site.prime",
+      "aliases": [
+        "site prime"
+      ],
+      "sequence": [
+        "home",
+        "site.prime"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.search.home.search",
+      "intentLabel": "search",
+      "aliases": [
+        "find",
+        "lookup",
+        "search",
+        "검색",
+        "조회",
+        "찾기"
+      ],
+      "sequence": [
+        "home",
+        "search"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.product_detail.home.product.detail",
+      "intentLabel": "product_detail",
+      "aliases": [
+        "details",
+        "item detail",
+        "product detail",
+        "상세보기",
+        "상품 상세",
+        "제품 상세"
+      ],
+      "sequence": [
+        "home",
+        "product_detail"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.home.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "home",
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.home.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "home",
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.best_sellers.home.site.best.sellers",
+      "intentLabel": "site.best_sellers",
+      "aliases": [
+        "site best sellers"
+      ],
+      "sequence": [
+        "home",
+        "site.best_sellers"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.home.gift.cards.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.gift_cards.home.gift.cards.gift.cards",
+      "intentLabel": "gift_cards",
+      "aliases": [
+        "gift card balance",
+        "gift cards",
+        "redeem gift card",
+        "reload your balance",
+        "기프트 카드",
+        "기프트카드 잔액",
+        "상품권"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "gift_cards"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.search.home.gift.cards.search",
+      "intentLabel": "search",
+      "aliases": [
+        "find",
+        "lookup",
+        "search",
+        "검색",
+        "조회",
+        "찾기"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "search"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.be_informed.home.gift.cards.site.be.informed",
+      "intentLabel": "site.be_informed",
+      "aliases": [
+        "site be informed"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "site.be_informed"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.account.home.gift.cards.account",
+      "intentLabel": "account",
+      "aliases": [
+        "account",
+        "account & lists",
+        "account and lists",
+        "my account",
+        "계정",
+        "내 계정",
+        "마이",
+        "마이페이지"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "account"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.language.home.gift.cards.language",
+      "intentLabel": "language",
+      "aliases": [
+        "language",
+        "locale",
+        "region",
+        "언어",
+        "언어 설정",
+        "지역"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "language"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.prime.home.gift.cards.site.prime",
+      "intentLabel": "site.prime",
+      "aliases": [
+        "site prime"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "site.prime"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.order_tracking.home.gift.cards.order.tracking",
+      "intentLabel": "order_tracking",
+      "aliases": [
+        "delivery status",
+        "order tracking",
+        "shipment tracking",
+        "track order",
+        "track package",
+        "tracking",
+        "내 배송",
+        "배송 조회",
+        "배송 현황",
+        "배송조회",
+        "주문 추적",
+        "택배 조회"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "order_tracking"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon.home.gift.cards.site.amazon",
+      "intentLabel": "site.amazon",
+      "aliases": [
+        "site amazon"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "site.amazon"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.amazon_haul.home.gift.cards.site.amazon.haul",
+      "intentLabel": "site.amazon_haul",
+      "aliases": [
+        "site amazon haul"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "site.amazon_haul"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.menu.home.gift.cards.menu",
+      "intentLabel": "menu",
+      "aliases": [
+        "menu",
+        "more",
+        "nav",
+        "navigation",
+        "더보기",
+        "메뉴",
+        "전체 메뉴"
+      ],
+      "sequence": [
+        "home",
+        "gift_cards",
+        "menu"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.account.home.device.management.account",
+      "intentLabel": "account",
+      "aliases": [
+        "account",
+        "account & lists",
+        "account and lists",
+        "my account",
+        "계정",
+        "내 계정",
+        "마이",
+        "마이페이지"
+      ],
+      "sequence": [
+        "home",
+        "device_management",
+        "account"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.payment_methods.payment.methods",
+      "intentLabel": "payment_methods",
+      "aliases": [
+        "cards",
+        "payment methods",
+        "payments",
+        "wallet",
+        "결제 수단",
+        "지갑",
+        "카드"
+      ],
+      "sequence": [
+        "payment_methods"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.best_sellers.gift.cards.site.best.sellers",
+      "intentLabel": "site.best_sellers",
+      "aliases": [
+        "site best sellers"
+      ],
+      "sequence": [
+        "gift_cards",
+        "site.best_sellers"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.home.payment.methods.home",
+      "intentLabel": "home",
+      "aliases": [
+        "home",
+        "homepage",
+        "main",
+        "main page",
+        "메인",
+        "홈",
+        "홈페이지"
+      ],
+      "sequence": [
+        "payment_methods",
+        "home"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.computer_accessories_you_are_currently_on_a_drop_down_to_open_this_drop_down_pre.site.computer.accessories.you.are.currently.on.a.drop.down.to.open.this.drop.down.pre",
+      "intentLabel": "site.computer_accessories_you_are_currently_on_a_drop_down_to_open_this_drop_down_pre",
+      "aliases": [
+        "site computer accessories you are currently on a drop down to open this drop down pre"
+      ],
+      "sequence": [
+        "site.computer_accessories_you_are_currently_on_a_drop_down_to_open_this_drop_down_pre"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.computers.site.computers",
+      "intentLabel": "site.computers",
+      "aliases": [
+        "site computers"
+      ],
+      "sequence": [
+        "site.computers"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    },
+    {
+      "id": "common.site.desktops_you_are_currently_on_a_drop_down_to_open_this_drop_down_press_enter.site.desktops.you.are.currently.on.a.drop.down.to.open.this.drop.down.press.enter",
+      "intentLabel": "site.desktops_you_are_currently_on_a_drop_down_to_open_this_drop_down_press_enter",
+      "aliases": [
+        "site desktops you are currently on a drop down to open this drop down press enter"
+      ],
+      "sequence": [
+        "site.desktops_you_are_currently_on_a_drop_down_to_open_this_drop_down_press_enter"
+      ],
+      "siteCount": 1,
+      "confidence": 0.55
+    }
+  ]
+}

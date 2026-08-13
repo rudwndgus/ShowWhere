@@ -72,7 +72,11 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         if (!deferForegroundScan)
         {
             var foregroundRaw = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
-            foregroundCandidates = CandidateNormalizer.Normalize(foregroundRaw, MaximumForegroundCandidates);
+            var normalizedForeground = CandidateNormalizer.Normalize(foregroundRaw, MaximumTreeNodes);
+            foregroundCandidates = CandidatePrioritizer.Prioritize(
+                normalizedForeground,
+                goal,
+                MaximumForegroundCandidates);
         }
         var roots = new List<AutomationElement> { root };
         var overviewSourceKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -240,7 +244,9 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         EnqueueChildren(root, walker, queue);
         var visited = 0;
 
-        while (queue.Count > 0 && visited++ < MaximumTreeNodes && result.Count < 500)
+        // Dense web pages can expose hundreds of containers before important header
+        // controls. Scan the bounded tree, then rank the actionable results for the goal.
+        while (queue.Count > 0 && visited++ < MaximumTreeNodes)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var element = queue.Dequeue();

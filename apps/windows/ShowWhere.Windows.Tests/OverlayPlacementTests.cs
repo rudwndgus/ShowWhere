@@ -130,6 +130,22 @@ public sealed class OverlayPlacementTests
         Assert.True(absoluteHighlightBottom <= monitorArea.Bottom);
     }
 
+    [Fact]
+    public void Highlight_matches_the_exact_clickable_rectangle()
+    {
+        var target = new UiBounds(640, 240, 173, 51);
+        var monitor = new PhysicalRectangle(0, 0, 1920, 1080);
+
+        var placement = OverlayPlacementCalculator.Calculate(target, monitor);
+        var absoluteHighlight = placement.Highlight with
+        {
+            X = placement.Window.X + placement.Highlight.X,
+            Y = placement.Window.Y + placement.Highlight.Y,
+        };
+
+        Assert.Equal(new PhysicalRectangle(target.X, target.Y, target.Width, target.Height), absoluteHighlight);
+    }
+
     [Theory]
     [InlineData(2419.25, 181.5, 503.25, 119.25, 2419, 181, 504, 120)]
     [InlineData(-1840.75, -910.25, 320.5, 88.5, -1841, -911, 321, 90)]
