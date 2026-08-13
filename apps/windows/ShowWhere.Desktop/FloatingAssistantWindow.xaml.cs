@@ -21,6 +21,8 @@ public partial class FloatingAssistantWindow : Window
     private Point? _mouseDownPosition;
     private bool _dragging;
 
+    public AssistantCharacterStore CharacterStore { get; }
+
     public static readonly DependencyProperty IsStandingProperty = DependencyProperty.Register(
         nameof(IsStanding),
         typeof(bool),
@@ -36,10 +38,12 @@ public partial class FloatingAssistantWindow : Window
     public FloatingAssistantWindow(
         GuidancePanelWindow panel,
         AssistantPositionStore positionStore,
+        AssistantCharacterStore characterStore,
         Action rememberForegroundWindow)
     {
         _panel = panel;
         _positionStore = positionStore;
+        CharacterStore = characterStore;
         _rememberForegroundWindow = rememberForegroundWindow;
         InitializeComponent();
         var saved = _positionStore.Load();
