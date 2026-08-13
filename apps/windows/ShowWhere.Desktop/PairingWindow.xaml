@@ -18,7 +18,7 @@
       <TextBlock Text="{Binding PairingStatus}" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" Foreground="#FF71696B" Margin="0,8,0,0"/>
     </StackPanel>
     <StackPanel Grid.Row="2">
-      <ProgressBar Value="{Binding RemainingProgress}" Maximum="100" Height="5" Foreground="#FF472323"/>
+      <ProgressBar Value="{Binding RemainingProgress, Mode=OneWay}" Maximum="100" Height="5" Foreground="#FF472323"/>
       <TextBlock Text="{Binding RemainingSeconds, StringFormat={}{0}초 후 QR 자동 갱신}" HorizontalAlignment="Center" Margin="0,7,0,0" Foreground="#FF71696B"/>
     </StackPanel>
   </Grid>

@@ -6,6 +6,8 @@ ShowWhere는 사용자가 화면을 설명하지 않아도, 하고 싶은 일만
 
 [![Download ShowWhere](https://img.shields.io/badge/Windows-ShowWhere.exe%20다운로드-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
 
+[![Open ShowWhere Mobile](https://img.shields.io/badge/Mobile-휴대폰%20연결%20웹페이지-25A65A?style=for-the-badge&logo=googlechrome&logoColor=white)](https://api-production-6901.up.railway.app/mobile/)
+
 ## 왜 ShowWhere인가요?
 
 기술 지원에서 가장 오래 걸리는 순간은 문제 해결 자체보다 버튼의 위치를 설명할 때가 많습니다.
@@ -28,6 +30,8 @@ ShowWhere는 말로 위치를 설명하는 대신 사용자의 화면에서 정�
 4. ShowWhere가 표시한 위치를 누르면 다음 단계를 이어서 안내합니다.
 
 키보드가 없는 PC나 키오스크에서는 ShowWhere 상단의 **모바일 연결**을 누르세요. 휴대폰으로 QR을 스캔하고 PC의 6자리 번호를 입력하면, 휴대폰에서 보낸 질문과 ShowWhere의 답변이 양쪽에 같은 대화로 표시됩니다. 별도 모바일 앱 설치는 필요하지 않습니다.
+
+휴대폰에서 연결 페이지를 먼저 열려면 **[ShowWhere 모바일 연결 웹페이지](https://api-production-6901.up.railway.app/mobile/)**를 사용하면 됩니다. 페이지의 `PC와 연결하기`를 눌러 PC에 표시된 QR을 촬영하세요.
 
 ShowWhere는 사용자를 대신해 자동 클릭하지 않습니다. 종료하려면 고릴라를 **마우스 오른쪽 버튼으로 클릭한 뒤 `종료`**를 선택하세요. 여러 번 실행해도 한 개만 실행됩니다.
 
