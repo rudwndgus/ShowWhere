@@ -5,10 +5,17 @@ import { groundVisualDecision } from './VisualTargetGrounder';
 
 export interface OpenAiGuideProviderOptions {
   apiKey: string;
+  fastModel?: string;
   model: string;
+  strongModel?: string;
   baseUrl: string;
   requestTimeoutMs: number;
   maxRetries: number;
+}
+
+interface ModelRoute {
+  model: string;
+  reasoningEffort: 'none' | 'low';
 }
 
 const decisionJsonSchema = {
@@ -103,6 +110,29 @@ function selectCandidates(request: GuideRequest) {
     .map(({ candidate }) => candidate);
 }
 
+function selectModelRoute(request: GuideRequest, options: OpenAiGuideProviderOptions): ModelRoute {
+  const fastModel = options.fastModel ?? options.model;
+  const strongModel = options.strongModel ?? options.model;
+
+  // A screenshot with no live UI Automation candidates requires pure visual
+  // grounding. This is the rare case where flagship reasoning is worth its cost.
+  if (request.candidates.length === 0)
+    return { model: strongModel, reasoningEffort: 'low' };
+
+  const scores = request.candidates
+    .map((_, index) => candidateScore(request, index))
+    .sort((left, right) => right - left);
+  const best = scores[0] ?? 0;
+  const runnerUp = scores[1] ?? Number.NEGATIVE_INFINITY;
+
+  // Luna is used only when the user's wording has one clearly dominant live
+  // candidate. The model still verifies it against the screenshot and schema.
+  if (best >= 2_000 && best - runnerUp >= 750)
+    return { model: fastModel, reasoningEffort: 'none' };
+
+  return { model: options.model, reasoningEffort: 'low' };
+}
+
 function compactRequest(request: GuideRequest) {
   const attributeKeys = [
     'automationId', 'className', 'controlType', 'processName',
@@ -164,6 +194,7 @@ export class OpenAiGuideProvider implements AiProvider {
 
   async decideNextAction(request: GuideRequest): Promise<GuideDecision> {
     if (!request.screenshot) throw new Error('A full desktop screenshot is required for GPT guidance.');
+    const route = selectModelRoute(request, this.options);
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
       const controller = new AbortController();
@@ -174,9 +205,9 @@ export class OpenAiGuideProvider implements AiProvider {
           headers: { Authorization: `Bearer ${this.options.apiKey}`, 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            model: this.options.model,
+            model: route.model,
             store: false,
-            reasoning: { effort: 'low' },
+            reasoning: { effort: route.reasoningEffort },
             max_output_tokens: 300,
             input: [
               { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
