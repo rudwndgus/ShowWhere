@@ -27,6 +27,25 @@ export class OpenAiSpeechTranscriber implements SpeechTranscriber {
 
   async transcribe(audio: Buffer, contentType: string): Promise<SpeechTranscription> {
     const startedAt = performance.now();
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const text = await this.transcribeOnce(audio, contentType);
+        return { text, providerLatencyMs: Math.round(performance.now() - startedAt) };
+      } catch (error) {
+        lastError = error;
+        const retryable = error instanceof Error
+          && (error.message === 'transcription_provider_network'
+            || error.message === 'transcription_provider_timeout'
+            || /^transcription_provider_(408|409|429|5\d\d)$/u.test(error.message));
+        if (!retryable || attempt > 0) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+    }
+    throw lastError;
+  }
+
+  private async transcribeOnce(audio: Buffer, contentType: string): Promise<string> {
     const form = new FormData();
     form.set('model', this.options.model);
     form.set('response_format', 'json');
@@ -48,7 +67,12 @@ export class OpenAiSpeechTranscriber implements SpeechTranscriber {
       if (!response.ok) throw new Error(`transcription_provider_${response.status}`);
       const body = await response.json() as { text?: unknown };
       if (typeof body.text !== 'string') throw new Error('transcription_provider_malformed');
-      return { text: body.text.trim(), providerLatencyMs: Math.round(performance.now() - startedAt) };
+      return body.text.trim();
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError')
+        throw new Error('transcription_provider_timeout', { cause: error });
+      if (error instanceof Error && error.message.startsWith('transcription_provider_')) throw error;
+      throw new Error('transcription_provider_network', { cause: error });
     } finally {
       clearTimeout(timeout);
     }

@@ -37,4 +37,19 @@ describe('OpenAiSpeechTranscriber', () => {
     await expect(transcriber.transcribe(Buffer.alloc(1_024), 'audio/webm'))
       .rejects.toThrow('transcription_provider_malformed');
   });
+
+  it('retries one transient provider failure', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ text: 'retry succeeded' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const transcriber = new OpenAiSpeechTranscriber({
+      apiKey: 'server-secret', baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o-transcribe', requestTimeoutMs: 5_000,
+    });
+
+    await expect(transcriber.transcribe(Buffer.alloc(1_024), 'audio/webm'))
+      .resolves.toMatchObject({ text: 'retry succeeded' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

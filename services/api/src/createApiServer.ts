@@ -223,7 +223,9 @@ export function createApiServer(
         sendJson(response, 200, transcription);
       } catch (error) {
         const status = error instanceof Error && error.message === 'request_too_large' ? 413 : 502;
-        console.error(`[showwhere:stt] failed=${status}`);
+        const reason = error instanceof Error && error.message.startsWith('transcription_provider_')
+          ? error.message : 'speech_request_failed';
+        console.error(`[showwhere:stt] failed=${status} reason=${reason}`);
         sendJson(response, status, {
           message: status === 413 ? '음성이 너무 길어요. 짧게 나누어 말해 주세요.' : '음성을 변환하지 못했어요. 다시 시도해 주세요.',
         });
