@@ -84,6 +84,7 @@ describe('Windows knowledge catalog', () => {
 
   it('does not claim unrelated app questions as Windows settings knowledge', () => {
     expect(findWindowsKnowledge('유튜브 뮤직에서 아이유 노래 검색해줘')).toBeUndefined();
+    expect(findWindowsKnowledge('아마존에서 로그인 어디서 해?')).toBeUndefined();
   });
 
   it('maps every canonical intent back to its own unique entry', () => {

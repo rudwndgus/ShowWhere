@@ -10,6 +10,15 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void Candidate_backed_O_replay_survives_unrelated_snapshot_changes()
+    {
+        Assert.True(DeveloperReplayPolicy.CanReuseImmediately(
+            "live-candidate", snapshotMatches: false, liveTargetResolved: true));
+        Assert.False(DeveloperReplayPolicy.CanReuseImmediately(
+            targetId: null, snapshotMatches: false, liveTargetResolved: true));
+    }
+
+    [Fact]
     public async Task Intent_correction_persists_across_store_instances()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
@@ -218,6 +227,30 @@ public sealed class DeveloperCorrectionTests : IDisposable
             [Candidate("new-printer", "프린터 및 스캐너", "printers", "settings")],
             out var target, out _));
         Assert.Equal("new-printer", target.Id);
+    }
+
+    [Fact]
+    public async Task Browser_O_feedback_never_replays_the_same_label_on_another_site()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var learnedContext = new ApplicationContext(
+            Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
+        var feedback = Feedback("correct", "YouTube Music 검색을 누르세요") with
+        {
+            OriginalGoal = "유튜브 뮤직에서 노래 찾아줘",
+            EffectiveGoal = "유튜브 뮤직 노래 검색",
+            Context = learnedContext,
+        };
+        var signature = DeveloperCorrectionMatcher.CreateSignature(
+            Candidate("youtube-search", "Search", "search", "browser_content"));
+        await store.SaveFeedbackAsync(feedback);
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(feedback, signature)!, null);
+
+        var amazonContext = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com", "https://www.amazon.com/");
+        Assert.False(store.TryResolveTarget(
+            "유튜브 뮤직에서 노래 찾아줘", amazonContext,
+            [Candidate("amazon-search", "Search", "search", "browser_content")], out _, out _));
     }
 
     [Fact]

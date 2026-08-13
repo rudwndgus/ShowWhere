@@ -1,39 +1,85 @@
-# ShowWhere 2.0
+<div align="center">
 
-ShowWhere is a Windows 10/11 guidance app. It captures the complete desktop, collects live Microsoft UI Automation candidates, and highlights one verified next action. Local Windows/Web Knowledge and human-verified memory handle known paths first; Hugging Face and OpenAI GPT handle unresolved states. The user-facing app never clicks automatically.
+# ShowWhere
 
-## Architecture
+### Don't explain your screen. Just tell us your goal.
 
-```text
-User goal
-  -> WPF desktop captures full screen + UI Automation candidates
-  -> local Node API POST /api/guide
-  -> Windows Knowledge / Web Navigation Knowledge / local matching
-  -> Hugging Face semantic routing + OpenAI Responses API fallback
-  -> contract/confidence/target validation
-  -> live UI element identity revalidation
-  -> always-on-top overlay
-```
+화면을 설명하지 않아도 괜찮습니다.<br>
+하고 싶은 일만 말하면 ShowWhere가 다음에 해야 할 행동을 함께 찾아갑니다.
 
-The separate Playwright crawler builds Git-tracked website `State -> Action -> Next State` maps. See [Web Knowledge](docs/web-knowledge.md) for crawling, normalization, Hugging Face model selection, safety, and multi-computer Git synchronization.
+</div>
 
-## Setup
+## ShowWhere는 어떤 프로그램인가요?
 
-1. Install Node.js 20+, npm, and .NET 8 SDK.
-2. Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
-3. Run `npm install`.
-4. Start both processes with `powershell -ExecutionPolicy Bypass -File scripts/start-showwhere.ps1`.
+ShowWhere는 컴퓨터 사용이 낯설거나 복잡한 화면에서 길을 잃은 사람을 위한 인터페이스 내비게이션 도우미입니다.
 
-For separate terminals, use `npm run dev:api` and `npm run run:windows`.
+사용자는 버튼의 이름이나 위치를 알 필요가 없습니다. “프린터 상태를 확인하고 싶어요”, “내 주문이 어디쯤 왔는지 보고 싶어요”, “로그아웃하고 싶어요”처럼 자신의 목적만 말하면 됩니다. ShowWhere는 현재 상황을 이해하고, 지금 해야 할 한 가지를 화면 위에서 알려줍니다.
 
-## Web crawling
+ShowWhere는 사용자를 대신해 마음대로 조작하는 자동화 도구가 아닙니다. 사용자가 직접 결정하고 행동할 수 있도록 곁에서 안내하는 동반자입니다.
 
-```powershell
-npm run crawl -- --url https://example.com
-```
+## 왜 필요한가요?
 
-Use `npm run crawl:install` once if no compatible Chromium/Edge browser is installed. Every generated learning artifact under `training/` and `knowledge/web/` is intended to be committed. Only credentials and reproducible runtime/build files stay excluded.
+기술이 어려운 가장 흔한 이유는 기능이 없어서가 아니라 그 기능이 어디에 있는지 알기 어렵기 때문입니다.
 
-## Data
+“설정을 눌러주세요.”<br>
+“설정이 어디 있나요?”<br>
+“오른쪽 위에 있는 아이콘입니다.”<br>
+“그게 안 보여요.”
 
-Developer-mode O/X/completion records, raw events, drafts, legacy records, exports, and future learning snapshots are written under `training/` and tracked by Git. Crawl observations, normalized catalogs, navigation graphs, common patterns, failures, and pipeline events under `knowledge/web/` are also tracked. `.env`, API credentials, cookies, authenticated browser state, and private form secrets must never be committed.
+이 짧은 대화는 고객 지원, 가족 간 도움, 회사 교육 현장에서 매일 반복됩니다. 사용자는 자신의 목적을 이미 알고 있지만, 프로그램마다 다른 화면과 용어 때문에 다음 행동을 찾지 못합니다.
+
+ShowWhere는 사람에게 화면 구조를 공부하라고 요구하는 대신, 인터페이스가 사람의 목적을 이해하도록 만들고자 합니다.
+
+## ShowWhere가 만들고 싶은 경험
+
+ShowWhere는 한 번에 많은 설명을 쏟아내지 않습니다.
+
+먼저 사용자가 원하는 일을 이해합니다. 현재 화면에서 가장 의미 있는 다음 행동 하나를 찾습니다. 사용자가 그 행동을 마치면 달라진 상황을 다시 살피고, 목표에 도달할 때까지 한 단계씩 함께 갑니다. 이미 목적을 이뤘다면 더 이상 불필요한 행동을 권하지 않고 멈춥니다.
+
+중요한 것은 화면의 위치를 외우는 것이 아니라 의미를 이해하는 것입니다. 같은 목적이라도 사람마다 표현이 다르고, 같은 기능도 프로그램마다 이름이 다릅니다. ShowWhere는 그 차이를 넘어 사용자의 의도와 화면의 의미를 연결하는 것을 목표로 합니다.
+
+## 누구를 위한가요?
+
+- 처음 사용하는 프로그램이 부담스러운 사람
+- 컴퓨터와 디지털 서비스가 익숙하지 않은 사람
+- 작은 글씨와 복잡한 메뉴 때문에 어려움을 겪는 고령층
+- 새로운 업무 프로그램을 배워야 하는 직원
+- 같은 화면 위치를 반복해서 설명해야 하는 고객 지원 담당자
+- 하고 싶은 일에 집중하고 싶은 모든 사람
+
+## 우리가 믿는 원칙
+
+### 사람의 의도가 먼저입니다
+
+버튼을 찾는 것보다 사용자가 왜 그 버튼을 찾는지 이해하는 것이 중요합니다.
+
+### 한 번에 한 단계만 안내합니다
+
+긴 설명 대신 지금 해야 할 행동 하나를 정확히 보여줍니다.
+
+### 확실하지 않으면 묻습니다
+
+틀린 위치를 자신 있게 가리키는 것보다 필요한 선택지를 물어보는 것이 더 안전합니다.
+
+### 목표에 도달하면 멈춥니다
+
+안내를 계속하는 것이 목적이 아닙니다. 사용자가 원하는 일을 끝내는 것이 목적입니다.
+
+### 사용자의 통제권을 지킵니다
+
+ShowWhere는 곁에서 보여주고 설명합니다. 중요한 행동은 사용자가 직접 선택합니다.
+
+## ShowWhere가 꿈꾸는 미래
+
+ShowWhere의 목표는 특정 프로그램의 사용법을 외우게 만드는 것이 아닙니다.
+
+은행, 정부 서비스, 쇼핑몰, 회사 업무 시스템, 컴퓨터와 모바일 환경처럼 서로 다른 곳에서도 사용자가 자신의 말로 목적을 표현하면 자연스럽게 길을 찾을 수 있는 세상을 지향합니다.
+
+언젠가는 새로운 프로그램을 만났을 때 “이걸 어떻게 배워야 하지?”가 아니라 “내가 하고 싶은 일을 말하면 되겠구나”라고 느낄 수 있기를 바랍니다.
+
+## 프로젝트 철학
+
+> **Don't take control. Stay beside the user.**
+
+사용자를 대신해 앞서가지 않습니다.<br>
+사용자가 스스로 해낼 수 있도록 곁에서 함께합니다.

@@ -9,12 +9,15 @@
     <Border Margin="2">
       <Border.Style>
         <Style TargetType="Border">
-          <Setter Property="Opacity" Value="1" />
+          <Setter Property="Opacity" Value="0" />
           <Style.Triggers>
-            <DataTrigger Binding="{Binding IsStanding, RelativeSource={RelativeSource AncestorType=Window}}"
-                         Value="True">
-              <Setter Property="Opacity" Value="0" />
-            </DataTrigger>
+            <MultiDataTrigger>
+              <MultiDataTrigger.Conditions>
+                <Condition Binding="{Binding CharacterStore.SelectedCharacterKey, RelativeSource={RelativeSource AncestorType=Window}}" Value="monkey" />
+                <Condition Binding="{Binding IsStanding, RelativeSource={RelativeSource AncestorType=Window}}" Value="False" />
+              </MultiDataTrigger.Conditions>
+              <Setter Property="Opacity" Value="1" />
+            </MultiDataTrigger>
           </Style.Triggers>
         </Style>
       </Border.Style>
@@ -31,16 +34,57 @@
         <Style TargetType="Border">
           <Setter Property="Opacity" Value="0" />
           <Style.Triggers>
-            <DataTrigger Binding="{Binding IsStanding, RelativeSource={RelativeSource AncestorType=Window}}"
-                         Value="True">
+            <MultiDataTrigger>
+              <MultiDataTrigger.Conditions>
+                <Condition Binding="{Binding CharacterStore.SelectedCharacterKey, RelativeSource={RelativeSource AncestorType=Window}}" Value="monkey" />
+                <Condition Binding="{Binding IsStanding, RelativeSource={RelativeSource AncestorType=Window}}" Value="True" />
+              </MultiDataTrigger.Conditions>
               <Setter Property="Opacity" Value="1" />
-            </DataTrigger>
+            </MultiDataTrigger>
           </Style.Triggers>
         </Style>
       </Border.Style>
       <Border.Background>
         <ImageBrush ImageSource="Assets/Assistant/monkey-stand.png"
                     Viewbox="32,28,52,72" ViewboxUnits="Absolute"
+                    Stretch="Uniform" AlignmentX="Center" AlignmentY="Bottom"
+                    RenderOptions.BitmapScalingMode="NearestNeighbor" />
+      </Border.Background>
+    </Border>
+
+    <Border Margin="2">
+      <Border.Style>
+        <Style TargetType="Border">
+          <Setter Property="Opacity" Value="0" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding CharacterStore.SelectedCharacterKey, RelativeSource={RelativeSource AncestorType=Window}}" Value="robot">
+              <Setter Property="Opacity" Value="1" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <Border.Background>
+        <ImageBrush ImageSource="Assets/Assistant/robot.png"
+                    Viewbox="335,170,870,640" ViewboxUnits="Absolute"
+                    Stretch="Uniform" AlignmentX="Center" AlignmentY="Bottom"
+                    RenderOptions.BitmapScalingMode="HighQuality" />
+      </Border.Background>
+    </Border>
+
+    <Border Margin="2">
+      <Border.Style>
+        <Style TargetType="Border">
+          <Setter Property="Opacity" Value="0" />
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding CharacterStore.SelectedCharacterKey, RelativeSource={RelativeSource AncestorType=Window}}" Value="duck">
+              <Setter Property="Opacity" Value="1" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Border.Style>
+      <Border.Background>
+        <ImageBrush ImageSource="Assets/Assistant/duck-stand.png"
+                    Viewbox="96,96,64,84" ViewboxUnits="Absolute"
                     Stretch="Uniform" AlignmentX="Center" AlignmentY="Bottom"
                     RenderOptions.BitmapScalingMode="NearestNeighbor" />
       </Border.Background>

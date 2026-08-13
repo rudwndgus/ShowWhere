@@ -12,12 +12,14 @@ const booleanFromEnvironment = z.preprocess(
 
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),
-  OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.6'),
+  OPENAI_FAST_MODEL: z.string().trim().min(1).default('gpt-5.6-luna'),
+  OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.6-terra'),
+  OPENAI_STRONG_MODEL: z.string().trim().min(1).default('gpt-5.6-sol'),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),
   OPENAI_MAX_RETRIES: integerFromEnvironment(0, 3).default(1),
   HF_TOKEN: z.string().trim().min(1).optional(),
-  HF_EMBEDDING_MODEL: z.string().trim().min(1).default('Qwen/Qwen3-Embedding-0.6B'),
+  HF_EMBEDDING_MODEL: z.string().trim().min(1).default('intfloat/multilingual-e5-large'),
   HF_BASE_URL: z.string().url().default('https://router.huggingface.co/hf-inference/models'),
   HF_REQUEST_TIMEOUT_MS: integerFromEnvironment(500, 30_000).default(4_000),
   HF_MIN_SCORE: z.preprocess(
@@ -43,7 +45,9 @@ export interface ApiConfig {
   debug: boolean;
   openai: {
     apiKey: string;
+    fastModel: string;
     model: string;
+    strongModel: string;
     baseUrl: string;
     requestTimeoutMs: number;
     maxRetries: number;
@@ -68,7 +72,9 @@ export function loadApiConfig(environment: NodeJS.ProcessEnv): ApiConfig {
     debug: parsed.SHOWWHERE_DEBUG,
     openai: {
       apiKey: parsed.OPENAI_API_KEY,
+      fastModel: parsed.OPENAI_FAST_MODEL,
       model: parsed.OPENAI_MODEL,
+      strongModel: parsed.OPENAI_STRONG_MODEL,
       baseUrl: parsed.OPENAI_BASE_URL.replace(/\/$/u, ''),
       requestTimeoutMs: parsed.OPENAI_REQUEST_TIMEOUT_MS,
       maxRetries: parsed.OPENAI_MAX_RETRIES,

@@ -61,6 +61,23 @@ export function createApiServer(config: ApiConfig, provider: AiProvider) {
         + ` message=${JSON.stringify(result.decision.message.replace(/\s+/gu, ' ').slice(0, 180))}`
         + ` duration_ms=${Math.round(performance.now() - requestStartedAt)}`,
       );
+      const intentCandidates = candidates.filter((candidate) => {
+        if (typeof candidate !== 'object' || candidate === null) return false;
+        const item = candidate as { label?: unknown; description?: unknown };
+        return /sign|login|account|address|location|deliver|로그인|계정|주소|위치|배송/iu.test(
+          `${typeof item.label === 'string' ? item.label : ''} ${typeof item.description === 'string' ? item.description : ''}`,
+        );
+      }).slice(0, 20).map((candidate) => {
+        const item = candidate as { id?: unknown; label?: unknown; description?: unknown; attributes?: { sourceScope?: unknown } };
+        return {
+          id: item.id,
+          label: typeof item.label === 'string' ? item.label.slice(0, 140) : null,
+          description: typeof item.description === 'string' ? item.description.slice(0, 100) : null,
+          scope: item.attributes?.sourceScope,
+        };
+      });
+      if (intentCandidates.length > 0)
+        console.log(`[showwhere:api:intent-candidates] ${JSON.stringify(intentCandidates)}`);
     }
     sendJson(response, result.status, result.decision);
   });

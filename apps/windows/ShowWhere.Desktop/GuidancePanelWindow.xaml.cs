@@ -15,8 +15,11 @@ public partial class GuidancePanelWindow : Window
     private bool _shutdown;
     private INotifyCollectionChanged? _observedMessages;
 
-    public GuidancePanelWindow()
+    public AssistantCharacterStore CharacterStore { get; }
+
+    public GuidancePanelWindow(AssistantCharacterStore characterStore)
     {
+        CharacterStore = characterStore;
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
     }

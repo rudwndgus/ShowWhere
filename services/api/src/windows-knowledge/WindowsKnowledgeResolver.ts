@@ -19,6 +19,14 @@ const problemPattern = /안\s*(나|돼|되|됨)|못\s|문제|오류|실패|이�
 
 function intentScore(goal: string, entry: WindowsKnowledgeEntry): number {
   const normalizedGoal = normalizeText(goal);
+
+  // "login" is shared by every website and must not be treated as a Windows
+  // sign-in failure unless the user actually describes a Windows/PIN/password
+  // problem. This previously made an Amazon sign-in question open Settings.
+  if (entry.id === 'windows.troubleshoot.login'
+      && !/(windows|윈도우|pin|핀 번호|비밀번호|password|hello|로그인.{0,8}(안|못|문제|오류|실패))/iu.test(normalizedGoal)) {
+    return 0;
+  }
   const goalTokens = meaningfulTokens(goal);
   let best = 0;
   for (const intent of entry.intents) {
@@ -110,15 +118,16 @@ function nextCandidate(request: GuideRequest, entry: WindowsKnowledgeEntry): UiC
   return undefined;
 }
 
-export function resolveWindowsKnowledge(request: GuideRequest): GuideDecision | undefined {
-  const goal = request.session.goal ?? request.session.originalUserMessage;
-  const match = findWindowsKnowledge(goal);
-  if (!match) return undefined;
-  const candidate = nextCandidate(request, match.entry);
+export function resolveWindowsKnowledgeEntry(
+  request: GuideRequest,
+  entry: WindowsKnowledgeEntry,
+  confidence = 0.99,
+): GuideDecision | undefined {
+  const candidate = nextCandidate(request, entry);
   if (!candidate) return undefined;
   const label = displayLabel(candidate.label ?? candidate.description ?? candidate.role);
-  const diagnostic = match.entry.kind === 'troubleshooting'
-    && match.entry.route.slice(match.entry.navigationDepth).some((step) => step.includes(label));
+  const diagnostic = entry.kind === 'troubleshooting'
+    && entry.route.slice(entry.navigationDepth).some((step) => step.includes(label));
   return {
     status: 'in_progress',
     action: 'highlight',
@@ -129,8 +138,14 @@ export function resolveWindowsKnowledge(request: GuideRequest): GuideDecision | 
         ? `'${label}'을 누른 다음 찾을 설정 이름을 입력해 주세요.`
       : `Windows에서 '${label}' 항목을 눌러주세요.`,
     expectedChange: diagnostic
-      ? `${match.entry.id} 문제 해결을 위한 다음 상태를 확인합니다.`
-      : `${match.entry.id} 설정 화면으로 이동합니다.`,
-    confidence: 0.99,
+      ? `${entry.id} 문제 해결을 위한 다음 상태를 확인합니다.`
+      : `${entry.id} 설정 화면으로 이동합니다.`,
+    confidence,
   };
+}
+
+export function resolveWindowsKnowledge(request: GuideRequest): GuideDecision | undefined {
+  const goal = request.session.goal ?? request.session.originalUserMessage;
+  const match = findWindowsKnowledge(goal);
+  return match ? resolveWindowsKnowledgeEntry(request, match.entry) : undefined;
 }

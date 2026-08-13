@@ -6,7 +6,7 @@ import type {
   RawWebState,
   RawWebTransition,
 } from '../../../src/web-knowledge';
-import { safeUrlForStorage, siteIdFromUrl, stableWebId } from '../../../src/web-knowledge';
+import { safeUrlForStorage, semanticLabelFromRules, siteIdFromUrl, stableWebId } from '../../../src/web-knowledge';
 import { locatePathStep, observeBrowserState } from './browserSnapshot';
 import { loadRobotsPolicy, type RobotsPolicy } from './robots';
 
@@ -44,7 +44,13 @@ function actionPriority(element: RawWebElement): number {
       : element.role === 'combobox' ? 300
         : element.role === 'button' ? 200 : 0;
   const riskScore = element.risk === 'safe' ? 100 : 0;
-  return areaScore + roleScore + riskScore;
+  const semantic = semanticLabelFromRules(element.name);
+  const functionalScore = semantic && !['product_detail', 'cart', 'checkout'].includes(semantic) ? 1_200 : 0;
+  const href = element.href ?? '';
+  const pathScore = /account|order|return|refund|track|address|payment|wallet|prime|member|subscription|security|privacy|language|help|support|contact|device|digital|household|profile|review|notification|communication|gift|registry|password|recommend/iu.test(href)
+    ? 900 : 0;
+  const productPenalty = /\/dp\/|\/gp\/product\/|\/s\?/iu.test(href) ? 2_000 : 0;
+  return areaScore + roleScore + riskScore + functionalScore + pathScore - productPenalty;
 }
 
 function canExplore(element: RawWebElement): boolean {

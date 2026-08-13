@@ -1,10 +1,14 @@
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
 import type { GuideDecision, GuideRequest } from '../../../../src/contracts';
-import { cosineSimilarity, type TextEmbeddingProvider } from './HuggingFaceEmbeddingClient';
-import { describeCandidate, eligibleCandidates, resolveLocally } from './LocalGuideResolver';
-import { resolveWindowsKnowledge } from '../windows-knowledge/WindowsKnowledgeResolver';
+import type { TextEmbeddingProvider } from './HuggingFaceEmbeddingClient';
+import { resolveLocally } from './LocalGuideResolver';
+import { resolveWindowsKnowledge, resolveWindowsKnowledgeEntry } from '../windows-knowledge/WindowsKnowledgeResolver';
+import { windowsKnowledgeCatalog } from '../windows-knowledge/WindowsKnowledgeCatalog';
 import { resolveWebKnowledge } from '../web-knowledge/WebKnowledgeResolver';
 import type { WebKnowledgeSource } from '../web-knowledge/WebKnowledgeStore';
+import { classifyRequestIntent } from './RequestIntentRouter';
+import { HuggingFaceIntentClassifier, type SemanticIntentMatch } from './HuggingFaceIntentClassifier';
+import { resolveGoalCompletion } from './GoalCompletionResolver';
 
 export interface HybridGuideProviderOptions {
   minScore: number;
@@ -13,48 +17,100 @@ export interface HybridGuideProviderOptions {
 }
 
 export class HybridGuideProvider implements AiProvider {
+  private readonly intentClassifier?: HuggingFaceIntentClassifier;
+
   constructor(
     private readonly fallback: AiProvider,
-    private readonly embeddings?: TextEmbeddingProvider,
+    embeddings?: TextEmbeddingProvider,
     private readonly options: HybridGuideProviderOptions = { minScore: 0.68, minMargin: 0.08 },
     private readonly webKnowledge: WebKnowledgeSource = { catalogs: [], patterns: [] },
-  ) {}
+  ) {
+    this.intentClassifier = embeddings
+      ? new HuggingFaceIntentClassifier(embeddings, webKnowledge)
+      : undefined;
+    if (this.intentClassifier && this.options.debug) {
+      const startedAt = performance.now();
+      void this.intentClassifier.ready().then((ready) => this.log(
+        'huggingface_warmup',
+        `${ready ? 'ready' : 'unavailable'}:${Math.round(performance.now() - startedAt)}ms`,
+      ));
+    }
+  }
 
   async decideNextAction(request: GuideRequest): Promise<unknown> {
-    const windows = resolveWindowsKnowledge(request);
-    if (windows) {
-      this.log('windows_knowledge', windows.targetId);
-      return windows;
+    const completed = resolveGoalCompletion(request);
+    if (completed) {
+      this.log('completed', completed.expectedChange);
+      return completed;
     }
-    const web = resolveWebKnowledge(request, this.webKnowledge);
-    if (web) {
-      this.log('web_knowledge', web.targetId);
-      return web;
-    }
-    const local = resolveLocally(request);
-    if (local) {
-      this.log('local', local.targetId);
-      return local;
+    const intent = classifyRequestIntent(request, this.webKnowledge);
+    this.log('intent', `${intent.domain}:${intent.reason}:${intent.siteId ?? '-'}`);
+
+    if (intent.domain === 'web') {
+      const web = resolveWebKnowledge(request, this.webKnowledge);
+      if (web) {
+        this.log('web_knowledge', web.targetId);
+        return web;
+      }
+      return this.resolveRemotely(request);
     }
 
-    if (!this.embeddings) {
+    if (intent.domain === 'windows') {
+      const windows = resolveWindowsKnowledge(request);
+      if (windows) {
+        this.log('windows_knowledge', windows.targetId);
+        return windows;
+      }
+      return this.resolveRemotely(request);
+    }
+
+    // An exact control explicitly named by the user is itself a high-confidence
+    // intent signal and does not need a remote classification round trip.
+    const direct = resolveLocally(request);
+    if (direct) {
+      this.log('direct_explicit_target', direct.targetId);
+      return direct;
+    }
+
+    return this.resolveRemotely(request);
+  }
+
+  private async resolveRemotely(request: GuideRequest): Promise<unknown> {
+    if (!this.intentClassifier) {
       this.log('openai', 'reasoning');
       return this.fallback.decideNextAction(request);
     }
 
-    // Ambiguous requests start both remote paths immediately. Whichever returns a
-    // usable answer first wins; a slow HF provider never delays GPT escalation.
-    const openai = this.fallback.decideNextAction(request);
-    const huggingFace = this.resolveWithEmbeddings(request)
-      .catch((error) => {
-        this.log('huggingface_fallback', error instanceof Error ? error.message : String(error));
-        return undefined;
-      });
+    const goal = request.session.goal ?? request.session.originalUserMessage;
+    const cachedIntent = this.intentClassifier.getCached(goal);
+    if (cachedIntent) {
+      const cached = this.resolveIntentMatch(request, cachedIntent);
+      if (cached) {
+        this.log('huggingface_cached_intent', cached.targetId);
+        return cached;
+      }
+    }
+
+    // A new ambiguous intent starts HF intent classification and GPT vision together.
+    // HF can win only after mapping the intent through a deterministic domain
+    // route; raw semantic similarity is never allowed to point at a UI control.
+    const openai = this.fallback.decideNextAction(request)
+      .then((value) => ({ value, error: undefined as unknown }))
+      .catch((error: unknown) => ({ value: undefined, error }));
+    const huggingFace = this.resolveWithIntentEmbeddings(request).catch((error) => {
+      this.log('huggingface_fallback', error instanceof Error ? error.message : String(error));
+      return undefined;
+    });
     const first = await Promise.race([
-      openai.then((value) => ({ source: 'openai' as const, value })),
+      openai.then((result) => ({ source: 'openai' as const, ...result })),
       huggingFace.then((value) => ({ source: 'huggingface' as const, value })),
     ]);
     if (first.source === 'openai') {
+      if (first.error) {
+        const hfValue = await huggingFace;
+        if (hfValue) return hfValue;
+        throw first.error;
+      }
       this.log('openai', 'reasoning_parallel');
       return first.value;
     }
@@ -63,34 +119,50 @@ export class HybridGuideProvider implements AiProvider {
       return first.value;
     }
     this.log('openai', 'reasoning_after_hf_miss');
-    return openai;
+    const openaiResult = await openai;
+    if (openaiResult.error) throw openaiResult.error;
+    return openaiResult.value;
   }
 
-  private async resolveWithEmbeddings(request: GuideRequest): Promise<GuideDecision | undefined> {
-    const candidates = eligibleCandidates(request).slice(0, 48);
-    if (candidates.length === 0) return undefined;
-    const goal = `사용자 목표: ${request.session.goal ?? request.session.originalUserMessage}`;
-    const descriptions = candidates.map((candidate) => `클릭 대상: ${describeCandidate(candidate)}`);
-    const [goalVector, ...candidateVectors] = await this.embeddings!.embed([goal, ...descriptions]);
-    const ranked = candidates.map((candidate, index) => ({
-      candidate,
-      score: cosineSimilarity(goalVector, candidateVectors[index]),
-    })).sort((left, right) => right.score - left.score);
-    const best = ranked[0];
-    const margin = best.score - (ranked[1]?.score ?? -1);
-    if (best.score < this.options.minScore || margin < this.options.minMargin) return undefined;
-    const label = best.candidate.label ?? best.candidate.description ?? best.candidate.role;
-    return {
-      status: 'in_progress',
-      action: 'highlight',
-      targetId: best.candidate.id,
-      message: `화면의 '${label}'을(를) 눌러주세요.`,
-      expectedChange: `'${label}'과 관련된 다음 화면이 열립니다.`,
-      confidence: Math.min(0.97, Math.max(0.65, best.score)),
-    };
+  private async resolveWithIntentEmbeddings(request: GuideRequest): Promise<GuideDecision | undefined> {
+    if (!this.intentClassifier) return undefined;
+    const goal = request.session.goal ?? request.session.originalUserMessage;
+    const intent = await this.intentClassifier.classify(goal);
+    if (!intent) return undefined;
+    this.log('huggingface_intent', `${intent.domain}:${intent.intentId}:${intent.score.toFixed(3)}:${intent.margin.toFixed(3)}`);
+    return this.resolveIntentMatch(request, intent);
+  }
+
+  private resolveIntentMatch(request: GuideRequest, intent: SemanticIntentMatch): GuideDecision | undefined {
+    if (intent.score < this.options.minScore) return undefined;
+    if (intent.margin < this.options.minMargin) {
+      const nearBest = intent.alternatives.filter((item) => intent.score - item.score <= 0.035);
+      const decisions = nearBest.map((item) => this.resolveSemanticIntent(request, item)).filter(Boolean) as GuideDecision[];
+      const targetIds = new Set(decisions.map((decision) => `${decision.action}:${decision.targetId ?? ''}`));
+      if (decisions.length < 2 || targetIds.size !== 1) return undefined;
+      this.log('huggingface_consensus', `${nearBest.length}:${decisions[0].targetId}`);
+      return { ...decisions[0], confidence: Math.min(0.92, Math.max(0.7, intent.score)) };
+    }
+
+    return this.resolveSemanticIntent(request, intent);
+  }
+
+  private resolveSemanticIntent(
+    request: GuideRequest,
+    intent: Pick<SemanticIntentMatch, 'domain' | 'intentId' | 'score'>,
+  ): GuideDecision | undefined {
+    if (intent.domain === 'windows') {
+      const entry = windowsKnowledgeCatalog.find((item) => item.id === intent.intentId);
+      return entry
+        ? resolveWindowsKnowledgeEntry(request, entry, Math.min(0.96, Math.max(0.7, intent.score)))
+        : undefined;
+    }
+    if (intent.intentId.startsWith('site:')) return undefined;
+    return resolveWebKnowledge(request, this.webKnowledge, intent.intentId);
   }
 
   private log(route: string, detail: unknown): void {
-    if (this.options.debug) console.log(`[showwhere:router] route=${route} detail=${String(detail).slice(0, 160)}`);
+    if (this.options.debug)
+      console.log(`[showwhere:router] route=${route} detail=${String(detail).slice(0, 160)}`);
   }
 }
