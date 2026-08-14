@@ -10,6 +10,7 @@ describe('API environment configuration', () => {
     expect(config.openai.sttModel).toBe('gpt-4o-transcribe');
     expect(config.host).toBe('127.0.0.1');
     expect(config.port).toBe(8787);
+    expect(config.pairingTtlSeconds).toBe(30);
     expect(config.openai.baseUrl).toBe('https://api.openai.com/v1');
     expect(config.huggingFace).toBeUndefined();
   });

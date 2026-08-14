@@ -113,45 +113,50 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <Grid Grid.Row="0" Background="White" Margin="18,16,12,13"
+      <Grid Grid.Row="0" Background="White" Margin="18,14,12,12"
             Cursor="SizeAll" MouseLeftButtonDown="OnHeaderMouseLeftButtonDown">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel>
-          <StackPanel Orientation="Horizontal">
-          <TextBlock Text="SHOWWHERE" Foreground="{StaticResource AccentBrush}"
-                     FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
-          <Button Command="{Binding MobileConnectCommand}" Margin="9,0,0,0" Padding="7,3"
-                  Style="{StaticResource QuietButton}" ToolTip="QR로 휴대폰을 연결하거나 현재 연결을 끊습니다">
-            <StackPanel Orientation="Horizontal">
-              <Ellipse Width="8" Height="8" Fill="#FF25A65A" Margin="0,0,5,0"
-                       Visibility="{Binding IsMobileConnected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-              <TextBlock Text="{Binding MobileConnectionText}" FontSize="9"/>
-            </StackPanel>
-          </Button>
-          </StackPanel>
-          <TextBlock Text="" Foreground="{StaticResource TextBrush}"
-                     FontSize="17" FontWeight="Bold" Margin="0,3,0,0" />
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="SHOWWHERE"
+                   Foreground="{StaticResource AccentBrush}" FontSize="15"
+                   FontWeight="Bold" VerticalAlignment="Center" />
+
+        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+          <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
+                  Style="{StaticResource QuietButton}" Padding="0" Click="OnMinimize" ToolTip="최소화" />
+          <Button Content="×" Width="30" Height="30" FontSize="20"
+                  Style="{StaticResource QuietButton}" Padding="0" Click="OnHide" ToolTip="닫기" />
         </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-          <ComboBox Width="86" Height="30" Margin="0,0,6,0" Padding="7,3"
+
+        <Button Grid.Row="1" Grid.Column="0" HorizontalAlignment="Left"
+                Command="{Binding MobileConnectCommand}" Margin="0,9,8,0" Padding="7,3"
+                  Style="{StaticResource QuietButton}" ToolTip="QR로 휴대폰을 연결하거나 현재 연결을 끊습니다">
+          <StackPanel Orientation="Horizontal">
+            <Ellipse Width="8" Height="8" Fill="#FF25A65A" Margin="0,0,5,0"
+                     Visibility="{Binding IsMobileConnected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            <TextBlock Text="{Binding MobileConnectionText}" FontSize="9"/>
+          </StackPanel>
+        </Button>
+
+        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,9,0,0">
+          <ComboBox Width="78" Height="30" Margin="0,0,5,0" Padding="6,3"
                     ItemsSource="{Binding CharacterStore.Options, ElementName=PanelRoot}"
                     DisplayMemberPath="DisplayName" SelectedValuePath="Key"
                     SelectedValue="{Binding CharacterStore.SelectedCharacterKey, ElementName=PanelRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                     ToolTip="플로팅 캐릭터 선택" />
           <Button Content="LOG" Command="{Binding ToggleLearningHistoryCommand}"
-                  Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
+                  Height="30" Margin="0,0,5,0" Padding="8,0" FontSize="10"
                   Style="{StaticResource QuietButton}" ToolTip="O/X/끝 기록을 확인하고 수정·저장합니다"
                   Visibility="{Binding IsDeveloperMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <Button Content="{Binding DeveloperModeText}" Command="{Binding ToggleDeveloperModeCommand}"
-                  Height="30" Margin="0,0,6,0" Padding="9,0" FontSize="10"
+                  Height="30" Padding="8,0" FontSize="10"
                   Style="{StaticResource QuietButton}" ToolTip="GPT 답변 평가와 라벨링을 켜거나 끕니다" />
-          <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
-                  Style="{StaticResource QuietButton}" Padding="0" Click="OnMinimize" ToolTip="최소화" />
-          <Button Content="×" Width="30" Height="30" FontSize="20"
-                  Style="{StaticResource QuietButton}" Padding="0" Click="OnHide" ToolTip="닫기" />
         </StackPanel>
       </Grid>
 

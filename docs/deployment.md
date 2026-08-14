@@ -30,6 +30,8 @@ SHOWWHERE_DEBUG=false
 
 Do not set `PORT`; Railway supplies it. The API automatically binds to `0.0.0.0:$PORT`. Verify `https://YOUR-DOMAIN/health` returns `{"status":"ok"}`.
 
+Set the GitHub repository variable `SHOWWHERE_BACKEND_URL` to that public HTTPS domain. The release workflow reads the domain from this variable instead of storing an environment-specific server address in source code.
+
 Generate a beta token locally without printing the OpenAI key:
 
 ```powershell
