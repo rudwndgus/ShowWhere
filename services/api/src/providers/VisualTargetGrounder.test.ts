@@ -90,4 +90,32 @@ describe('VisualTargetGrounder', () => {
       label: 'Advanced display',
     })?.id).toBe('left-monitor-button');
   });
+
+  it('snaps a BLUU DELI product to its measured kiosk card', () => {
+    const request = {
+      ...guideRequestFixture,
+      context: { ...guideRequestFixture.context, applicationName: 'UPR KIOSK', windowTitle: 'BLUU DELI' },
+      screenshotBounds: { x: 0, y: 0, width: 538, height: 956 },
+      candidates: [],
+    };
+    const grounded = groundVisualDecision(request, {
+      status: 'in_progress', action: 'highlight_visual', message: '라떼를 누르세요.', confidence: 0.95,
+      visualTarget: { x: 0.7, y: 0.2, width: 0.2, height: 0.1, label: 'LATTE' },
+    });
+
+    expect(grounded.visualTarget).toEqual({
+      x: 392 / 538, y: 309 / 956, width: 146 / 538, height: 142 / 956, label: 'LATTE',
+    });
+  });
+
+  it('does not apply kiosk geometry to an unrelated landscape screen', () => {
+    const request = { ...guideRequestFixture, screenshotBounds, candidates: [] };
+    const decision = {
+      status: 'in_progress' as const, action: 'highlight_visual' as const,
+      message: '라떼를 누르세요.', confidence: 0.9,
+      visualTarget: { x: 0.7, y: 0.2, width: 0.2, height: 0.1, label: 'LATTE' },
+    };
+
+    expect(groundVisualDecision(request, decision)).toEqual(decision);
+  });
 });

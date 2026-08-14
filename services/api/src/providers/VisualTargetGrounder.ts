@@ -1,4 +1,5 @@
 import type { Bounds, GuideDecision, GuideRequest, UiCandidate, VisualTarget } from '../../../../src/contracts';
+import { snapKioskVisualTarget } from './KioskVisualTargetSnapper';
 
 function normalizedText(value: string | undefined): string {
   return (value ?? '').normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -109,8 +110,9 @@ export function matchVisualTargetToCandidate(request: GuideRequest, target: Visu
 
 export function groundVisualDecision(request: GuideRequest, decision: GuideDecision): GuideDecision {
   if (decision.action !== 'highlight_visual' || !decision.visualTarget) return decision;
-  const candidate = matchVisualTargetToCandidate(request, decision.visualTarget);
-  if (!candidate) return decision;
+  const visualTarget = snapKioskVisualTarget(request, decision.visualTarget);
+  const candidate = matchVisualTargetToCandidate(request, visualTarget);
+  if (!candidate) return { ...decision, visualTarget };
   const { visualTarget: _visualTarget, ...withoutVisualTarget } = decision;
   return { ...withoutVisualTarget, action: 'highlight', targetId: candidate.id };
 }

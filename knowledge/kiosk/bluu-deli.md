@@ -47,6 +47,19 @@ Official UPR KIOSK manual v2.3 documents these paths and actions:
 
 The login page and its controls were directly crawled from `uprwbq.upsolutioncloud.com`. Authenticated page DOM, exact English labels, and store-specific save/publish behavior have not yet been observed. ShowWhere should match visible controls at runtime and ask for confirmation instead of inventing a control when the screen differs from this profile.
 
+## Calibrated kiosk captures
+
+The user supplied 15 native 538x956 captures covering Home, all seven menu categories, Latte and Egg Salad modifiers, Cart, Add Tip, and Other Tender. Runtime vision output is calibrated to these measured regions; the raw captures are not bundled with the application.
+
+- Home choices: EAT IN `(83,800)-(260,881)`, TAKE OUT `(270,800)-(440,881)`.
+- Category rail: `x=0..95`, seven 57-pixel rows starting at `y=163` in the order listed above.
+- Product grid: three columns beginning at `x=103,247,392`; four rows beginning at `y=165,309,453,596`.
+- Modifier grid: four columns beginning at `x=7,138,269,400`; three rows beginning at `y=432,572,713`.
+- Menu footer: Home, Credit, Others occupy the rightmost three cells at `y=898..955`.
+- Modifier footer: Cancel and Add to Cart occupy `x=359..448` and `x=449..537` at `y=886..955`.
+
+Known product ordering and modifier labels are encoded in `KioskVisualTargetSnapper.ts`. Calibration is gated by portrait aspect ratio and kiosk-specific context/labels, so similarly named controls in unrelated apps are not moved.
+
 ## Sources
 
 - Store back office: https://uprwbq.upsolutioncloud.com/BasicSetting/Management_Kiosk_HD/100842
