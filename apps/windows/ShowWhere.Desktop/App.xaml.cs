@@ -60,13 +60,15 @@ public partial class App : Application
             Shutdown,
             _mobileRemote);
         _mobileRemote.Attach(viewModel);
-        _panel = new GuidancePanelWindow { DataContext = viewModel };
+        var characterStore = new AssistantCharacterStore();
+        _panel = new GuidancePanelWindow(characterStore) { DataContext = viewModel };
         _panel.Deactivated += (_, _) => _panel.Dispatcher.BeginInvoke(
             observer.RememberCurrentForegroundWindow,
             DispatcherPriority.Background);
         _assistant = new FloatingAssistantWindow(
             _panel,
             new AssistantPositionStore(),
+            characterStore,
             observer.RememberCurrentForegroundWindow)
         {
             DataContext = viewModel,

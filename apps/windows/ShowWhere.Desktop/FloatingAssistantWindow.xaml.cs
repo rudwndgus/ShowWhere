@@ -39,13 +39,17 @@ public partial class FloatingAssistantWindow : Window
         private set => SetValue(IsStandingProperty, value);
     }
 
+    public AssistantCharacterStore CharacterStore { get; }
+
     public FloatingAssistantWindow(
         GuidancePanelWindow panel,
         AssistantPositionStore positionStore,
+        AssistantCharacterStore characterStore,
         Action rememberForegroundWindow)
     {
         _panel = panel;
         _positionStore = positionStore;
+        CharacterStore = characterStore;
         _rememberForegroundWindow = rememberForegroundWindow;
         InitializeComponent();
         var saved = _positionStore.Load();
