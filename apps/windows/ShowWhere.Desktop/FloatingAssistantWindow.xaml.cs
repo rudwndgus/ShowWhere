@@ -18,8 +18,10 @@ public partial class FloatingAssistantWindow : Window
     private const int WsExNoActivate = 0x08000000;
     private const uint MonitorDefaultToNearest = 0x00000002;
     private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
+    private static readonly IntPtr HwndTopmost = new(-1);
     private const int ScreenMargin = 8;
     private readonly GuidancePanelWindow _panel;
     private readonly AssistantPositionStore _positionStore;
@@ -191,6 +193,7 @@ public partial class FloatingAssistantWindow : Window
         _speechBubble.BubbleText = "답변을 준비하고 있어요…";
         UpdateSpeechBubblePosition();
         if (!_speechBubble.IsVisible) _speechBubble.Show();
+        BringCharacterToFront();
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs eventArgs)
@@ -208,6 +211,7 @@ public partial class FloatingAssistantWindow : Window
         if (latestAssistant is null) return;
         ObserveMessage(latestAssistant);
         if (!_speechBubble.IsVisible) _speechBubble.Show();
+        BringCharacterToFront();
         UpdateBubbleText();
     }
 
@@ -234,6 +238,13 @@ public partial class FloatingAssistantWindow : Window
     }
 
     private void UpdateSpeechBubblePosition() => _speechBubble.PositionNear(Left, Top, Width);
+
+    private void BringCharacterToFront()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero)
+            _ = SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+    }
 
     private void SnapAndConstrain()
     {

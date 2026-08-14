@@ -9,7 +9,7 @@
     <SolidColorBrush x:Key="BubbleAccentBrush" Color="#FF472323" />
   </Window.Resources>
   <Grid Margin="8" SnapsToDevicePixels="True" UseLayoutRounding="True">
-    <Path Margin="2" Fill="White" Stroke="{DynamicResource BubbleAccentBrush}" StrokeThickness="4"
+    <Path Margin="2" Fill="White" Stroke="#FF202329" StrokeThickness="4"
           StrokeLineJoin="Miter" Stretch="Fill"
           Data="M 12,0 H 258 V 4 H 266 V 12 H 270 V 134 H 266 V 142 H 258 V 146 H 12 V 142 H 4 V 134 H 0 V 12 H 4 V 4 H 12 Z" />
     <TextBlock Text="{Binding BubbleText, RelativeSource={RelativeSource AncestorType=Window}}"
