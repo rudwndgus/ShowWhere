@@ -3,8 +3,20 @@ name: Release Windows executable
 on:
   workflow_dispatch:
   push:
+    branches:
+      - ShowWhere2.0
     tags:
       - "v*"
+    paths:
+      - "apps/windows/**"
+      - "scripts/publish-remote-windows.ps1"
+      - "scripts/test-remote-pairing.ps1"
+      - "VERSION"
+      - ".github/workflows/release-windows.yml"
+
+concurrency:
+  group: showwhere-production-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -16,21 +28,55 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
+      - name: Select production version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $selected = $env:GITHUB_REF_NAME.TrimStart('v')
+          } else {
+            $minimum = [version](Get-Content VERSION -Raw).Trim()
+            $latestText = gh api repos/${{ github.repository }}/releases/latest --jq .tag_name 2>$null
+            $latest = if ($LASTEXITCODE -eq 0 -and $latestText) { [version]$latestText.Trim().TrimStart('v') } else { [version]'0.0.0' }
+            $selected = if ($latest -lt $minimum) {
+              $minimum.ToString(3)
+            } else {
+              ([version]::new($latest.Major, $latest.Minor, $latest.Build + 1)).ToString(3)
+            }
+          }
+          if ($selected -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid production version: $selected" }
+          "version=$selected" >> $env:GITHUB_OUTPUT
+
       - name: Test Windows client
-        run: dotnet test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release
+        run: dotnet test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release /property:ShowWhereVersion=${{ steps.version.outputs.version }}
 
       - name: Test public mobile pairing end to end
         shell: pwsh
         env:
           SHOWWHERE_CLIENT_TOKEN: ${{ secrets.SHOWWHERE_CLIENT_TOKEN }}
           SHOWWHERE_BACKEND_URL: ${{ vars.SHOWWHERE_BACKEND_URL }}
-        run: ./scripts/test-remote-pairing.ps1 -BackendUrl $env:SHOWWHERE_BACKEND_URL
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $speech = [System.Speech.Synthesis.SpeechSynthesizer]::new()
+          try {
+            $speech.SetOutputToWaveFile("$env:RUNNER_TEMP/showwhere-stt.wav")
+            $speech.Speak('ShowWhere mobile test')
+          } finally {
+            $speech.Dispose()
+          }
+          ./scripts/test-remote-pairing.ps1 `
+            -BackendUrl $env:SHOWWHERE_BACKEND_URL `
+            -SttAudioPath "$env:RUNNER_TEMP/showwhere-stt.wav"
 
       - name: Publish self-contained executable
         shell: pwsh
@@ -43,19 +89,36 @@ jobs:
           }
           ./scripts/publish-remote-windows.ps1 `
             -BackendUrl $env:SHOWWHERE_BACKEND_URL `
+            -Version '${{ steps.version.outputs.version }}' `
             -OutputDirectory 'artifacts/windows-x64'
 
-      - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Verify production executable
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path 'artifacts/windows-x64/ShowWhere.exe'
+          if ((Get-Item $exe).Length -lt 50MB) { throw 'Production executable is unexpectedly small.' }
+          $version = (Get-Item $exe).VersionInfo.ProductVersion.Split('+')[0]
+          if ($version -ne '${{ steps.version.outputs.version }}') { throw "EXE version mismatch: $version" }
+          if (-not (Get-Item $exe).VersionInfo.FileDescription) { throw 'EXE metadata is incomplete.' }
+
+      - name: Publish one official GitHub Release asset
         uses: softprops/action-gh-release@v3
         with:
-          generate_release_notes: true
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: ShowWhere v${{ steps.version.outputs.version }}
+          body: |
+            Official ShowWhere production release.
+
+            Download and run `ShowWhere.exe`. No local backend, Node.js, .NET SDK, API key, or project checkout is required.
+          make_latest: true
+          prerelease: false
           overwrite_files: true
           files: artifacts/windows-x64/ShowWhere.exe
 
-      - name: Upload Windows executable artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload verified workflow artifact
+        uses: actions/upload-artifact@v5
         with:
-          name: showwhere-windows-x64
+          name: showwhere-production-v${{ steps.version.outputs.version }}
           path: artifacts/windows-x64/ShowWhere.exe
           if-no-files-found: error

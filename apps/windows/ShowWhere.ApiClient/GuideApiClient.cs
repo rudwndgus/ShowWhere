@@ -13,7 +13,7 @@ public sealed record GuideApiClientOptions(Uri Endpoint, TimeSpan Timeout, int M
     {
         var endpoint = Environment.GetEnvironmentVariable("SHOWWHERE_BACKEND_URL")
             ?? ReadDeploymentSetting("ShowWhereBackendUrl")
-            ?? "http://127.0.0.1:8787/api/guide";
+            ?? "https://api-production-6901.up.railway.app/api/guide";
         var timeoutText = Environment.GetEnvironmentVariable("SHOWWHERE_BACKEND_TIMEOUT_SECONDS");
         var seconds = int.TryParse(timeoutText, out var parsed) ? Math.Clamp(parsed, 5, 180) : 75;
         var clientToken = Environment.GetEnvironmentVariable("SHOWWHERE_CLIENT_TOKEN")

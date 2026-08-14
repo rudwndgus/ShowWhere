@@ -3,7 +3,9 @@ param(
     [ValidatePattern('^https://')]
     [string] $BackendUrl,
 
-    [string] $ClientToken = $env:SHOWWHERE_CLIENT_TOKEN
+    [string] $ClientToken = $env:SHOWWHERE_CLIENT_TOKEN,
+
+    [string] $SttAudioPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,7 +38,7 @@ function Connect-PairingSocket([Uri] $uri, [string] $secret) {
     return ,$socket
 }
 
-function Receive-UserMessage([Net.WebSockets.ClientWebSocket] $socket) {
+function Receive-PairingMessage([Net.WebSockets.ClientWebSocket] $socket, [string] $type, [bool] $requireConnected = $false) {
     $buffer = New-Object byte[] 8192
     $timeout = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(10))
     try {
@@ -52,7 +54,7 @@ function Receive-UserMessage([Net.WebSockets.ClientWebSocket] $socket) {
                     $stream.Write($buffer, 0, $result.Count)
                 } while (-not $result.EndOfMessage)
                 $message = [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
-                if ($message.type -eq 'user_message') { return $message }
+                if ($message.type -eq $type -and (-not $requireConnected -or $message.connected -eq $true)) { return $message }
             }
             finally { $stream.Dispose() }
         }
@@ -61,6 +63,23 @@ function Receive-UserMessage([Net.WebSockets.ClientWebSocket] $socket) {
 }
 
 try {
+    $guideBody = @{
+        session = @{
+            sessionId = 'production-ci'; originalUserMessage = 'Open settings'; goal = 'Open settings'
+            mode = 'guidance'; status = 'waiting_for_ai'; completedSteps = @(); knownFacts = @(); failureCount = 0
+        }
+        context = @{ platform = 'windows'; applicationName = 'SystemSettings'; windowTitle = 'Settings' }
+        candidates = @(@{
+            id = 'candidate-settings'; label = 'Settings'; role = 'button'; enabled = $true; visible = $true; clickable = $true
+            bounds = @{ x = 10; y = 10; width = 120; height = 40 }
+        })
+    } | ConvertTo-Json -Depth 8 -Compress
+    $guideDecision = Invoke-RestMethod -Method Post -Uri $guideUri -Headers $authorization -ContentType 'application/json' -Body $guideBody
+    if ($guideDecision.action -notin @('highlight', 'ask_user', 'complete', 'wait')) { throw 'The public Guide API returned an invalid action.' }
+
+    $knowledge = Invoke-RestMethod -Method Get -Uri ([Uri]::new($baseUri, '/api/knowledge/sync?cursor=0')) -Headers $authorization
+    if ($null -eq $knowledge.cursor -or $null -eq $knowledge.records) { throw 'The public Central Knowledge sync response is invalid.' }
+
     $created = Invoke-RestMethod -Method Post -Uri ([Uri]::new($baseUri, '/api/pairing/sessions')) `
         -Headers $authorization -ContentType 'application/json' -Body '{}'
     if ([string]::IsNullOrWhiteSpace($created.sessionId) -or $created.code -notmatch '^\d{6}$') {
@@ -80,6 +99,9 @@ try {
     $mobileSocketUri = Convert-ToWebSocketUri $baseUri "role=mobile&sessionId=$([Uri]::EscapeDataString($claim.sessionId))"
     $desktop = Connect-PairingSocket $desktopUri $created.desktopSecret
     $mobile = Connect-PairingSocket $mobileSocketUri $claim.mobileSecret
+    $desktopStatus = Receive-PairingMessage $desktop 'connection_status' $true
+    $mobileStatus = Receive-PairingMessage $mobile 'connection_status' $true
+    if (-not $desktopStatus.connected -or -not $mobileStatus.connected) { throw 'Both pairing peers did not reach connected=true.' }
 
     $payload = [Text.Encoding]::UTF8.GetBytes('{"type":"user_message","id":"remote-ci","text":"pairing test"}')
     $null = $mobile.SendAsync(
@@ -87,9 +109,28 @@ try {
         [Net.WebSockets.WebSocketMessageType]::Text,
         $true,
         [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-    $relayed = Receive-UserMessage $desktop
+    $relayed = Receive-PairingMessage $desktop 'user_message'
     if ($relayed.id -ne 'remote-ci') { throw 'The public WebSocket relay returned the wrong message.' }
-    Write-Host 'Public mobile pairing test passed: page, claim, desktop/mobile sockets, and relay.'
+
+    $replyBytes = [Text.Encoding]::UTF8.GetBytes('{"type":"chat_message","id":"desktop-ci","role":"assistant","text":"pairing reply","isPending":false}')
+    $null = $desktop.SendAsync(
+        [ArraySegment[byte]]::new($replyBytes),
+        [Net.WebSockets.WebSocketMessageType]::Text,
+        $true,
+        [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+    $reply = Receive-PairingMessage $mobile 'chat_message'
+    if ($reply.id -ne 'desktop-ci' -or $reply.text -ne 'pairing reply') { throw 'The desktop-to-mobile relay returned the wrong message.' }
+
+    if (-not [string]::IsNullOrWhiteSpace($SttAudioPath)) {
+        $audio = Resolve-Path -LiteralPath $SttAudioPath
+        $sttHeaders = @{ 'x-showwhere-pairing-secret' = $claim.mobileSecret }
+        $stt = Invoke-RestMethod -Method Post `
+            -Uri ([Uri]::new($baseUri, "/api/mobile/transcribe?sessionId=$([Uri]::EscapeDataString($claim.sessionId))")) `
+            -Headers $sttHeaders -ContentType 'audio/wav' -InFile $audio
+        if ([string]::IsNullOrWhiteSpace($stt.text)) { throw 'The public STT endpoint returned no transcript.' }
+    }
+
+    Write-Host 'Public production test passed: Guide, Central Knowledge, mobile page, claim, connected=true, two-way WebSocket relay, and optional STT.'
 }
 finally {
     foreach ($socket in @($desktop, $mobile)) {

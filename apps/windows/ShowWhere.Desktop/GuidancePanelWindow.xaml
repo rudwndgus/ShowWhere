@@ -2,7 +2,7 @@
         x:Name="PanelRoot"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ShowWhere" Width="370" Height="700" MinWidth="350" MinHeight="560"
+        Title="ShowWhere" Icon="Assets/ShowWhere.ico" Width="370" Height="700" MinWidth="350" MinHeight="560"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         Closing="OnClosing">

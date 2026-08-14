@@ -74,7 +74,9 @@ function auditDirectory(directory, fix) {
       targetConcept: record.learningLabels?.targetConcept,
     };
     identityCounts.set(gold.identity, (identityCounts.get(gold.identity) ?? 0) + 1);
-    const key = [gold.siteOrApplication, gold.normalizedIntent, gold.semanticState].join('|');
+    // A multi-step task legitimately has different verified targets as the screen changes.
+    // Only treat them as conflicting Gold when the captured screen state is the same.
+    const key = [gold.siteOrApplication, gold.normalizedIntent, gold.semanticState, record.snapshotHash].join('|');
     const targets = conflictTargets.get(key) ?? new Set();
     targets.add(gold.targetConcept);
     conflictTargets.set(key, targets);

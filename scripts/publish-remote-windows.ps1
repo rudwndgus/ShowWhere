@@ -5,6 +5,8 @@ param(
 
     [string] $ClientToken = $env:SHOWWHERE_CLIENT_TOKEN,
 
+    [string] $Version,
+
     [string] $OutputDirectory
 )
 
@@ -25,6 +27,10 @@ elseif (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
 }
 
 $properties = "/property:PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;DebugType=None;DebugSymbols=false;ShowWhereBackendUrl=$BackendUrl"
+if (-not [string]::IsNullOrWhiteSpace($Version)) {
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must use major.minor.patch format.' }
+    $properties += ";ShowWhereVersion=$Version"
+}
 if (-not [string]::IsNullOrWhiteSpace($ClientToken)) {
     $properties += ";ShowWhereClientToken=$($ClientToken.Trim())"
 }

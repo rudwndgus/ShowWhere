@@ -23,6 +23,11 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs eventArgs)
     {
+        if (ProductionUpdateService.TryRunInstaller(eventArgs.Args))
+        {
+            Shutdown();
+            return;
+        }
         _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out var createdNew);
         if (!createdNew)
         {
@@ -88,6 +93,9 @@ public partial class App : Application
         };
         MainWindow = _assistant;
         _assistant.Show();
+        _ = ProductionUpdateService.CheckAndPromptAsync(
+            apiOptions.Endpoint,
+            !string.IsNullOrWhiteSpace(apiOptions.ClientToken));
     }
 
     protected override void OnExit(ExitEventArgs eventArgs)

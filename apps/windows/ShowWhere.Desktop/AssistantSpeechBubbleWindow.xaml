@@ -1,7 +1,7 @@
 <Window x:Class="ShowWhere.Desktop.AssistantSpeechBubbleWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Width="290" Height="170" WindowStyle="None" ResizeMode="NoResize"
+        Width="290" Height="170" Icon="Assets/ShowWhere.ico" WindowStyle="None" ResizeMode="NoResize"
         AllowsTransparency="True" Background="Transparent" Topmost="True"
         ShowInTaskbar="False" ShowActivated="False" Focusable="False"
         IsHitTestVisible="False">
