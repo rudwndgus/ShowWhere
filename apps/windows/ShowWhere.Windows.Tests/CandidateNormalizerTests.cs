@@ -6,6 +6,22 @@ namespace ShowWhere.Windows.Tests;
 public sealed class CandidateNormalizerTests
 {
     [Fact]
+    public void Settings_hydration_retries_until_live_navigation_items_exist()
+    {
+        Assert.True(WindowsUiObserver.ShouldRetrySettingsHydration(
+            "ApplicationFrameHost", "Settings", []));
+
+        Assert.False(WindowsUiObserver.ShouldRetrySettingsHydration(
+            "ApplicationFrameHost", "Settings",
+            [Candidate("system", "system", true, true, new UiBounds(16, 183, 280, 36)) with
+            {
+                Label = "System",
+                Role = "listitem",
+                ClassName = "Microsoft.UI.Xaml.Controls.NavigationViewItem",
+            }]));
+    }
+
+    [Fact]
     public void Keeps_actionable_windows_setting_sliders()
     {
         var normalized = CandidateNormalizer.Normalize([

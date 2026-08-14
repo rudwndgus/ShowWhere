@@ -598,6 +598,25 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         "교정된 항목이 열립니다.");
                     StatusText = "개발자 교정 적용";
                 }
+                else if (WindowsSettingsSemanticRouter.TryResolve(
+                    _session.OriginalUserMessage,
+                    currentObservation.Context,
+                    prioritizedCandidates,
+                    out var settingsTarget))
+                {
+                    DesktopDiagnostics.WriteEvent(
+                        "WINDOWS_SETTINGS_SEMANTIC_HIT",
+                        ("targetId", settingsTarget.Id),
+                        ("label", settingsTarget.Label));
+                    decision = new GuideDecision(
+                        GuideStatuses.InProgress,
+                        GuideActions.Highlight,
+                        $"좋아요. 현재 화면에서 다음 단계인 '{settingsTarget.Label ?? settingsTarget.Role}' 위치를 표시할게요.",
+                        1,
+                        settingsTarget.Id,
+                        "현재 화면에서 다시 찾은 메뉴입니다.");
+                    StatusText = "Windows 설정 빠른 안내";
+                }
                 else if (_correctionStore.TryResolveVisualTarget(
                     _session.OriginalUserMessage,
                     currentObservation.Context,

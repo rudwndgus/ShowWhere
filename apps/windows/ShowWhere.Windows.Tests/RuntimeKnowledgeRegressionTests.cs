@@ -29,6 +29,42 @@ public sealed class RuntimeKnowledgeRegressionTests : IDisposable
         Assert.NotEqual("adeacfe1-872a-4a98-b7f5-c080dc661cbc", knowledge.Id);
     }
 
+    [Theory]
+    [InlineData("윈도우 프린터 어디서해?")]
+    [InlineData("프린터 설정 어디서해?")]
+    [InlineData("프린터 설정 어디야?")]
+    [InlineData("윈도우에서 프린터 어디서 설정해?")]
+    public void Repository_printer_gold_resolves_the_live_Settings_home_menu(
+        string goal)
+    {
+        CopyTrainingFixture();
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(
+            Platforms.Windows, "ApplicationFrameHost", "Settings", Locale: "en-US");
+        var bluetooth = new UiCandidate(
+            "live-settings-bluetooth",
+            "Bluetooth & devices",
+            null,
+            "listitem",
+            true,
+            true,
+            true,
+            new UiBounds(16, 223, 280, 36),
+            new Dictionary<string, object?>
+            {
+                ["className"] = "Microsoft.UI.Xaml.Controls.NavigationViewItem",
+                ["controlType"] = "ControlType.ListItem",
+                ["processName"] = "ApplicationFrameHost",
+                ["sourceScope"] = "foreground_application",
+            });
+
+        Assert.True(store.TryResolveTarget(
+            goal, context, [bluetooth], out var target, out var knowledge));
+        Assert.Equal(bluetooth.Id, target.Id);
+        Assert.Equal("bluetooth_&_devices", knowledge.HumanGold?.TargetConcept);
+        Assert.Equal(bluetooth.Bounds, target.Bounds);
+    }
+
     [Fact]
     public void Repository_Amazon_cart_gold_handles_paraphrase_quickly_but_rejects_order_history()
     {
