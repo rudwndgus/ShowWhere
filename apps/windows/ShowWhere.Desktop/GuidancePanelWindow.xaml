@@ -368,11 +368,11 @@
           <StackPanel>
             <TextBlock Text="✓ 이 안내가 정확합니까?" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
             <TextBlock Text="사용자 질문" FontSize="11" FontWeight="SemiBold" Margin="0,9,0,3" />
-            <TextBox Text="{Binding PositiveQuestion}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+            <TextBox Text="{Binding PositiveQuestion, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
             <TextBlock Text="현재 상황" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
-            <TextBox Text="{Binding PositiveSituation}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+            <TextBox Text="{Binding PositiveSituation, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
             <TextBlock Text="안내 대상" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
-            <TextBox Text="{Binding PositiveTarget}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+            <TextBox Text="{Binding PositiveTarget, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
             <TextBlock Text="선택 코멘트" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
             <TextBox Text="{Binding PositiveCommentText, UpdateSourceTrigger=PropertyChanged}" MinHeight="42"
                      TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6" />
@@ -399,11 +399,11 @@
                      TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource MutedBrush}"
                      Margin="0,0,0,7" ToolTip="EXE에서도 이 폴더에 저장되며 즉시 현재 실행에 반영됩니다" />
           <TextBlock Text="사용자 질문" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,4,0,3" />
-          <TextBox Text="{Binding CorrectionQuestion}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+          <TextBox Text="{Binding CorrectionQuestion, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
           <TextBlock Text="현재 상황" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
-          <TextBox Text="{Binding CorrectionCurrentSituation}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+          <TextBox Text="{Binding CorrectionCurrentSituation, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
           <TextBlock Text="잘못 가리킨 대상" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
-          <TextBox Text="{Binding CorrectionWrongTarget}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+          <TextBox Text="{Binding CorrectionWrongTarget, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
           <TextBlock Text="왜 틀렸나요?" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
           <ComboBox ItemsSource="{Binding CorrectionErrorReasons}" DisplayMemberPath="Label" SelectedValuePath="Value"
                     SelectedValue="{Binding CorrectionErrorReason}" Padding="7,5" />
