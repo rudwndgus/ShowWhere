@@ -54,4 +54,6 @@ powershell -ExecutionPolicy Bypass -File scripts/publish-remote-windows.ps1 `
 
 The resulting `build/remote-windows/ShowWhere.exe` includes the .NET runtime, server URL, and beta access token. A recipient can run that single file. They do not need Node.js, .NET, `.env`, or an OpenAI key.
 
+`npm run publish:windows:local` is explicitly a local-development build and writes to `build/local-windows`. Do not distribute that build: it uses the local API configuration. Product executables must come from the GitHub release workflow, which injects the public backend URL and client token.
+
 The beta token is extractable from a distributed executable. Use an OpenAI project budget and rate limits, rotate this token when necessary, and move to signed-in users with per-device server-issued credentials before a public launch.

@@ -21,7 +21,7 @@
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 build apps/windows/ShowWhere.Windows.sln -c Release",
     "test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release",
     "run:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 run --project apps/windows/ShowWhere.Desktop/ShowWhere.Desktop.csproj",
-    "publish:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 publish apps/windows/ShowWhere.Desktop/ShowWhere.Desktop.csproj -c Release -r win-x64 --self-contained false --output build/windows",
+    "publish:windows:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 publish apps/windows/ShowWhere.Desktop/ShowWhere.Desktop.csproj -c Release -r win-x64 --self-contained false --output build/local-windows",
     "build": "npm run typecheck && npm run build:api",
     "build:all": "npm run build && npm run build:windows"
   },
