@@ -54,12 +54,13 @@ The user supplied 15 native 538x956 captures covering Home, all seven menu categ
 - Home choices: EAT IN `(83,800)-(260,881)`, TAKE OUT `(270,800)-(440,881)`.
 - Category rail: `x=0..95`, seven 57-pixel rows starting at `y=163` in the order listed above.
 - Product grid: three full-card columns beginning at `x=107,251,395`; four rows beginning at `y=168,312,456,600` in the latest native capture.
-- Modifier grid: four columns beginning at `x=7,138,269,400`; three rows beginning at `y=432,572,713`.
+- Modifier grid: four full-card columns beginning at `x=8,140,271,402`; three rows beginning at `y=432,572,712`.
 - Menu footer: Home, Credit, Others occupy the rightmost three cells at `y=898..955`.
 - Modifier footer: Cancel and Add to Cart occupy `x=359..448` and `x=449..537` at `y=886..955`.
 
 Known product ordering and modifier labels are encoded in `KioskVisualTargetSnapper.ts`. Calibration is gated by portrait aspect ratio and kiosk-specific context/labels, so similarly named controls in unrelated apps are not moved.
 When the model's visual label conflicts with a menu name explicitly present in the user's request, the requested menu name is authoritative (for example, `TEA` must not be snapped to `LATTE`).
+Modifier names are resolved from the entire active request/progress context, including common Korean spellings. The highlight always covers the full modifier tile rather than only its icon or label.
 
 ## Sources
 

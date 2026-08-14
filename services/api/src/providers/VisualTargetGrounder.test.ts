@@ -130,6 +130,28 @@ describe('VisualTargetGrounder', () => {
     });
   });
 
+  it('uses a Korean modifier name to highlight the full OAT MILK card', () => {
+    const request = {
+      ...guideRequestFixture,
+      session: {
+        ...guideRequestFixture.session,
+        originalUserMessage: '차이 라떼에 오트밀크를 선택하고 싶어',
+        goal: '오트 밀크 modifier 선택',
+      },
+      context: { ...guideRequestFixture.context, applicationName: 'UPR KIOSK', windowTitle: 'BLUU DELI' },
+      screenshotBounds: { x: 0, y: 0, width: 538, height: 956 },
+      candidates: [],
+    };
+    const grounded = groundVisualDecision(request, {
+      status: 'in_progress', action: 'highlight_visual', message: '오트 밀크를 누르세요.', confidence: 0.9,
+      visualTarget: { x: 0.15, y: 0.44, width: 0.14, height: 0.09, label: '아래쪽 가운데 옵션' },
+    });
+
+    expect(grounded.visualTarget).toEqual({
+      x: 140 / 538, y: 712 / 956, width: 129 / 538, height: 139 / 956, label: 'OAT MILK',
+    });
+  });
+
   it('does not apply kiosk geometry to an unrelated landscape screen', () => {
     const request = { ...guideRequestFixture, screenshotBounds, candidates: [] };
     const decision = {

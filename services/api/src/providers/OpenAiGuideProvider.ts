@@ -80,11 +80,12 @@ Rules:
 const kioskPrompt = `BLUU DELI kiosk reference (use only when the visible screen agrees): the native capture is 538x956.
 - Menu category rail is x=0..95, starts y=163, with 57px rows: COFFEE, BREAKFAST, SANDWICHES, PASTRY, SALAD, SOUP, FOOD TO GO.
 - Product cards form 3 columns x=103..246, 247..389, 392..537 and 4 rows y=165..306, 309..450, 453..593, 596..738.
-- Modifier cards form 4 columns x=7..133, 138..264, 269..396, 400..528 and 3 rows y=432..568, 572..709, 713..851.
+- Modifier cards form 4 columns x=8..135, 140..268, 271..399, 402..530 and 3 rows y=432..568, 572..708, 712..850.
 - Modifier footer has Cancel at x=359..448 and Add to Cart at x=449..537, y=886..955.
 - Menu footer has Home x=357..417, Credit x=418..477, Others x=478..537, y=898..955.
 - Home screen has EAT IN x=83..259 and TAKE OUT x=270..439, y=800..880.
-Return the tight card/button box, not its image or text alone. The server will snap known labels to these measured bounds.`;
+For a modifier, visualTarget.label MUST be the exact printed modifier name (for example OAT MILK), never a description such as "bottom middle option".
+Return the full clickable card/button box, including its icon, surcharge and name, never its text or image alone. The server will snap known labels to these measured bounds.`;
 
 function promptFor(request: GuideRequest): string {
   const context = `${request.context.applicationName} ${request.context.windowTitle ?? ''} ${request.session.originalUserMessage} ${request.session.goal ?? ''}`;

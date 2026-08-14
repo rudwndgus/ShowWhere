@@ -4,6 +4,7 @@ interface PixelTarget {
   aliases: string[];
   box: [x: number, y: number, width: number, height: number];
   kioskSpecific?: boolean;
+  kind?: 'product' | 'modifier';
 }
 
 const REFERENCE_WIDTH = 538;
@@ -37,12 +38,23 @@ const targets: PixelTarget[] = [
     'salmon box', 'single bulgogi',
   ].map((label, index) => product(label, index)),
   ...[
-    'small', 'medium', 'large', 'ice', 'flavor', 'whole milk', 'skim milk', 'half and half', 'oat milk', 'almond milk',
-  ].map((label, index) => modifier(label, index)),
+    [['small', '스몰', '작은 사이즈'], 0],
+    [['medium', '미디엄', '중간 사이즈'], 1],
+    [['large', '라지', '큰 사이즈'], 2],
+    // Index 3 is an intentionally empty tile in the captured Latte modifier screen.
+    [['ice', '아이스'], 4],
+    [['flavor', '플레이버', '맛 추가'], 5],
+    [['whole milk', 'wholemilk', '홀 밀크', '홀밀크'], 6],
+    [['skim milk', 'skimmilk', '스킴 밀크', '스킴밀크', '무지방 우유'], 7],
+    [['half and half', 'half & half', '하프 앤 하프', '하프앤하프'], 8],
+    [['oat milk', 'oatmilk', '오트 밀크', '오트밀크'], 9],
+    [['almond milk', 'almondmilk', '아몬드 밀크', '아몬드밀크'], 10],
+  ].map(([aliases, index]) => modifier(aliases as string[], index as number)),
   ...[
-    'cheese', 'avocado', 'bacon', 'boars head', 'extra topping', 'extra arugula', 'extra spinach',
-    'arella cheese', 'on bagel', 'on hero',
-  ].map((label, index) => modifier(label, index)),
+    ['cheese', '치즈'], ['avocado', '아보카도'], ['bacon', '베이컨'], ['boars head', '보어스 헤드'],
+    ['extra topping', '토핑 추가'], ['extra arugula', '아루굴라 추가'], ['extra spinach', '시금치 추가'],
+    ['arella cheese', '모짜렐라 치즈'], ['on bagel', '베이글'], ['on hero', '히어로'],
+  ].map((aliases, index) => modifier(aliases, index)),
   { aliases: ['add to cart', '장바구니 담기', '담기'], box: [449, 886, 89, 70], kioskSpecific: true },
   { aliases: ['clear all', '전체 삭제'], box: [355, 898, 63, 58], kioskSpecific: true },
   { aliases: ['home', '홈'], box: [357, 898, 61, 58] },
@@ -63,15 +75,16 @@ function product(label: string, index: number): PixelTarget {
   const rows = [[168, 142], [312, 142], [456, 142], [600, 143]] as const;
   const [x, width] = columns[index % 3];
   const [y, height] = rows[Math.floor(index / 3)];
-  return { aliases: [label], box: [x, y, width, height], kioskSpecific: true };
+  return { aliases: [label], box: [x, y, width, height], kioskSpecific: true, kind: 'product' };
 }
 
-function modifier(label: string, index: number): PixelTarget {
-  const columns = [[7, 127], [138, 127], [269, 128], [400, 129]] as const;
-  const rows = [[432, 137], [572, 138], [713, 139]] as const;
+function modifier(aliases: string[], index: number): PixelTarget {
+  // Full white option tiles, including icon, surcharge and modifier name.
+  const columns = [[8, 128], [140, 129], [271, 129], [402, 129]] as const;
+  const rows = [[432, 137], [572, 137], [712, 139]] as const;
   const [x, width] = columns[index % 4];
   const [y, height] = rows[Math.floor(index / 4)];
-  return { aliases: [label], box: [x, y, width, height], kioskSpecific: true };
+  return { aliases, box: [x, y, width, height], kioskSpecific: true, kind: 'modifier' };
 }
 
 function normalize(value: string | undefined): string {
@@ -88,9 +101,14 @@ function targetFor(label: string): PixelTarget | undefined {
   }));
 }
 
-function targetFromUserIntent(request: GuideRequest): PixelTarget | undefined {
-  const intent = normalize(`${request.session.originalUserMessage} ${request.session.goal ?? ''}`);
-  const matches = targets.flatMap((target) => target.aliases
+function targetFromUserIntent(request: GuideRequest, kind?: PixelTarget['kind']): PixelTarget | undefined {
+  const intent = normalize(JSON.stringify({
+    originalUserMessage: request.session.originalUserMessage,
+    goal: request.session.goal,
+    completedSteps: request.session.completedSteps,
+    knownFacts: request.session.knownFacts,
+  }));
+  const matches = targets.filter((target) => !kind || target.kind === kind).flatMap((target) => target.aliases
     .map((alias) => ({ target, alias: normalize(alias) }))
     .filter(({ alias }) => {
       if (!alias) return false;
@@ -114,9 +132,13 @@ export function snapKioskVisualTarget(request: GuideRequest, visualTarget: Visua
   if (!request.screenshotBounds) return visualTarget;
   const ratio = request.screenshotBounds.width / request.screenshotBounds.height;
   if (ratio < 0.50 || ratio > 0.62) return visualTarget;
-  // The user's requested menu is authoritative. Vision labels are only a
-  // fallback because visually similar cards can be misread (TEA vs LATTE).
-  const known = targetFromUserIntent(request) ?? targetFor(visualTarget.label);
+  // Keep the current screen type selected by vision, but resolve the exact
+  // item within that type from the user's words. This prevents both TEA ->
+  // LATTE and OAT MILK -> a tiny, unnamed visual region.
+  const visualMatch = targetFor(visualTarget.label);
+  const known = visualMatch?.kind
+    ? targetFromUserIntent(request, visualMatch.kind) ?? visualMatch
+    : targetFromUserIntent(request, 'modifier') ?? targetFromUserIntent(request, 'product') ?? visualMatch;
   if (!known || (!known.kioskSpecific && !hasKioskContext(request))) return visualTarget;
   const [x, y, width, height] = known.box;
   return {
