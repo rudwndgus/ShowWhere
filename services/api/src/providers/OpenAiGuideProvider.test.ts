@@ -37,7 +37,11 @@ describe('OpenAiGuideProvider', () => {
     expect(JSON.stringify(body)).toContain('json_schema');
     expect(JSON.stringify(body)).toContain('Missing, hidden, or not-yet-visible controls are navigation problems');
     expect(JSON.stringify(body)).toContain('"detail":"auto"');
+    expect(JSON.stringify(body)).toContain('subtracting screenshotBounds.x/y');
     expect(JSON.stringify(body)).not.toContain('localScore');
+    const input = body?.input as Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
+    const compact = JSON.parse(input[1].content[0].text!) as { screenshotBounds: unknown };
+    expect(compact.screenshotBounds).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
   });
 
   it('uses Terra for an ambiguous candidate set', async () => {

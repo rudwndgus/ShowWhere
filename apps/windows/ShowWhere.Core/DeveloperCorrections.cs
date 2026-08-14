@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace ShowWhere.Core;
 
@@ -22,6 +23,21 @@ public sealed record DeveloperLearningLabels(
     IReadOnlyList<string> ExpectedEvidence,
     string OutcomeLabel,
     string Authority = "human_gold");
+
+public sealed record HumanGoldKnowledge(
+    string Identity,
+    string SiteOrApplication,
+    string NormalizedIntent,
+    string SemanticState,
+    string TargetConcept,
+    IReadOnlyList<string> TargetAliases,
+    string Action,
+    bool DeveloperVerified,
+    double Confidence,
+    int SuccessfulUses,
+    int IndependentVerificationCount,
+    DateTimeOffset LastVerifiedAt,
+    IReadOnlyList<string> VerificationKeys);
 
 public sealed record DeveloperCompletionRecord(
     int SchemaVersion,
@@ -59,7 +75,10 @@ public sealed record DeveloperCorrectionRecord(
     string? DeveloperComment = null,
     string? RefinedComment = null,
     IReadOnlyList<string>? IssueTags = null,
-    DeveloperLearningLabels? LearningLabels = null);
+    DeveloperLearningLabels? LearningLabels = null,
+    HumanGoldKnowledge? HumanGold = null,
+    string? KnowledgeStatus = null,
+    string? InvalidReason = null);
 
 public sealed record AnswerFeedbackRecord(
     int SchemaVersion,
@@ -107,10 +126,118 @@ public sealed record DeveloperLearningHistoryRecord(
     bool Active,
     bool HasEdits = false);
 
+public static class DeveloperKnowledgePolicy
+{
+    public const string Active = "active";
+    public const string Invalid = "invalid";
+    public const string Revoked = "revoked";
+
+    private static readonly HashSet<string> GenericConcepts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "settings", "setting", "window", "application", "chrome", "home", "page",
+        "button", "menu", "start", "unknown", "unknown_target", "unknown.target",
+        "visual_target", "visual target", "시작", "설정", "홈", "창",
+    };
+
+    public static bool IsNegative(DeveloperCorrectionRecord record) =>
+        string.Equals(record.LearningLabels?.OutcomeLabel, "wrong_target", StringComparison.OrdinalIgnoreCase)
+        || record.IssueTags?.Contains("wrong_target", StringComparer.OrdinalIgnoreCase) == true;
+
+    public static bool HasExplicitCorrectTarget(DeveloperCorrectionRecord record) =>
+        record.CorrectTarget is not null || record.NormalizedVisualTarget is not null;
+
+    public static bool IsActive(DeveloperCorrectionRecord record) =>
+        string.IsNullOrWhiteSpace(record.KnowledgeStatus)
+        || string.Equals(record.KnowledgeStatus, Active, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsGenericConcept(string? value)
+    {
+        var concept = DeveloperIntentMatcher.CreateConceptKey(value);
+        return string.IsNullOrWhiteSpace(concept) || GenericConcepts.Contains(concept);
+    }
+
+    public static bool CanBecomePositiveGold(DeveloperCorrectionRecord record)
+    {
+        if (!record.DeveloperVerified || !IsActive(record)) return false;
+
+        var explicitlyPositive = record.IssueTags?.Contains("positive_feedback", StringComparer.OrdinalIgnoreCase) == true
+            || string.Equals(record.LearningLabels?.OutcomeLabel, "correct_target", StringComparison.OrdinalIgnoreCase);
+        var correctedNegative = IsNegative(record) && HasExplicitCorrectTarget(record);
+        if (!explicitlyPositive && !correctedNegative) return false;
+
+        var target = record.CorrectTarget?.Label
+            ?? record.CorrectTarget?.Description
+            ?? record.CorrectTarget?.AutomationId
+            ?? record.NormalizedVisualTarget?.Label
+            ?? record.LearningLabels?.TargetConcept;
+        if (!IsGenericConcept(target)) return true;
+        if (record.NormalizedVisualTarget is not null && !string.IsNullOrWhiteSpace(record.SnapshotHash)) return true;
+        var stableIdentifier = record.CorrectTarget?.AutomationId;
+        return !string.IsNullOrWhiteSpace(stableIdentifier) && !IsGenericConcept(stableIdentifier);
+    }
+
+    public static DeveloperCorrectionRecord NormalizeForRuntime(DeveloperCorrectionRecord record)
+    {
+        if (CanBecomePositiveGold(record)) return record;
+        if (record.HumanGold is null) return record;
+        return record with
+        {
+            HumanGold = null,
+            KnowledgeStatus = Invalid,
+            InvalidReason = IsNegative(record) && !HasExplicitCorrectTarget(record)
+                ? "wrong_target_without_correct_next_step"
+                : "invalid_positive_human_gold",
+        };
+    }
+}
+
 public sealed record RefinedDeveloperComment(
     string Raw,
     string Normalized,
     IReadOnlyList<string> IssueTags);
+
+public static partial class DeveloperLearningPrivacy
+{
+    public static string? Redact(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        var result = EmailPattern().Replace(value, "[email]");
+        result = OrderIdPattern().Replace(result, "[order-id]");
+        result = PaymentPattern().Replace(result, "[payment]");
+        result = PhonePattern().Replace(result, "[phone]");
+        return result;
+    }
+
+    public static ApplicationContext Redact(ApplicationContext context) => context with
+    {
+        WindowTitle = Redact(context.WindowTitle),
+        Url = RedactUrl(context.Url),
+    };
+
+    private static string? RedactUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) return Redact(value);
+        try
+        {
+            var builder = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty, Query = string.Empty, Fragment = string.Empty };
+            return builder.Uri.ToString();
+        }
+        catch (UriFormatException) { return Redact(value); }
+    }
+
+    [GeneratedRegex(@"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex EmailPattern();
+
+    [GeneratedRegex(@"\b\d{3}-\d{7}-\d{7}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex OrderIdPattern();
+
+    [GeneratedRegex(@"\b(?:ending\s+in|last\s+four|끝자리)\s*\d{4}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PaymentPattern();
+
+    [GeneratedRegex(@"(?:\+?\d[\s().-]*){9,}", RegexOptions.CultureInvariant)]
+    private static partial Regex PhonePattern();
+}
 
 public static class DeveloperCompletionEvidence
 {
@@ -151,7 +278,7 @@ public static class DeveloperCompletionEvidence
 
     private static void Add(List<string> values, string? value, bool allowGeneric = false)
     {
-        var trimmed = value?.Trim();
+        var trimmed = DeveloperLearningPrivacy.Redact(value)?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed) || trimmed.Length < 2) return;
         if (!allowGeneric && !IsStrong(trimmed)) return;
         values.Add(trimmed);
@@ -180,10 +307,19 @@ public static class DeveloperPositiveFeedback
             ?? normalizedVisualTarget?.Label
             ?? targetSignature?.Role
             ?? "visual target";
+        var createdAt = DateTimeOffset.UtcNow;
+        var gold = DeveloperSemanticKnowledge.Create(
+            feedback.OriginalGoal,
+            feedback.Context,
+            targetConcept,
+            targetSignature,
+            feedback.Action ?? GuideActions.Highlight,
+            feedback.SnapshotHash,
+            createdAt);
         return new DeveloperCorrectionRecord(
             1,
             Guid.NewGuid().ToString("D"),
-            DateTimeOffset.UtcNow,
+            createdAt,
             feedback.OriginalGoal,
             string.IsNullOrWhiteSpace(feedback.EffectiveGoal) ? feedback.OriginalGoal : feedback.EffectiveGoal,
             null,
@@ -202,7 +338,107 @@ public static class DeveloperPositiveFeedback
             null,
             "Developer explicitly marked this answer correct.",
             ["positive_feedback", "human_gold"],
-            DeveloperLabeling.CreatePositiveLabels(feedback, targetConcept));
+            DeveloperLabeling.CreatePositiveLabels(feedback, targetConcept),
+            gold);
+    }
+}
+
+public static class DeveloperSemanticKnowledge
+{
+    public static HumanGoldKnowledge Create(
+        string goal,
+        ApplicationContext context,
+        string targetConcept,
+        CorrectionTargetSignature? signature,
+        string action,
+        string? snapshotHash,
+        DateTimeOffset verifiedAt)
+    {
+        var site = SiteOrApplication(context);
+        var intent = DeveloperIntentMatcher.CreateIntentKey(goal);
+        var state = SemanticState(context, signature);
+        var concept = DeveloperIntentMatcher.CreateConceptKey(targetConcept);
+        var identitySource = $"{site}|{intent}|{state}|{concept}";
+        var identity = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(identitySource))).ToLowerInvariant();
+        var verificationKey = CreateVerificationKey(intent, state, concept, goal, snapshotHash);
+        var aliases = new[] { targetConcept, signature?.Label, signature?.Description, signature?.AutomationId }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new HumanGoldKnowledge(
+            identity, site, intent, state, concept, aliases, action, true,
+            0.98, 1, 1, verifiedAt, [verificationKey]);
+    }
+
+    public static HumanGoldKnowledge Ensure(DeveloperCorrectionRecord record)
+    {
+        if (record.HumanGold is not null) return record.HumanGold;
+        var concept = record.LearningLabels?.TargetConcept
+            ?? record.CorrectTarget?.Label
+            ?? record.CorrectTarget?.Description
+            ?? record.NormalizedVisualTarget?.Label
+            ?? "visual target";
+        return Create(
+            record.EffectiveGoal,
+            record.Context,
+            concept,
+            record.CorrectTarget,
+            record.PreviousAction ?? GuideActions.Highlight,
+            record.SnapshotHash,
+            record.CreatedAtUtc);
+    }
+
+    public static HumanGoldKnowledge Merge(HumanGoldKnowledge current, HumanGoldKnowledge incoming)
+    {
+        var keys = current.VerificationKeys
+            .Concat(incoming.VerificationKeys)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var independent = keys.Length;
+        return current with
+        {
+            TargetAliases = current.TargetAliases.Concat(incoming.TargetAliases)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Action = incoming.Action,
+            DeveloperVerified = true,
+            Confidence = Math.Min(0.999, 0.98 + Math.Max(0, independent - 1) * 0.004),
+            SuccessfulUses = Math.Max(current.SuccessfulUses, 1) + (independent > current.IndependentVerificationCount ? 1 : 0),
+            IndependentVerificationCount = independent,
+            LastVerifiedAt = current.LastVerifiedAt > incoming.LastVerifiedAt
+                ? current.LastVerifiedAt : incoming.LastVerifiedAt,
+            VerificationKeys = keys,
+        };
+    }
+
+    private static string SiteOrApplication(ApplicationContext context)
+    {
+        if (Uri.TryCreate(context.Url, UriKind.Absolute, out var uri))
+            return uri.Host.ToLowerInvariant().Replace("www.", string.Empty, StringComparison.Ordinal);
+        return context.ApplicationName.Trim().ToLowerInvariant();
+    }
+
+    private static string SemanticState(ApplicationContext context, CorrectionTargetSignature? signature)
+    {
+        var scope = signature?.SourceScope?.Trim().ToLowerInvariant();
+        var container = signature?.ContainerLabel?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(scope))
+            return string.IsNullOrWhiteSpace(container) ? scope : $"{scope}/{container}";
+        if (Uri.TryCreate(context.Url, UriKind.Absolute, out var uri))
+        {
+            var path = uri.AbsolutePath.Trim('/').ToLowerInvariant();
+            return path.Length == 0 ? "homepage" : path;
+        }
+        return "application";
+    }
+
+    private static string CreateVerificationKey(
+        string intent, string state, string concept, string rawGoal, string? snapshotHash)
+    {
+        var source = $"{intent}|{state}|{concept}|{DeveloperIntentMatcher.CreateIntentKey(rawGoal)}|{snapshotHash}";
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(source))).ToLowerInvariant()[..24];
     }
 }
 
@@ -211,8 +447,19 @@ public static class DeveloperReplayPolicy
     public static bool CanReuseImmediately(
         string? targetId,
         bool snapshotMatches,
-        bool liveTargetResolved) =>
-        string.IsNullOrWhiteSpace(targetId) ? snapshotMatches : liveTargetResolved;
+        bool liveTargetResolved,
+        bool developerVerified = true) =>
+        string.IsNullOrWhiteSpace(targetId)
+            ? snapshotMatches
+            : liveTargetResolved && (developerVerified || snapshotMatches);
+
+    public static bool CanReuseSafeReply(
+        string action,
+        string status,
+        bool snapshotMatches) =>
+        snapshotMatches
+        && action is GuideActions.AskUser or GuideActions.Explain
+        && status is not GuideStatuses.Completed and not GuideStatuses.Blocked;
 }
 
 public static class DeveloperLabeling
@@ -361,14 +608,108 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         _statusPath = Path.Combine(DataDirectory, "learning-status.jsonl");
         _editsPath = Path.Combine(DataDirectory, "learning-edits.jsonl");
         Directory.CreateDirectory(DataDirectory);
-        _records = LoadRecords(_recordsPath);
+        _records = LoadRecords(_recordsPath, out var recordsMigrated);
         _completions = LoadCompletionRecords(_completionsPath);
         _feedback = LoadFeedbackRecords(_feedbackPath);
         _statusChanges = LoadStatusRecords(_statusPath);
         _edits = LoadEditRecords(_editsPath);
+        if (File.Exists(_recordsPath)
+            && (recordsMigrated
+                || File.ReadLines(_recordsPath).Count(line => !string.IsNullOrWhiteSpace(line)) != _records.Count))
+            RewriteRecords();
     }
 
     public string DataDirectory { get; }
+
+    public Task<bool> ImportCentralRecordAsync(
+        string kind,
+        JsonElement payload,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            switch (kind)
+            {
+                case "feedback":
+                {
+                    var record = payload.Deserialize<AnswerFeedbackRecord>(JsonOptions);
+                    if (record is null || record.SchemaVersion != 1 || string.IsNullOrWhiteSpace(record.Id)
+                        || record.CreatedAtUtc == default || string.IsNullOrWhiteSpace(record.AnswerId)
+                        || string.IsNullOrWhiteSpace(record.AnswerText)
+                        || !new[] { "correct", "incorrect", "completed" }.Contains(record.Rating, StringComparer.OrdinalIgnoreCase)
+                        || _feedback.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_feedbackPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _feedback.Add(record);
+                    break;
+                }
+                case "correction":
+                {
+                    var record = payload.Deserialize<DeveloperCorrectionRecord>(JsonOptions);
+                    if (record is null || record.SchemaVersion != 1 || !record.DeveloperVerified
+                        || string.IsNullOrWhiteSpace(record.Id) || record.CreatedAtUtc == default
+                        || string.IsNullOrWhiteSpace(record.OriginalGoal) || string.IsNullOrWhiteSpace(record.EffectiveGoal)
+                        || record.Context is null) return Task.FromResult(false);
+                    record = PrepareHumanGold(record with { ScreenshotPath = null });
+                    var conflictsRevoked = InvalidateConflictingKnowledge(record);
+                    var existingIndex = FindKnowledgeIndex(record);
+                    if (existingIndex >= 0)
+                    {
+                        var existing = _records[existingIndex];
+                        var merged = MergeKnowledge(existing, record);
+                        if (merged.HumanGold?.LastVerifiedAt <= existing.HumanGold?.LastVerifiedAt)
+                            return Task.FromResult(false);
+                        _records[existingIndex] = merged;
+                        RewriteRecords();
+                    }
+                    else
+                    {
+                        if (conflictsRevoked) RewriteRecords();
+                        File.AppendAllText(_recordsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                        _records.Add(record);
+                    }
+                    break;
+                }
+                case "completion":
+                {
+                    var record = payload.Deserialize<DeveloperCompletionRecord>(JsonOptions);
+                    if (record is null || record.SchemaVersion != 1 || !record.DeveloperVerified
+                        || string.IsNullOrWhiteSpace(record.Id) || record.CreatedAtUtc == default
+                        || string.IsNullOrWhiteSpace(record.OriginalGoal) || string.IsNullOrWhiteSpace(record.EffectiveGoal)
+                        || record.Context is null || record.LearningLabels is null
+                        || _completions.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_completionsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _completions.Add(record);
+                    break;
+                }
+                case "status":
+                {
+                    var record = payload.Deserialize<DeveloperLearningStatusRecord>(JsonOptions);
+                    if (record is null || record.SchemaVersion != 1 || string.IsNullOrWhiteSpace(record.Id)
+                        || record.CreatedAtUtc == default || string.IsNullOrWhiteSpace(record.FeedbackId)
+                        || _statusChanges.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _statusChanges.Add(record);
+                    break;
+                }
+                case "edit":
+                {
+                    var record = payload.Deserialize<DeveloperLearningEditRecord>(JsonOptions);
+                    if (record is null || record.SchemaVersion != 1 || string.IsNullOrWhiteSpace(record.Id)
+                        || record.CreatedAtUtc == default || string.IsNullOrWhiteSpace(record.FeedbackId)
+                        || string.IsNullOrWhiteSpace(record.Goal) || string.IsNullOrWhiteSpace(record.Answer)
+                        || !new[] { "correct", "incorrect", "completed" }.Contains(record.Rating, StringComparer.OrdinalIgnoreCase)
+                        || _edits.Any(item => item.Id == record.Id)) return Task.FromResult(false);
+                    File.AppendAllText(_editsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                    _edits.Add(record);
+                    break;
+                }
+                default:
+                    return Task.FromResult(false);
+            }
+        }
+        return Task.FromResult(true);
+    }
 
     public string ResolveIntent(string originalGoal)
     {
@@ -401,6 +742,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(IsCorrectionUsable)
                 .Where(record => record.CorrectTarget is not null)
                 .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
+                .Where(record => KnowledgeContextMatches(record, context))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .ToList();
         }
@@ -463,10 +805,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(record => IsFeedbackActive(record.FeedbackId))
                 .Where(record => string.Equals(GetEffectiveRating(record.FeedbackId, "completed"), "completed", StringComparison.OrdinalIgnoreCase))
                 .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, null))
-                .Where(record => string.Equals(
-                    record.Context.ApplicationName,
-                    context.ApplicationName,
-                    StringComparison.OrdinalIgnoreCase))
+                .Where(record => CompletionContextMatches(record.Context, context))
                 .Where(record => record.LearningLabels.ExpectedEvidence.Any(evidence =>
                     DeveloperCompletionEvidence.IsPresent(evidence, context, candidates)))
                 .OrderByDescending(record => record.CreatedAtUtc)
@@ -483,7 +822,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(DataDirectory);
-        var saved = correction;
+        var saved = PrepareHumanGold(Sanitize(correction));
+        lock (_gate)
+        {
+            if (InvalidateConflictingKnowledge(saved)) RewriteRecords();
+            var existingIndex = FindKnowledgeIndex(saved);
+            if (existingIndex >= 0)
+                saved = MergeKnowledge(_records[existingIndex], saved);
+        }
         if (!string.IsNullOrWhiteSpace(screenshotDataUrl))
         {
             var separator = screenshotDataUrl.IndexOf(',');
@@ -492,7 +838,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 var extension = screenshotDataUrl[..separator].Contains("png", StringComparison.OrdinalIgnoreCase)
                     ? ".png"
                     : ".jpg";
-                var relativePath = Path.Combine("screenshots", correction.Id + extension);
+                var relativePath = Path.Combine("screenshots", saved.Id + extension);
                 var absolutePath = Path.Combine(DataDirectory, relativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
                 var bytes = Convert.FromBase64String(screenshotDataUrl[(separator + 1)..]);
@@ -504,8 +850,18 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         var line = JsonSerializer.Serialize(saved, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
-            File.AppendAllText(_recordsPath, line);
-            _records.Add(saved);
+            var existingIndex = FindKnowledgeIndex(saved);
+            if (existingIndex >= 0)
+            {
+                saved = MergeKnowledge(_records[existingIndex], saved);
+                _records[existingIndex] = saved;
+                RewriteRecords();
+            }
+            else
+            {
+                File.AppendAllText(_recordsPath, line);
+                _records.Add(saved);
+            }
         }
         return saved;
     }
@@ -516,13 +872,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(DataDirectory);
-        var line = JsonSerializer.Serialize(feedback, JsonOptions) + Environment.NewLine;
+        var saved = Sanitize(feedback);
+        var line = JsonSerializer.Serialize(saved, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
             File.AppendAllText(_feedbackPath, line);
-            _feedback.Add(feedback);
+            _feedback.Add(saved);
         }
-        return Task.FromResult(feedback);
+        return Task.FromResult(saved);
     }
 
     public IReadOnlyList<UiCandidate> FilterRejectedCandidates(
@@ -531,6 +888,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         IReadOnlyList<UiCandidate> candidates)
     {
         HashSet<string> rejectedIds;
+        HashSet<string> rejectedConcepts;
         lock (_gate)
         {
             rejectedIds = _feedback
@@ -544,9 +902,25 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(item => string.Equals(GetEffectiveRating(item.Id, item.Rating), "incorrect", StringComparison.OrdinalIgnoreCase))
                 .Select(item => item.TargetId!)
                 .ToHashSet(StringComparer.Ordinal);
+            rejectedConcepts = _records
+                .Where(DeveloperKnowledgePolicy.IsNegative)
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
+                .Where(record => string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(record => new[] { record.PreviousTargetLabel, record.PreviousTargetId })
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(DeveloperIntentMatcher.CreateConceptKey)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToHashSet(StringComparer.Ordinal);
         }
-        if (rejectedIds.Count == 0) return candidates;
-        var filtered = candidates.Where(candidate => !rejectedIds.Contains(candidate.Id)).ToArray();
+        if (rejectedIds.Count == 0 && rejectedConcepts.Count == 0) return candidates;
+        var filtered = candidates.Where(candidate =>
+        {
+            if (rejectedIds.Contains(candidate.Id)) return false;
+            var concepts = new[] { candidate.Label, candidate.Description, Attribute(candidate, "automationId") }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(DeveloperIntentMatcher.CreateConceptKey);
+            return !concepts.Any(rejectedConcepts.Contains);
+        }).ToArray();
         return filtered.Length == 0 ? candidates : filtered;
     }
 
@@ -588,7 +962,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 throw new InvalidOperationException("학습 기록을 찾을 수 없습니다.");
             var record = new DeveloperLearningStatusRecord(
                 1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
-                feedbackId, active, string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());
+                feedbackId, active, string.IsNullOrWhiteSpace(reason) ? null : DeveloperLearningPrivacy.Redact(reason.Trim()));
             File.AppendAllText(_statusPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
             _statusChanges.Add(record);
         }
@@ -611,10 +985,10 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             Id = string.IsNullOrWhiteSpace(edit.Id) ? Guid.NewGuid().ToString("D") : edit.Id,
             CreatedAtUtc = edit.CreatedAtUtc == default ? DateTimeOffset.UtcNow : edit.CreatedAtUtc,
             Rating = edit.Rating.Trim().ToLowerInvariant(),
-            Goal = edit.Goal.Trim(),
-            Answer = edit.Answer.Trim(),
-            TargetLabel = string.IsNullOrWhiteSpace(edit.TargetLabel) ? null : edit.TargetLabel.Trim(),
-            Comment = string.IsNullOrWhiteSpace(edit.Comment) ? null : edit.Comment.Trim(),
+            Goal = DeveloperLearningPrivacy.Redact(edit.Goal.Trim())!,
+            Answer = DeveloperLearningPrivacy.Redact(edit.Answer.Trim())!,
+            TargetLabel = string.IsNullOrWhiteSpace(edit.TargetLabel) ? null : DeveloperLearningPrivacy.Redact(edit.TargetLabel.Trim()),
+            Comment = string.IsNullOrWhiteSpace(edit.Comment) ? null : DeveloperLearningPrivacy.Redact(edit.Comment.Trim()),
         };
         lock (_gate)
         {
@@ -645,6 +1019,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
     private bool IsCorrectionUsable(DeveloperCorrectionRecord record)
     {
+        if (!DeveloperKnowledgePolicy.IsActive(record)) return false;
+        if (DeveloperKnowledgePolicy.IsNegative(record) && !DeveloperKnowledgePolicy.HasExplicitCorrectTarget(record)) return false;
+        if (record.HumanGold is not null && !DeveloperKnowledgePolicy.CanBecomePositiveGold(record)) return false;
         if (!IsFeedbackActive(record.FeedbackId)) return false;
         if (string.IsNullOrWhiteSpace(record.FeedbackId)) return true;
         var feedback = _feedback.LastOrDefault(item => string.Equals(item.Id, record.FeedbackId, StringComparison.Ordinal));
@@ -677,17 +1054,160 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(DataDirectory);
-        var line = JsonSerializer.Serialize(completion, JsonOptions) + Environment.NewLine;
+        var saved = Sanitize(completion);
+        var line = JsonSerializer.Serialize(saved, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
             File.AppendAllText(_completionsPath, line);
-            _completions.Add(completion);
+            _completions.Add(saved);
         }
-        return Task.FromResult(completion);
+        return Task.FromResult(saved);
     }
 
-    private static List<DeveloperCorrectionRecord> LoadRecords(string path)
+    private static DeveloperCorrectionRecord Sanitize(DeveloperCorrectionRecord value) => value with
     {
+        OriginalGoal = DeveloperLearningPrivacy.Redact(value.OriginalGoal)!,
+        EffectiveGoal = DeveloperLearningPrivacy.Redact(value.EffectiveGoal)!,
+        CorrectedIntent = DeveloperLearningPrivacy.Redact(value.CorrectedIntent),
+        Context = DeveloperLearningPrivacy.Redact(value.Context),
+        PreviousTargetLabel = DeveloperLearningPrivacy.Redact(value.PreviousTargetLabel),
+        CorrectTarget = value.CorrectTarget is null ? null : value.CorrectTarget with
+        {
+            Label = DeveloperLearningPrivacy.Redact(value.CorrectTarget.Label),
+            Description = DeveloperLearningPrivacy.Redact(value.CorrectTarget.Description),
+            AutomationId = DeveloperLearningPrivacy.Redact(value.CorrectTarget.AutomationId),
+            ContainerLabel = DeveloperLearningPrivacy.Redact(value.CorrectTarget.ContainerLabel),
+        },
+        DeveloperComment = DeveloperLearningPrivacy.Redact(value.DeveloperComment),
+        RefinedComment = DeveloperLearningPrivacy.Redact(value.RefinedComment),
+        LearningLabels = value.LearningLabels is null ? null : Sanitize(value.LearningLabels),
+        HumanGold = value.HumanGold is null ? null : value.HumanGold with
+        {
+            SiteOrApplication = DeveloperLearningPrivacy.Redact(value.HumanGold.SiteOrApplication)!,
+            TargetAliases = value.HumanGold.TargetAliases.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
+        },
+    };
+
+    private static DeveloperCorrectionRecord PrepareHumanGold(DeveloperCorrectionRecord record)
+    {
+        record = DeveloperKnowledgePolicy.NormalizeForRuntime(record);
+        if (!DeveloperKnowledgePolicy.CanBecomePositiveGold(record)) return record with { HumanGold = null };
+
+        var targetConcept = record.CorrectTarget?.Label
+            ?? record.CorrectTarget?.Description
+            ?? record.CorrectTarget?.AutomationId
+            ?? record.NormalizedVisualTarget?.Label
+            ?? record.LearningLabels?.TargetConcept
+            ?? "visual target";
+        var gold = DeveloperSemanticKnowledge.Create(
+            record.EffectiveGoal,
+            record.Context,
+            targetConcept,
+            record.CorrectTarget,
+            record.PreviousAction ?? GuideActions.Highlight,
+            record.SnapshotHash,
+            record.HumanGold?.LastVerifiedAt ?? record.CreatedAtUtc);
+        if (record.HumanGold is not null
+            && string.Equals(record.HumanGold.Identity, gold.Identity, StringComparison.Ordinal))
+            gold = DeveloperSemanticKnowledge.Merge(record.HumanGold, gold);
+        return record with
+        {
+            HumanGold = gold,
+            KnowledgeStatus = record.KnowledgeStatus,
+            InvalidReason = null,
+        };
+    }
+
+    private int FindKnowledgeIndex(DeveloperCorrectionRecord record)
+    {
+        if (record.HumanGold is null)
+            return _records.FindIndex(item => string.Equals(item.Id, record.Id, StringComparison.Ordinal));
+        return _records.FindIndex(item =>
+            string.Equals(item.Id, record.Id, StringComparison.Ordinal)
+            || string.Equals(item.HumanGold?.Identity, record.HumanGold.Identity, StringComparison.Ordinal));
+    }
+
+    private bool InvalidateConflictingKnowledge(DeveloperCorrectionRecord incoming)
+    {
+        if (incoming.HumanGold is null || string.IsNullOrWhiteSpace(incoming.SnapshotHash)) return false;
+        var changed = false;
+        for (var index = 0; index < _records.Count; index++)
+        {
+            var existing = _records[index];
+            if (existing.HumanGold is null || !DeveloperKnowledgePolicy.IsActive(existing)
+                || string.Equals(existing.Id, incoming.Id, StringComparison.Ordinal)
+                || !string.Equals(existing.SnapshotHash, incoming.SnapshotHash, StringComparison.Ordinal)
+                || existing.HumanGold.LastVerifiedAt > incoming.HumanGold.LastVerifiedAt
+                || !string.Equals(existing.HumanGold.SiteOrApplication, incoming.HumanGold.SiteOrApplication, StringComparison.Ordinal)
+                || !string.Equals(existing.HumanGold.NormalizedIntent, incoming.HumanGold.NormalizedIntent, StringComparison.Ordinal)
+                || !string.Equals(existing.HumanGold.SemanticState, incoming.HumanGold.SemanticState, StringComparison.Ordinal)
+                || string.Equals(existing.HumanGold.TargetConcept, incoming.HumanGold.TargetConcept, StringComparison.Ordinal)) continue;
+            _records[index] = existing with
+            {
+                HumanGold = null,
+                KnowledgeStatus = DeveloperKnowledgePolicy.Revoked,
+                InvalidReason = $"superseded_by:{incoming.Id}",
+            };
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static DeveloperCorrectionRecord MergeKnowledge(
+        DeveloperCorrectionRecord existing,
+        DeveloperCorrectionRecord incoming)
+    {
+        if (existing.HumanGold is null || incoming.HumanGold is null) return incoming;
+        return incoming with
+        {
+            Id = existing.Id,
+            CreatedAtUtc = existing.CreatedAtUtc,
+            FeedbackId = existing.FeedbackId,
+            ScreenshotPath = incoming.ScreenshotPath ?? existing.ScreenshotPath,
+            HumanGold = DeveloperSemanticKnowledge.Merge(existing.HumanGold, incoming.HumanGold),
+        };
+    }
+
+    private void RewriteRecords()
+    {
+        var content = string.Join(Environment.NewLine, _records.Select(record =>
+            JsonSerializer.Serialize(record, JsonOptions)));
+        if (content.Length > 0) content += Environment.NewLine;
+        // This method is called while _gate is held, so readers in this process
+        // cannot observe a partial rewrite. Direct replacement is also compatible
+        // with synced/redirected Windows folders where File.Replace is denied.
+        File.WriteAllText(_recordsPath, content);
+    }
+
+    private static AnswerFeedbackRecord Sanitize(AnswerFeedbackRecord value) => value with
+    {
+        AnswerText = DeveloperLearningPrivacy.Redact(value.AnswerText)!,
+        OriginalGoal = DeveloperLearningPrivacy.Redact(value.OriginalGoal),
+        EffectiveGoal = DeveloperLearningPrivacy.Redact(value.EffectiveGoal),
+        Context = value.Context is null ? null : DeveloperLearningPrivacy.Redact(value.Context),
+        TargetLabel = DeveloperLearningPrivacy.Redact(value.TargetLabel),
+    };
+
+    private static DeveloperCompletionRecord Sanitize(DeveloperCompletionRecord value) => value with
+    {
+        OriginalGoal = DeveloperLearningPrivacy.Redact(value.OriginalGoal)!,
+        EffectiveGoal = DeveloperLearningPrivacy.Redact(value.EffectiveGoal)!,
+        Context = DeveloperLearningPrivacy.Redact(value.Context),
+        VisibleEvidence = value.VisibleEvidence.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
+        LearningLabels = Sanitize(value.LearningLabels),
+        DeveloperComment = DeveloperLearningPrivacy.Redact(value.DeveloperComment),
+    };
+
+    private static DeveloperLearningLabels Sanitize(DeveloperLearningLabels value) => value with
+    {
+        TargetConcept = DeveloperLearningPrivacy.Redact(value.TargetConcept)!,
+        ExpectedNextState = DeveloperLearningPrivacy.Redact(value.ExpectedNextState)!,
+        ExpectedEvidence = value.ExpectedEvidence.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
+    };
+
+    private static List<DeveloperCorrectionRecord> LoadRecords(string path, out bool migrated)
+    {
+        migrated = false;
         if (!File.Exists(path)) return [];
         var records = new List<DeveloperCorrectionRecord>();
         foreach (var line in File.ReadLines(path))
@@ -696,7 +1216,21 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             try
             {
                 var record = JsonSerializer.Deserialize<DeveloperCorrectionRecord>(line, JsonOptions);
-                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+                if (record is not null && record.SchemaVersion == 1)
+                {
+                    var prepared = PrepareHumanGold(record);
+                    if (!string.Equals(
+                            JsonSerializer.Serialize(record, JsonOptions),
+                            JsonSerializer.Serialize(prepared, JsonOptions),
+                            StringComparison.Ordinal)) migrated = true;
+                    record = prepared;
+                    var duplicateIndex = record.HumanGold is null ? -1 : records.FindIndex(item =>
+                        string.Equals(item.HumanGold?.Identity, record.HumanGold.Identity, StringComparison.Ordinal));
+                    if (duplicateIndex >= 0)
+                        records[duplicateIndex] = MergeKnowledge(records[duplicateIndex], record);
+                    else
+                        records.Add(record);
+                }
             }
             catch (JsonException) { }
         }
@@ -771,7 +1305,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return records;
     }
 
-    private static string ResolveDefaultDataDirectory()
+    public static string ResolveDefaultDataDirectory()
     {
         var configured = Environment.GetEnvironmentVariable("SHOWWHERE_TRAINING_DIR");
         if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured.Trim());
@@ -794,12 +1328,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             "training");
     }
 
-    private static int ScoreTarget(
+    private int ScoreTarget(
         UiCandidate candidate,
         DeveloperCorrectionRecord record,
         ApplicationContext context)
     {
         var signature = record.CorrectTarget!;
+        var editedTargetLabel = GetLatestEdit(record.FeedbackId)?.TargetLabel?.Trim();
+        var targetLabel = string.IsNullOrWhiteSpace(editedTargetLabel) ? signature.Label : editedTargetLabel;
+        var targetLabelWasEdited = !string.IsNullOrWhiteSpace(editedTargetLabel);
+        var semanticTargetMatch = !targetLabelWasEdited
+            && record.HumanGold is { } gold
+            && new[] { candidate.Label, candidate.Description, Attribute(candidate, "automationId") }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Any(value => string.Equals(
+                    DeveloperIntentMatcher.CreateConceptKey(value),
+                    gold.TargetConcept,
+                    StringComparison.Ordinal));
         var candidateProcess = Attribute(candidate, "processName");
         var candidateScope = Attribute(candidate, "sourceScope");
         if (!string.IsNullOrWhiteSpace(signature.ProcessName)
@@ -808,12 +1353,16 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             && !EqualsText(candidateScope, signature.SourceScope)) return 0;
         if (string.Equals(signature.SourceScope, "browser_content", StringComparison.OrdinalIgnoreCase)
             && !MatchesBrowserSite(record.Context, context, signature, candidate)) return 0;
-        if (!EqualsText(candidate.Label, signature.Label)
-            && !EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) return 0;
+        if (targetLabelWasEdited && !EqualsText(candidate.Label, targetLabel)) return 0;
+        if (!targetLabelWasEdited
+            && !EqualsText(candidate.Label, targetLabel)
+            && !EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)
+            && !semanticTargetMatch) return 0;
 
         var score = 0;
-        if (EqualsText(candidate.Label, signature.Label)) score += 220;
-        if (EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) score += 360;
+        if (EqualsText(candidate.Label, targetLabel)) score += targetLabelWasEdited ? 600 : 220;
+        if (!targetLabelWasEdited && EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) score += 360;
+        if (semanticTargetMatch) score += 320;
         if (EqualsText(candidateProcess, signature.ProcessName)) score += 140;
         if (EqualsText(candidateScope, signature.SourceScope)) score += 130;
         if (EqualsText(candidate.Role, signature.Role)) score += 50;
@@ -846,6 +1395,56 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             || learnedTokens.Overlaps(currentTokens);
     }
 
+    private static bool KnowledgeContextMatches(
+        DeveloperCorrectionRecord record,
+        ApplicationContext context)
+    {
+        if (!string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (IsBrowserApplication(context.ApplicationName))
+        {
+            if (Uri.TryCreate(record.Context.Url, UriKind.Absolute, out var learned)
+                && Uri.TryCreate(context.Url, UriKind.Absolute, out var current))
+                return string.Equals(learned.Host, current.Host, StringComparison.OrdinalIgnoreCase);
+            // Without URL evidence, defer site validation to ScoreTarget, which can
+            // compare the live browser-content container against the saved signature.
+            return true;
+        }
+        return true;
+    }
+
+    private static bool CompletionContextMatches(
+        ApplicationContext learnedContext,
+        ApplicationContext currentContext)
+    {
+        if (!string.Equals(
+                learnedContext.ApplicationName,
+                currentContext.ApplicationName,
+                StringComparison.OrdinalIgnoreCase)) return false;
+
+        if (!IsBrowserApplication(currentContext.ApplicationName)) return true;
+
+        // A browser window title or a site-wide navigation label is not proof that
+        // a web task is complete. Browser completion replay is allowed only when
+        // both observations identify the same concrete URL path. This prevents a
+        // home page accidentally marked "complete" from stopping every later run.
+        if (!Uri.TryCreate(learnedContext.Url, UriKind.Absolute, out var learnedUrl)
+            || !Uri.TryCreate(currentContext.Url, UriKind.Absolute, out var currentUrl)) return false;
+        return string.Equals(learnedUrl.Host, currentUrl.Host, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                learnedUrl.AbsolutePath.TrimEnd('/'),
+                currentUrl.AbsolutePath.TrimEnd('/'),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsBrowserApplication(string applicationName) =>
+        applicationName.Contains("chrome", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("msedge", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Equals("edge", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("firefox", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("brave", StringComparison.OrdinalIgnoreCase)
+        || applicationName.Contains("opera", StringComparison.OrdinalIgnoreCase);
+
     private static HashSet<string> SiteTokens(string value) => value
         .ToLowerInvariant()
         .Split([' ', '-', '|', '—', ':'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -862,6 +1461,16 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 public static class DeveloperIntentMatcher
 {
     public static string CreateIntentKey(string? value) => Normalize(value).Replace(' ', '_');
+
+    public static string CreateConceptKey(string? value)
+    {
+        var normalized = Normalize(value).Replace(' ', '_');
+        return normalized switch
+        {
+            "start" => "시작",
+            _ => normalized,
+        };
+    }
 
     public static bool IsSameIntent(string? left, string? right)
     {
@@ -888,6 +1497,8 @@ public static class DeveloperIntentMatcher
         var normalized = (value ?? string.Empty).Trim().ToLowerInvariant().Normalize();
         foreach (var (source, target) in PhraseAliases)
             normalized = normalized.Replace(source, target, StringComparison.Ordinal);
+        if (ContainsAny(normalized, CommerceCartAliases))
+            return "commerce.cart";
         return string.Join(' ', normalized.Split(
             [' ', '\t', '\r', '\n', '?', '!', '.', ',', '/', '\\'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -936,6 +1547,12 @@ public static class DeveloperIntentMatcher
         ("인쇄 장치", "프린터"), ("인쇄장치", "프린터"), ("printer", "프린터"),
         ("와이 파이", "와이파이"), ("wi-fi", "와이파이"), ("wifi", "와이파이"),
         ("블루투스", "bluetooth"),
+    ];
+
+    private static readonly string[] CommerceCartAliases =
+    [
+        "장바구니", "내 카트", "카트", "담아둔 상품", "담은 상품", "담은 거", "담은거",
+        "담은 것", "담은것", "shopping cart", "my cart", "basket", "cart",
     ];
 
     private static readonly HashSet<string> StopWords = new(StringComparer.Ordinal)
@@ -1016,13 +1633,7 @@ public static class DeveloperCorrectionMatcher
         Attribute(candidate, "containerLabel"));
 
     public static VisualTarget NormalizeSelection(UiBounds screen, UiBounds selection, string label)
-    {
-        var width = Math.Clamp(selection.Width / screen.Width, 0, 1);
-        var height = Math.Clamp(selection.Height / screen.Height, 0, 1);
-        var x = Math.Clamp((selection.X - screen.X) / screen.Width, 0, 1 - width);
-        var y = Math.Clamp((selection.Y - screen.Y) / screen.Height, 0, 1 - height);
-        return new VisualTarget(x, y, width, height, label);
-    }
+        => ScreenCoordinateMapper.NormalizeSelection(screen, selection, label);
 
     private static bool Contains(UiBounds bounds, double x, double y) =>
         x >= bounds.X && x <= bounds.X + bounds.Width

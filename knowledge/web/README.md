@@ -1,17 +1,11 @@
-# ShowWhere Web Knowledge data
+# ShowWhere Web Knowledge
 
-This directory is intentionally tracked by Git. Every generated crawl, normalization, Knowledge, pattern, failure, and training artifact belongs in Git so another development computer receives the same learning state after `git pull`.
+웹사이트는 계속 바뀌지만 사용자의 목적은 크게 달라지지 않습니다. 로그인하고, 주문을 확인하고, 설정을 바꾸고, 필요한 정보를 찾고 싶어 합니다.
 
-```text
-raw/<site>/<run>.json.gz    append-only lossless-compressed crawl observations
-normalized/<site>.json.gz   merged and lossless-compressed site graph
-catalogs/<site>.json        runtime Web Knowledge catalog
-patterns/common.json        cross-site semantic path patterns
-training/*.jsonl            append-only pipeline and future model-training events
-```
+ShowWhere의 웹 지식은 특정 좌표를 외우는 대신 화면에 보이는 의미와 다음 행동의 관계를 이해하기 위해 존재합니다. 여러 웹사이트에서 반복되는 경험을 모아 처음 보는 화면에서도 더 빠르고 정확하게 다음 단계를 제안하는 것이 목표입니다.
 
-The current crawler does not generate screenshots or complete HTML, but if those are added as learning artifacts later they are tracked here as well. API keys, cookies, authentication storage, and form secrets are credentials rather than learning data and belong only in `.env`, `.crawl/`, `playwright/.auth/`, or `knowledge/web/private/`.
+관찰된 정보는 언제나 사용자의 현재 화면과 다시 대조되어야 합니다. 과거에 맞았던 안내를 무조건 재사용하지 않고, 확신이 부족하면 질문하며, 목표에 도달하면 안내를 멈추는 것이 ShowWhere가 지향하는 방식입니다.
 
-Each raw run has a unique filename, so data gathered on another computer is added instead of replacing earlier observations. Always `git pull` before crawling. Normalization reads both legacy `.json` and compressed `.json.gz` runs and deterministically rebuilds the catalog from the merged history. `npm run crawl:compress` safely converts legacy raw/normalized JSON after validating each gzip file. Runtime catalogs remain uncompressed for immediate startup.
+인증정보와 개인정보는 지식이 아닙니다. 비밀번호, API 키, 쿠키, 로그인 상태와 민감한 입력값은 수집하거나 공유하지 않습니다.
 
-Do not hand-edit raw runs. Correct a semantic rule in `src/web-knowledge/taxonomy.ts`, rerun `npm run crawl:normalize -- --site <site-id>`, and commit the rebuilt files.
+이 공간의 비전은 하나입니다. **어떤 웹사이트에서도 사용자가 화면을 설명하지 않고 목적만 말할 수 있게 하는 것.**

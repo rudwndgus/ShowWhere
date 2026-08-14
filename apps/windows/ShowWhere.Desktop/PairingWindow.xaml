@@ -1,0 +1,25 @@
+<Window x:Class="ShowWhere.Desktop.PairingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShowWhere 모바일 연결" Icon="Assets/ShowWhere.ico" Width="390" Height="570" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" Topmost="True" Background="#FFF7F5F5">
+  <Grid Margin="26">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel>
+      <TextBlock Text="휴대폰 연결" FontSize="25" FontWeight="Bold" Foreground="#FF472323" HorizontalAlignment="Center"/>
+      <TextBlock Text="휴대폰 카메라로 QR을 스캔하세요" Margin="0,7,0,12" Foreground="#FF71696B" HorizontalAlignment="Center"/>
+    </StackPanel>
+    <StackPanel Grid.Row="1" VerticalAlignment="Center">
+      <Border Width="285" Height="285" Background="White" BorderBrush="#FFE2DADA" BorderThickness="1" CornerRadius="14" Padding="12">
+        <Image Source="{Binding QrImage}" Stretch="Uniform"/>
+      </Border>
+      <TextBlock Text="PC 인증번호" FontSize="12" Foreground="#FF71696B" HorizontalAlignment="Center" Margin="0,15,0,2"/>
+      <TextBlock Text="{Binding PairingCode}" FontSize="34" FontWeight="ExtraBold" Foreground="#FF472323" HorizontalAlignment="Center"/>
+      <TextBlock Text="{Binding PairingStatus}" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" Foreground="#FF71696B" Margin="0,8,0,0"/>
+    </StackPanel>
+    <StackPanel Grid.Row="2">
+      <ProgressBar Value="{Binding RemainingProgress, Mode=OneWay}" Maximum="100" Height="5" Foreground="#FF472323"/>
+      <TextBlock Text="{Binding RemainingSeconds, StringFormat={}{0}초 후 QR 자동 갱신}" HorizontalAlignment="Center" Margin="0,7,0,0" Foreground="#FF71696B"/>
+    </StackPanel>
+  </Grid>
+</Window>

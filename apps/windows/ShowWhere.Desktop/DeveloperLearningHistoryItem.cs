@@ -92,3 +92,5 @@ public sealed class DeveloperLearningHistoryItem : INotifyPropertyChanged
 }
 
 public sealed record DeveloperRatingOption(string Value, string Label);
+
+public sealed record DeveloperCorrectionReasonOption(string Value, string Label);

@@ -23,8 +23,8 @@ public sealed class WindowsScreenCaptureService : IWindowsScreenCaptureService
     private const int SmCyVirtualScreen = 79;
     private const int SrcCopy = 0x00CC0020;
     private const int CaptureBlt = 0x40000000;
-    private const int MaximumImageWidth = 1280;
-    private const int MaximumImageHeight = 720;
+    private const int MaximumImageWidth = 2048;
+    private const int MaximumImageHeight = 1152;
 
     public Task<WindowsScreenCapture> CaptureAsync(CancellationToken cancellationToken) =>
         Task.Run(() => Capture(cancellationToken), cancellationToken);
@@ -57,12 +57,12 @@ public sealed class WindowsScreenCaptureService : IWindowsScreenCaptureService
             cancellationToken.ThrowIfCancellationRequested();
 
             BitmapSource output = cached;
-            var scale = Math.Min(1d, Math.Min(
-                MaximumImageWidth / (double)width,
-                MaximumImageHeight / (double)height));
-            if (scale < 1)
+            var outputSize = CalculateOutputSize(width, height);
+            if (outputSize.Width != width || outputSize.Height != height)
             {
-                var transformed = new TransformedBitmap(cached, new ScaleTransform(scale, scale));
+                var transformed = new TransformedBitmap(cached, new ScaleTransform(
+                    outputSize.Width / (double)width,
+                    outputSize.Height / (double)height));
                 transformed.Freeze();
                 output = transformed;
             }
@@ -82,6 +82,17 @@ public sealed class WindowsScreenCaptureService : IWindowsScreenCaptureService
             _ = DeleteDC(memoryDc);
             _ = ReleaseDC(IntPtr.Zero, screenDc);
         }
+    }
+
+    internal static (int Width, int Height) CalculateOutputSize(int width, int height)
+    {
+        if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+        var scale = Math.Min(1d, Math.Min(
+            MaximumImageWidth / (double)width,
+            MaximumImageHeight / (double)height));
+        return (
+            Math.Max(1, (int)Math.Round(width * scale)),
+            Math.Max(1, (int)Math.Round(height * scale)));
     }
 
     [DllImport("user32.dll")]

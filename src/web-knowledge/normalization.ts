@@ -27,6 +27,7 @@ export function redactWebText(value: string): string {
     .replace(/(?:\+?\d[\s().-]*){9,}/gu, '[phone]')
     .replace(/\b(?:ending\s+in|last\s+four|끝자리)\s*\d{4}\b/giu, '[payment]')
     .replace(/\b\d{1,6}\s+[\p{L}0-9.' -]{2,60}\s(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b/giu, '[address]')
+    .replace(/\b(deliver(?:ing)?\s+to)\s+[\p{L}\p{N}.' -]{1,80}(?=\s+(?:update|change)\s+location\b)/giu, '$1 [location]')
     .replace(/\b(?:hello|hi|deliver(?:ing)?\s+to)\s*,?\s+[\p{L}][\p{L}.' -]{1,60}(?=\s*(?:account|$|[|,;]))/giu, (match) => {
       const prefix = match.match(/^(hello|hi|deliver(?:ing)?\s+to)/iu)?.[0] ?? 'Account';
       return `${prefix} [name]${/\s$/u.test(match) ? ' ' : ''}`;

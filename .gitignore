@@ -34,6 +34,9 @@ knowledge/web/private/
 # Every learning artifact stays in the repository for cross-computer Git sync.
 # Secrets and authenticated browser state remain excluded separately.
 training/*.tmp
+training/central-sync-state.json
+training/central-sync-outbox.jsonl
+training/central-sync-quarantine.jsonl
 
 # Python runtime artifacts
 __pycache__/

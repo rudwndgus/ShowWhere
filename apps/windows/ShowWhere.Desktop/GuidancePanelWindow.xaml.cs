@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Collections.Specialized;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -17,7 +17,7 @@ public partial class GuidancePanelWindow : Window
     private INotifyCollectionChanged? _observedMessages;
 
     public AssistantCharacterStore CharacterStore { get; }
-    public event Action? GoalSubmittedFromKeyboard;
+    public event Action? ResponseRequested;
 
     public GuidancePanelWindow(AssistantCharacterStore characterStore)
     {
@@ -26,22 +26,6 @@ public partial class GuidancePanelWindow : Window
         CharacterStore.PropertyChanged += OnCharacterStorePropertyChanged;
         ApplyCharacterTheme();
         DataContextChanged += OnDataContextChanged;
-    }
-
-    private void OnCharacterStorePropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
-    {
-        if (eventArgs.PropertyName == nameof(AssistantCharacterStore.SelectedCharacterKey))
-            ApplyCharacterTheme();
-    }
-
-    private void ApplyCharacterTheme()
-    {
-        var accent = CharacterStore.SelectedCharacterKey == "robot"
-            ? Color.FromRgb(0x3D, 0x8B, 0xEF)
-            : Color.FromRgb(0x47, 0x23, 0x23);
-        Resources["AccentBrush"] = new SolidColorBrush(accent);
-        Resources["AccentDarkBrush"] = new SolidColorBrush(accent);
-        Resources["AccentSoftBrush"] = new SolidColorBrush(Color.FromArgb(0x80, accent.R, accent.G, accent.B));
     }
 
     protected override void OnSourceInitialized(EventArgs eventArgs)
@@ -78,6 +62,7 @@ public partial class GuidancePanelWindow : Window
     public void CloseForShutdown()
     {
         _shutdown = true;
+        CharacterStore.PropertyChanged -= OnCharacterStorePropertyChanged;
         Close();
     }
 
@@ -132,13 +117,30 @@ public partial class GuidancePanelWindow : Window
     {
         if (eventArgs.Key != Key.Enter || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
         eventArgs.Handled = true;
-        if (DataContext is not GuidanceViewModel viewModel || !viewModel.SubmitCommand.CanExecute(null)) return;
+        if (DataContext is not GuidanceViewModel viewModel) return;
+        if (!viewModel.SubmitCommand.CanExecute(null)) return;
+        ResponseRequested?.Invoke();
         viewModel.SubmitCommand.Execute(null);
-        GoalSubmittedFromKeyboard?.Invoke();
     }
 
-    private void OnBubbleActionClick(object sender, RoutedEventArgs eventArgs) =>
-        GoalSubmittedFromKeyboard?.Invoke();
+    private void OnCharacterStorePropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (eventArgs.PropertyName == nameof(AssistantCharacterStore.SelectedCharacterKey))
+            ApplyCharacterTheme();
+    }
+
+    private void ApplyCharacterTheme()
+    {
+        var accent = CharacterStore.SelectedCharacterKey switch
+        {
+            "robot" => Color.FromRgb(0x3D, 0x8B, 0xEF),
+            "duck" => Color.FromRgb(0xE2, 0x9B, 0x18),
+            _ => Color.FromRgb(0x47, 0x23, 0x23),
+        };
+        Resources["AccentBrush"] = new SolidColorBrush(accent);
+        Resources["AccentDarkBrush"] = new SolidColorBrush(accent);
+        Resources["AccentSoftBrush"] = new SolidColorBrush(Color.FromArgb(0x80, accent.R, accent.G, accent.B));
+    }
 
     private void OnCharacterSelectionChanged(object sender, SelectionChangedEventArgs eventArgs)
     {

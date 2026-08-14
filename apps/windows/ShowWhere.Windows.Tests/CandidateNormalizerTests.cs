@@ -6,6 +6,22 @@ namespace ShowWhere.Windows.Tests;
 public sealed class CandidateNormalizerTests
 {
     [Fact]
+    public void Settings_hydration_retries_until_live_navigation_items_exist()
+    {
+        Assert.True(WindowsUiObserver.ShouldRetrySettingsHydration(
+            "ApplicationFrameHost", "Settings", []));
+
+        Assert.False(WindowsUiObserver.ShouldRetrySettingsHydration(
+            "ApplicationFrameHost", "Settings",
+            [Candidate("system", "system", true, true, new UiBounds(16, 183, 280, 36)) with
+            {
+                Label = "System",
+                Role = "listitem",
+                ClassName = "Microsoft.UI.Xaml.Controls.NavigationViewItem",
+            }]));
+    }
+
+    [Fact]
     public void Keeps_actionable_windows_setting_sliders()
     {
         var normalized = CandidateNormalizer.Normalize([
@@ -48,6 +64,36 @@ public sealed class CandidateNormalizerTests
         };
 
         Assert.Single(CandidateNormalizer.Normalize(source));
+    }
+
+    [Fact]
+    public void Normalize_keeps_the_named_child_for_an_unnamed_clickable_parent()
+    {
+        var parent = Candidate("button-parent", "button-parent", true, true, new UiBounds(14, 180, 296, 42)) with
+        {
+            Label = null,
+        };
+        var namedChild = Candidate("bluetooth-text", "button-parent", true, true, new UiBounds(14, 180, 296, 42)) with
+        {
+            Label = "Bluetooth & devices",
+        };
+
+        var result = CandidateNormalizer.Normalize([parent, namedChild]);
+
+        Assert.Single(result);
+        Assert.Equal("Bluetooth & devices", result[0].Candidate.Label);
+        Assert.Equal(new UiBounds(14, 180, 296, 42), result[0].Candidate.Bounds);
+    }
+
+    [Fact]
+    public void Clickable_parent_uses_child_text_when_its_own_name_is_empty()
+    {
+        Assert.Equal(
+            "Bluetooth & devices",
+            ClickableParentResolver.PreferAccessibleText(null, "Bluetooth & devices"));
+        Assert.Equal(
+            "Named parent",
+            ClickableParentResolver.PreferAccessibleText("Named parent", "Child"));
     }
 
     [Fact]

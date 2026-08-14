@@ -1,85 +1,101 @@
-<div align="center">
+# ShowWhere 2.0
 
-# ShowWhere
+ShowWhere is an AI-powered visual guide that understands what a user wants to do, observes the current Windows or web interface, and shows exactly where to click next.
 
-### Don't explain your screen. Just tell us your goal.
+화면을 설명하지 않아도 됩니다. 하고 싶은 일을 말하면 ShowWhere가 현재 화면을 확인하고 **다음에 눌러야 할 정확한 위치를 화면 위에 표시**합니다.
 
-화면을 설명하지 않아도 괜찮습니다.<br>
-하고 싶은 일만 말하면 ShowWhere가 다음에 해야 할 행동을 함께 찾아갑니다.
+## Download ShowWhere
 
-</div>
+[![Download ShowWhere.exe](https://img.shields.io/badge/Windows-ShowWhere.exe%20다운로드-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
 
-## ShowWhere는 어떤 프로그램인가요?
+공식 Windows 프로그램은 `ShowWhere.exe` 하나입니다. 별도의 설치 프로그램, Node.js, .NET SDK, Python, 프로젝트 복제, API 키 또는 로컬 백엔드가 필요하지 않습니다.
 
-ShowWhere는 컴퓨터 사용이 낯설거나 복잡한 화면에서 길을 잃은 사람을 위한 인터페이스 내비게이션 도우미입니다.
+요구 환경: Windows 10/11 x64와 인터넷 연결. 현재 시험 서명 단계에서는 Windows SmartScreen 경고가 나타날 수 있습니다.
 
-사용자는 버튼의 이름이나 위치를 알 필요가 없습니다. “프린터 상태를 확인하고 싶어요”, “내 주문이 어디쯤 왔는지 보고 싶어요”, “로그아웃하고 싶어요”처럼 자신의 목적만 말하면 됩니다. ShowWhere는 현재 상황을 이해하고, 지금 해야 할 한 가지를 화면 위에서 알려줍니다.
+## 사용 방법
 
-ShowWhere는 사용자를 대신해 마음대로 조작하는 자동화 도구가 아닙니다. 사용자가 직접 결정하고 행동할 수 있도록 곁에서 안내하는 동반자입니다.
+1. 위 링크에서 `ShowWhere.exe`를 다운로드합니다.
+2. 파일을 더블클릭합니다.
+3. 화면에 나타난 고릴라 assistant를 누릅니다.
+4. “프린터 설정은 어디서 해?”, “아마존에서 로그인하고 싶어”처럼 목표를 입력합니다.
+5. ShowWhere가 화면 위에 표시한 위치를 누릅니다.
 
-## 왜 필요한가요?
+ShowWhere는 사용자를 대신해 자동 클릭하지 않습니다. 고릴라를 마우스 오른쪽 버튼으로 누른 뒤 `종료`를 선택하면 종료됩니다. 중복 실행은 자동으로 차단됩니다.
 
-기술이 어려운 가장 흔한 이유는 기능이 없어서가 아니라 그 기능이 어디에 있는지 알기 어렵기 때문입니다.
+## Mobile Remote
 
-“설정을 눌러주세요.”<br>
-“설정이 어디 있나요?”<br>
-“오른쪽 위에 있는 아이콘입니다.”<br>
-“그게 안 보여요.”
+ShowWhere 상단의 **모바일 연결**을 누르면 QR과 6자리 인증번호가 표시됩니다.
 
-이 짧은 대화는 고객 지원, 가족 간 도움, 회사 교육 현장에서 매일 반복됩니다. 사용자는 자신의 목적을 이미 알고 있지만, 프로그램마다 다른 화면과 용어 때문에 다음 행동을 찾지 못합니다.
+1. 휴대폰으로 QR을 스캔합니다.
+2. PC에 표시된 6자리 번호를 휴대폰에 입력합니다.
+3. 휴대폰에서 텍스트를 보내거나 마이크로 말합니다.
+4. 질문과 PC의 답변이 휴대폰과 PC에 함께 표시됩니다.
 
-ShowWhere는 사람에게 화면 구조를 공부하라고 요구하는 대신, 인터페이스가 사람의 목적을 이해하도록 만들고자 합니다.
+휴대폰과 PC가 같은 Wi-Fi에 있을 필요는 없습니다. 두 장치는 [Railway의 ShowWhere HTTPS 서비스](https://api-production-6901.up.railway.app/mobile/)를 통해 Pairing API와 WebSocket으로 연결됩니다. 음성 입력도 같은 서버의 STT 경로를 사용합니다.
 
-## ShowWhere가 만들고 싶은 경험
+## Learning
 
-ShowWhere는 한 번에 많은 설명을 쏟아내지 않습니다.
+ShowWhere remembers verified solutions and reuses them instead of solving the same problem from scratch.
 
-먼저 사용자가 원하는 일을 이해합니다. 현재 화면에서 가장 의미 있는 다음 행동 하나를 찾습니다. 사용자가 그 행동을 마치면 달라진 상황을 다시 살피고, 목표에 도달할 때까지 한 단계씩 함께 갑니다. 이미 목적을 이뤘다면 더 이상 불필요한 행동을 권하지 않고 멈춥니다.
+- 개발자 모드의 `O`는 검증된 Human Gold 정답으로 저장됩니다.
+- `X`와 코멘트는 잘못된 안내의 부정 증거와 교정으로 분리됩니다.
+- `끝`은 사용자의 목표가 달성된 상태로 저장됩니다.
+- 같은 질문은 로컬 캐시에서 즉시 재사용하고, 표현이 달라도 의미가 비슷하면 semantic intent로 재사용합니다.
+- 로컬 데이터는 먼저 즉시 반영되고 Central Knowledge와 동기화되어 다른 PC에서도 사용할 수 있습니다.
+- 인터넷이 잠시 끊겨도 이미 동기화된 로컬 지식과 빠른 재생은 유지됩니다.
 
-중요한 것은 화면의 위치를 외우는 것이 아니라 의미를 이해하는 것입니다. 같은 목적이라도 사람마다 표현이 다르고, 같은 기능도 프로그램마다 이름이 다릅니다. ShowWhere는 그 차이를 넘어 사용자의 의도와 화면의 의미를 연결하는 것을 목표로 합니다.
+## Production architecture
 
-## 누구를 위한가요?
+```text
+User
+  ↓
+ShowWhere.exe ── Local Knowledge / Human Gold cache
+  ↓ HTTPS
+Railway ── Guide AI / Central Knowledge / Pairing / STT
+  ↑ WSS
+Mobile web
+```
 
-- 처음 사용하는 프로그램이 부담스러운 사람
-- 컴퓨터와 디지털 서비스가 익숙하지 않은 사람
-- 작은 글씨와 복잡한 메뉴 때문에 어려움을 겪는 고령층
-- 새로운 업무 프로그램을 배워야 하는 직원
-- 같은 화면 위치를 반복해서 설명해야 하는 고객 지원 담당자
-- 하고 싶은 일에 집중하고 싶은 모든 사람
+- `ShowWhere.exe`: Windows UI, 화면 관찰, UI Automation, overlay, 개발자 교정, 로컬 우선 캐시
+- Railway: Guide API, AI fallback, 중앙 지식 동기화, QR pairing, WebSocket, 모바일 웹, STT
+- Central Knowledge: 여러 PC가 공유하는 검증된 학습 기록
+- Local Knowledge: 네트워크 왕복 없이 먼저 사용하는 빠른 런타임 기억
 
-## 우리가 믿는 원칙
+서버 로직과 Knowledge가 갱신되면 기존 EXE가 Railway와 중앙 동기화를 통해 새 내용을 사용합니다. Windows 런타임 자체가 바뀔 때만 새 EXE가 필요합니다.
 
-### 사람의 의도가 먼저입니다
+## Automatic updates
 
-버튼을 찾는 것보다 사용자가 왜 그 버튼을 찾는지 이해하는 것이 중요합니다.
+ShowWhere는 시작 후 GitHub의 최신 공식 Release를 확인합니다. 새 버전이 있으면 사용자가 `지금 업데이트` 또는 `나중에`를 선택할 수 있습니다.
 
-### 한 번에 한 단계만 안내합니다
+업데이트는 새 EXE를 임시 위치에 다운로드하고 GitHub Release의 SHA-256 digest와 비교한 뒤에만 교체합니다. 새 실행본이 정상 시작하지 않으면 이전 EXE를 복원하고 다시 실행합니다.
 
-긴 설명 대신 지금 해야 할 행동 하나를 정확히 보여줍니다.
+## Development
 
-### 확실하지 않으면 묻습니다
+일반 사용자는 이 절의 명령을 실행할 필요가 없습니다.
 
-틀린 위치를 자신 있게 가리키는 것보다 필요한 선택지를 물어보는 것이 더 안전합니다.
+```powershell
+git clone https://github.com/rudwndgus/ShowWhere.git
+cd ShowWhere
+git switch ShowWhere2.0
+npm ci
+npm test
+npm run test:windows
+```
 
-### 목표에 도달하면 멈춥니다
+- `services/api`: Railway에서 실행되는 Guide, Knowledge, Pairing, WebSocket, mobile web, STT 서버
+- `apps/windows`: WPF desktop, overlay, UI Automation, API client와 Windows 테스트
+- `training`: Git으로 공유하는 개발자 Human Gold/O/X/완료 데이터
+- `knowledge`: crawler 결과와 정규화된 웹 지식
+- `scripts`: 검증, production publish와 공식 EXE 다운로드 도구
 
-안내를 계속하는 것이 목적이 아닙니다. 사용자가 원하는 일을 끝내는 것이 목적입니다.
+개발용 로컬 서버는 명시적으로 `npm run dev:api`를 실행한 경우에만 사용합니다. 공식 EXE에는 Railway production HTTPS 주소와 GitHub Actions Secret의 클라이언트 인증값이 빌드 메타데이터로 들어가며, secret은 저장소·로그·Release 설명에 기록하지 않습니다.
 
-### 사용자의 통제권을 지킵니다
+Windows 코드가 `ShowWhere2.0`에 push되면 GitHub Actions가 테스트, 공개 모바일 pairing 종단 테스트, self-contained single-file 빌드와 새 공식 Release를 자동으로 수행합니다. 기준 버전은 [`VERSION`](VERSION)이며, 이미 같은 버전이 배포된 경우 patch 버전을 자동 증가시킵니다.
 
-ShowWhere는 곁에서 보여주고 설명합니다. 중요한 행동은 사용자가 직접 선택합니다.
+개발 PC에서 최신 공식 산출물을 한 위치로 받으려면 다음 명령을 사용합니다.
 
-## ShowWhere가 꿈꾸는 미래
+```powershell
+./scripts/download-production-windows.ps1
+```
 
-ShowWhere의 목표는 특정 프로그램의 사용법을 외우게 만드는 것이 아닙니다.
-
-은행, 정부 서비스, 쇼핑몰, 회사 업무 시스템, 컴퓨터와 모바일 환경처럼 서로 다른 곳에서도 사용자가 자신의 말로 목적을 표현하면 자연스럽게 길을 찾을 수 있는 세상을 지향합니다.
-
-언젠가는 새로운 프로그램을 만났을 때 “이걸 어떻게 배워야 하지?”가 아니라 “내가 하고 싶은 일을 말하면 되겠구나”라고 느낄 수 있기를 바랍니다.
-
-## 프로젝트 철학
-
-> **Don't take control. Stay beside the user.**
-
-사용자를 대신해 앞서가지 않습니다.<br>
-사용자가 스스로 해낼 수 있도록 곁에서 함께합니다.
+검증된 공식 로컬 경로는 `build/production/ShowWhere.exe` 하나입니다.

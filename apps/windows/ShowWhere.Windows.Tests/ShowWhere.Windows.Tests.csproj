@@ -19,5 +19,6 @@
     <ProjectReference Include="..\ShowWhere.ApiClient\ShowWhere.ApiClient.csproj" />
     <ProjectReference Include="..\ShowWhere.WindowsAutomation\ShowWhere.WindowsAutomation.csproj" />
     <ProjectReference Include="..\ShowWhere.Overlay\ShowWhere.Overlay.csproj" />
+    <ProjectReference Include="..\ShowWhere.Desktop\ShowWhere.Desktop.csproj" />
   </ItemGroup>
 </Project>

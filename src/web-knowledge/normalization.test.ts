@@ -37,6 +37,8 @@ describe('web knowledge normalization', () => {
     expect(redactWebText('Order 123-1234567-1234567')).toBe('Order [order-id]');
     expect(redactWebText('Visa ending in 1234')).toBe('Visa [payment]');
     expect(redactWebText('Deliver to Jane Doe | Account')).toBe('Deliver to [name] | Account');
+    expect(redactWebText('Delivering to Nashville 37217 Update location'))
+      .toBe('Delivering to [location] Update location');
     expect(redactWebText('123 Main Street')).toBe('[address]');
     expect(redactWebText('Track package')).toBe('Track package');
   });
