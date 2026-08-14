@@ -324,7 +324,11 @@ internal sealed class SynchronizedDeveloperCorrectionStore(
     public IReadOnlyList<DeveloperLearningHistoryRecord> GetHistory() => local.GetHistory();
 
     public async Task<DeveloperCorrectionRecord> SaveAsync(DeveloperCorrectionRecord record, string? screenshot, CancellationToken cancellationToken = default)
-    { var saved = await local.SaveAsync(record, screenshot, cancellationToken); central.QueueUpload("correction", saved.Id, saved.CreatedAtUtc, saved); return saved; }
+    {
+        var saved = await local.SaveAsync(record, screenshot, cancellationToken);
+        central.QueueUpload("correction", saved.Id, saved.HumanGold?.LastVerifiedAt ?? saved.CreatedAtUtc, saved);
+        return saved;
+    }
     public async Task<AnswerFeedbackRecord> SaveFeedbackAsync(AnswerFeedbackRecord record, CancellationToken cancellationToken = default)
     { var saved = await local.SaveFeedbackAsync(record, cancellationToken); central.QueueUpload("feedback", saved.Id, saved.CreatedAtUtc, saved); return saved; }
     public async Task<DeveloperCompletionRecord> SaveCompletionAsync(DeveloperCompletionRecord record, CancellationToken cancellationToken = default)

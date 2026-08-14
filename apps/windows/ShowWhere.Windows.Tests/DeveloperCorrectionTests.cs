@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ShowWhere.Core;
 
 namespace ShowWhere.Windows.Tests;
@@ -620,6 +621,106 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal(0.25, target.Y, 3);
         Assert.Equal(0.25, target.Width, 3);
         Assert.Equal(0.5, target.Height, 3);
+    }
+
+    [Fact]
+    public async Task Amazon_cart_Human_Gold_is_semantic_persistent_and_deduplicated()
+    {
+        var context = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com", "https://www.amazon.com/");
+        var target = new UiCandidate(
+            "nav-cart-v1", "Cart", null, "button", true, true, true,
+            new UiBounds(1700, 10, 120, 60),
+            new Dictionary<string, object?>
+            {
+                ["automationId"] = "nav-cart",
+                ["controlType"] = "Button",
+                ["processName"] = "chrome",
+                ["sourceScope"] = "browser_content",
+                ["containerLabel"] = "Amazon",
+            });
+        var signature = DeveloperCorrectionMatcher.CreateSignature(target);
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+
+        for (var index = 0; index < 10; index++)
+        {
+            var feedback = Feedback("correct", "Cart를 누르세요") with
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                CreatedAtUtc = DateTimeOffset.UtcNow.AddMilliseconds(index),
+                OriginalGoal = "장바구니 어디서 확인해?",
+                EffectiveGoal = "장바구니 어디서 확인해?",
+                Context = context,
+                SnapshotHash = "same-screen",
+                TargetId = target.Id,
+                TargetLabel = target.Label,
+                TargetBounds = target.Bounds,
+            };
+            await store.SaveAsync(DeveloperPositiveFeedback.Create(feedback, signature)!, null);
+        }
+
+        var lines = await File.ReadAllLinesAsync(Path.Combine(_directory, "corrections.jsonl"));
+        Assert.Single(lines);
+        var persisted = new JsonlDeveloperCorrectionStore(_directory);
+        foreach (var paraphrase in new[]
+                 {
+                     "장바구니 어디서 확인해?", "내 카트 보여줘", "담아둔 상품 어디 있어?", "장바구니 열어줘",
+                 })
+        {
+            var refreshedTarget = target with { Id = $"nav-cart-{Guid.NewGuid():N}" };
+            Assert.True(persisted.TryResolveTarget(
+                paraphrase,
+                context,
+                [refreshedTarget],
+                out var resolved,
+                out var knowledge));
+            Assert.Equal(refreshedTarget.Id, resolved.Id);
+            Assert.Equal("commerce.cart", knowledge.HumanGold?.NormalizedIntent);
+            Assert.Equal(1, knowledge.HumanGold?.IndependentVerificationCount);
+            Assert.True(knowledge.HumanGold?.DeveloperVerified);
+        }
+    }
+
+    [Fact]
+    public async Task Central_Human_Gold_from_PC_A_is_reused_locally_on_PC_B()
+    {
+        var context = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com", "https://www.amazon.com/");
+        var candidate = new UiCandidate(
+            "cart-a", "Cart", null, "button", true, true, true,
+            new UiBounds(1700, 10, 120, 60),
+            new Dictionary<string, object?>
+            {
+                ["automationId"] = "nav-cart",
+                ["controlType"] = "Button",
+                ["processName"] = "chrome",
+                ["sourceScope"] = "browser_content",
+                ["containerLabel"] = "Amazon",
+            });
+        var feedback = Feedback("correct", "Cart를 누르세요") with
+        {
+            OriginalGoal = "장바구니 어디서 확인해?",
+            EffectiveGoal = "장바구니 어디서 확인해?",
+            Context = context,
+            TargetId = candidate.Id,
+            TargetLabel = candidate.Label,
+            TargetBounds = candidate.Bounds,
+        };
+        var record = DeveloperPositiveFeedback.Create(
+            feedback, DeveloperCorrectionMatcher.CreateSignature(candidate))!;
+        var pcBDirectory = Path.Combine(_directory, "pc-b");
+        var pcB = new JsonlDeveloperCorrectionStore(pcBDirectory);
+
+        var imported = await pcB.ImportCentralRecordAsync(
+            "correction",
+            JsonSerializer.SerializeToElement(record, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+        Assert.True(imported);
+        Assert.True(pcB.TryResolveTarget(
+            "내 카트 보여줘", context, [candidate with { Id = "cart-b" }],
+            out var target, out var knowledge));
+        Assert.Equal("cart-b", target.Id);
+        Assert.Equal(record.HumanGold?.Identity, knowledge.HumanGold?.Identity);
     }
 
     public void Dispose()

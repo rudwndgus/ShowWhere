@@ -24,6 +24,21 @@ public sealed record DeveloperLearningLabels(
     string OutcomeLabel,
     string Authority = "human_gold");
 
+public sealed record HumanGoldKnowledge(
+    string Identity,
+    string SiteOrApplication,
+    string NormalizedIntent,
+    string SemanticState,
+    string TargetConcept,
+    IReadOnlyList<string> TargetAliases,
+    string Action,
+    bool DeveloperVerified,
+    double Confidence,
+    int SuccessfulUses,
+    int IndependentVerificationCount,
+    DateTimeOffset LastVerifiedAt,
+    IReadOnlyList<string> VerificationKeys);
+
 public sealed record DeveloperCompletionRecord(
     int SchemaVersion,
     string Id,
@@ -60,7 +75,8 @@ public sealed record DeveloperCorrectionRecord(
     string? DeveloperComment = null,
     string? RefinedComment = null,
     IReadOnlyList<string>? IssueTags = null,
-    DeveloperLearningLabels? LearningLabels = null);
+    DeveloperLearningLabels? LearningLabels = null,
+    HumanGoldKnowledge? HumanGold = null);
 
 public sealed record AnswerFeedbackRecord(
     int SchemaVersion,
@@ -224,10 +240,19 @@ public static class DeveloperPositiveFeedback
             ?? normalizedVisualTarget?.Label
             ?? targetSignature?.Role
             ?? "visual target";
+        var createdAt = DateTimeOffset.UtcNow;
+        var gold = DeveloperSemanticKnowledge.Create(
+            feedback.OriginalGoal,
+            feedback.Context,
+            targetConcept,
+            targetSignature,
+            feedback.Action ?? GuideActions.Highlight,
+            feedback.SnapshotHash,
+            createdAt);
         return new DeveloperCorrectionRecord(
             1,
             Guid.NewGuid().ToString("D"),
-            DateTimeOffset.UtcNow,
+            createdAt,
             feedback.OriginalGoal,
             string.IsNullOrWhiteSpace(feedback.EffectiveGoal) ? feedback.OriginalGoal : feedback.EffectiveGoal,
             null,
@@ -246,7 +271,107 @@ public static class DeveloperPositiveFeedback
             null,
             "Developer explicitly marked this answer correct.",
             ["positive_feedback", "human_gold"],
-            DeveloperLabeling.CreatePositiveLabels(feedback, targetConcept));
+            DeveloperLabeling.CreatePositiveLabels(feedback, targetConcept),
+            gold);
+    }
+}
+
+public static class DeveloperSemanticKnowledge
+{
+    public static HumanGoldKnowledge Create(
+        string goal,
+        ApplicationContext context,
+        string targetConcept,
+        CorrectionTargetSignature? signature,
+        string action,
+        string? snapshotHash,
+        DateTimeOffset verifiedAt)
+    {
+        var site = SiteOrApplication(context);
+        var intent = DeveloperIntentMatcher.CreateIntentKey(goal);
+        var state = SemanticState(context, signature);
+        var concept = DeveloperIntentMatcher.CreateConceptKey(targetConcept);
+        var identitySource = $"{site}|{intent}|{state}|{concept}";
+        var identity = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(identitySource))).ToLowerInvariant();
+        var verificationKey = CreateVerificationKey(intent, state, concept, goal, snapshotHash);
+        var aliases = new[] { targetConcept, signature?.Label, signature?.Description, signature?.AutomationId }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new HumanGoldKnowledge(
+            identity, site, intent, state, concept, aliases, action, true,
+            0.98, 1, 1, verifiedAt, [verificationKey]);
+    }
+
+    public static HumanGoldKnowledge Ensure(DeveloperCorrectionRecord record)
+    {
+        if (record.HumanGold is not null) return record.HumanGold;
+        var concept = record.LearningLabels?.TargetConcept
+            ?? record.CorrectTarget?.Label
+            ?? record.CorrectTarget?.Description
+            ?? record.NormalizedVisualTarget?.Label
+            ?? "visual target";
+        return Create(
+            record.EffectiveGoal,
+            record.Context,
+            concept,
+            record.CorrectTarget,
+            record.PreviousAction ?? GuideActions.Highlight,
+            record.SnapshotHash,
+            record.CreatedAtUtc);
+    }
+
+    public static HumanGoldKnowledge Merge(HumanGoldKnowledge current, HumanGoldKnowledge incoming)
+    {
+        var keys = current.VerificationKeys
+            .Concat(incoming.VerificationKeys)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var independent = keys.Length;
+        return current with
+        {
+            TargetAliases = current.TargetAliases.Concat(incoming.TargetAliases)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Action = incoming.Action,
+            DeveloperVerified = true,
+            Confidence = Math.Min(0.999, 0.98 + Math.Max(0, independent - 1) * 0.004),
+            SuccessfulUses = Math.Max(current.SuccessfulUses, 1) + (independent > current.IndependentVerificationCount ? 1 : 0),
+            IndependentVerificationCount = independent,
+            LastVerifiedAt = current.LastVerifiedAt > incoming.LastVerifiedAt
+                ? current.LastVerifiedAt : incoming.LastVerifiedAt,
+            VerificationKeys = keys,
+        };
+    }
+
+    private static string SiteOrApplication(ApplicationContext context)
+    {
+        if (Uri.TryCreate(context.Url, UriKind.Absolute, out var uri))
+            return uri.Host.ToLowerInvariant().Replace("www.", string.Empty, StringComparison.Ordinal);
+        return context.ApplicationName.Trim().ToLowerInvariant();
+    }
+
+    private static string SemanticState(ApplicationContext context, CorrectionTargetSignature? signature)
+    {
+        var scope = signature?.SourceScope?.Trim().ToLowerInvariant();
+        var container = signature?.ContainerLabel?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(scope))
+            return string.IsNullOrWhiteSpace(container) ? scope : $"{scope}/{container}";
+        if (Uri.TryCreate(context.Url, UriKind.Absolute, out var uri))
+        {
+            var path = uri.AbsolutePath.Trim('/').ToLowerInvariant();
+            return path.Length == 0 ? "homepage" : path;
+        }
+        return "application";
+    }
+
+    private static string CreateVerificationKey(
+        string intent, string state, string concept, string rawGoal, string? snapshotHash)
+    {
+        var source = $"{intent}|{state}|{concept}|{DeveloperIntentMatcher.CreateIntentKey(rawGoal)}|{snapshotHash}";
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(source))).ToLowerInvariant()[..24];
     }
 }
 
@@ -421,6 +546,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         _feedback = LoadFeedbackRecords(_feedbackPath);
         _statusChanges = LoadStatusRecords(_statusPath);
         _edits = LoadEditRecords(_editsPath);
+        if (File.Exists(_recordsPath)
+            && File.ReadLines(_recordsPath).Count(line => !string.IsNullOrWhiteSpace(line)) != _records.Count)
+            RewriteRecords();
     }
 
     public string DataDirectory { get; }
@@ -453,10 +581,23 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                     if (record is null || record.SchemaVersion != 1 || !record.DeveloperVerified
                         || string.IsNullOrWhiteSpace(record.Id) || record.CreatedAtUtc == default
                         || string.IsNullOrWhiteSpace(record.OriginalGoal) || string.IsNullOrWhiteSpace(record.EffectiveGoal)
-                        || record.Context is null || _records.Any(item => item.Id == record.Id)) return Task.FromResult(false);
-                    record = record with { ScreenshotPath = null };
-                    File.AppendAllText(_recordsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
-                    _records.Add(record);
+                        || record.Context is null) return Task.FromResult(false);
+                    record = PrepareHumanGold(record with { ScreenshotPath = null });
+                    var existingIndex = FindKnowledgeIndex(record);
+                    if (existingIndex >= 0)
+                    {
+                        var existing = _records[existingIndex];
+                        var merged = MergeKnowledge(existing, record);
+                        if (merged.HumanGold?.LastVerifiedAt <= existing.HumanGold?.LastVerifiedAt)
+                            return Task.FromResult(false);
+                        _records[existingIndex] = merged;
+                        RewriteRecords();
+                    }
+                    else
+                    {
+                        File.AppendAllText(_recordsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
+                        _records.Add(record);
+                    }
                     break;
                 }
                 case "completion":
@@ -610,7 +751,13 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(DataDirectory);
-        var saved = Sanitize(correction);
+        var saved = PrepareHumanGold(Sanitize(correction));
+        lock (_gate)
+        {
+            var existingIndex = FindKnowledgeIndex(saved);
+            if (existingIndex >= 0)
+                saved = MergeKnowledge(_records[existingIndex], saved);
+        }
         if (!string.IsNullOrWhiteSpace(screenshotDataUrl))
         {
             var separator = screenshotDataUrl.IndexOf(',');
@@ -619,7 +766,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 var extension = screenshotDataUrl[..separator].Contains("png", StringComparison.OrdinalIgnoreCase)
                     ? ".png"
                     : ".jpg";
-                var relativePath = Path.Combine("screenshots", correction.Id + extension);
+                var relativePath = Path.Combine("screenshots", saved.Id + extension);
                 var absolutePath = Path.Combine(DataDirectory, relativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
                 var bytes = Convert.FromBase64String(screenshotDataUrl[(separator + 1)..]);
@@ -631,8 +778,18 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         var line = JsonSerializer.Serialize(saved, JsonOptions) + Environment.NewLine;
         lock (_gate)
         {
-            File.AppendAllText(_recordsPath, line);
-            _records.Add(saved);
+            var existingIndex = FindKnowledgeIndex(saved);
+            if (existingIndex >= 0)
+            {
+                saved = MergeKnowledge(_records[existingIndex], saved);
+                _records[existingIndex] = saved;
+                RewriteRecords();
+            }
+            else
+            {
+                File.AppendAllText(_recordsPath, line);
+                _records.Add(saved);
+            }
         }
         return saved;
     }
@@ -832,7 +989,55 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         DeveloperComment = DeveloperLearningPrivacy.Redact(value.DeveloperComment),
         RefinedComment = DeveloperLearningPrivacy.Redact(value.RefinedComment),
         LearningLabels = value.LearningLabels is null ? null : Sanitize(value.LearningLabels),
+        HumanGold = value.HumanGold is null ? null : value.HumanGold with
+        {
+            SiteOrApplication = DeveloperLearningPrivacy.Redact(value.HumanGold.SiteOrApplication)!,
+            TargetAliases = value.HumanGold.TargetAliases.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
+        },
     };
+
+    private static DeveloperCorrectionRecord PrepareHumanGold(DeveloperCorrectionRecord record)
+    {
+        var isGold = record.DeveloperVerified
+            && (record.IssueTags?.Contains("human_gold", StringComparer.OrdinalIgnoreCase) == true
+                || string.Equals(record.LearningLabels?.Authority, "human_gold", StringComparison.OrdinalIgnoreCase));
+        return isGold ? record with { HumanGold = DeveloperSemanticKnowledge.Ensure(record) } : record;
+    }
+
+    private int FindKnowledgeIndex(DeveloperCorrectionRecord record)
+    {
+        if (record.HumanGold is null)
+            return _records.FindIndex(item => string.Equals(item.Id, record.Id, StringComparison.Ordinal));
+        return _records.FindIndex(item =>
+            string.Equals(item.Id, record.Id, StringComparison.Ordinal)
+            || string.Equals(item.HumanGold?.Identity, record.HumanGold.Identity, StringComparison.Ordinal));
+    }
+
+    private static DeveloperCorrectionRecord MergeKnowledge(
+        DeveloperCorrectionRecord existing,
+        DeveloperCorrectionRecord incoming)
+    {
+        if (existing.HumanGold is null || incoming.HumanGold is null) return incoming;
+        return incoming with
+        {
+            Id = existing.Id,
+            CreatedAtUtc = existing.CreatedAtUtc,
+            FeedbackId = existing.FeedbackId,
+            ScreenshotPath = incoming.ScreenshotPath ?? existing.ScreenshotPath,
+            HumanGold = DeveloperSemanticKnowledge.Merge(existing.HumanGold, incoming.HumanGold),
+        };
+    }
+
+    private void RewriteRecords()
+    {
+        var content = string.Join(Environment.NewLine, _records.Select(record =>
+            JsonSerializer.Serialize(record, JsonOptions)));
+        if (content.Length > 0) content += Environment.NewLine;
+        // This method is called while _gate is held, so readers in this process
+        // cannot observe a partial rewrite. Direct replacement is also compatible
+        // with synced/redirected Windows folders where File.Replace is denied.
+        File.WriteAllText(_recordsPath, content);
+    }
 
     private static AnswerFeedbackRecord Sanitize(AnswerFeedbackRecord value) => value with
     {
@@ -870,7 +1075,16 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             try
             {
                 var record = JsonSerializer.Deserialize<DeveloperCorrectionRecord>(line, JsonOptions);
-                if (record is not null && record.SchemaVersion == 1) records.Add(record);
+                if (record is not null && record.SchemaVersion == 1)
+                {
+                    record = PrepareHumanGold(record);
+                    var duplicateIndex = record.HumanGold is null ? -1 : records.FindIndex(item =>
+                        string.Equals(item.HumanGold?.Identity, record.HumanGold.Identity, StringComparison.Ordinal));
+                    if (duplicateIndex >= 0)
+                        records[duplicateIndex] = MergeKnowledge(records[duplicateIndex], record);
+                    else
+                        records.Add(record);
+                }
             }
             catch (JsonException) { }
         }
@@ -977,6 +1191,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         var editedTargetLabel = GetLatestEdit(record.FeedbackId)?.TargetLabel?.Trim();
         var targetLabel = string.IsNullOrWhiteSpace(editedTargetLabel) ? signature.Label : editedTargetLabel;
         var targetLabelWasEdited = !string.IsNullOrWhiteSpace(editedTargetLabel);
+        var semanticTargetMatch = !targetLabelWasEdited
+            && record.HumanGold is { } gold
+            && new[] { candidate.Label, candidate.Description, Attribute(candidate, "automationId") }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Any(value => string.Equals(
+                    DeveloperIntentMatcher.CreateConceptKey(value),
+                    gold.TargetConcept,
+                    StringComparison.Ordinal));
         var candidateProcess = Attribute(candidate, "processName");
         var candidateScope = Attribute(candidate, "sourceScope");
         if (!string.IsNullOrWhiteSpace(signature.ProcessName)
@@ -988,11 +1210,13 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         if (targetLabelWasEdited && !EqualsText(candidate.Label, targetLabel)) return 0;
         if (!targetLabelWasEdited
             && !EqualsText(candidate.Label, targetLabel)
-            && !EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) return 0;
+            && !EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)
+            && !semanticTargetMatch) return 0;
 
         var score = 0;
         if (EqualsText(candidate.Label, targetLabel)) score += targetLabelWasEdited ? 600 : 220;
         if (!targetLabelWasEdited && EqualsText(Attribute(candidate, "automationId"), signature.AutomationId)) score += 360;
+        if (semanticTargetMatch) score += 320;
         if (EqualsText(candidateProcess, signature.ProcessName)) score += 140;
         if (EqualsText(candidateScope, signature.SourceScope)) score += 130;
         if (EqualsText(candidate.Role, signature.Role)) score += 50;
@@ -1074,6 +1298,8 @@ public static class DeveloperIntentMatcher
 {
     public static string CreateIntentKey(string? value) => Normalize(value).Replace(' ', '_');
 
+    public static string CreateConceptKey(string? value) => Normalize(value).Replace(' ', '_');
+
     public static bool IsSameIntent(string? left, string? right)
     {
         var a = Normalize(left);
@@ -1099,6 +1325,8 @@ public static class DeveloperIntentMatcher
         var normalized = (value ?? string.Empty).Trim().ToLowerInvariant().Normalize();
         foreach (var (source, target) in PhraseAliases)
             normalized = normalized.Replace(source, target, StringComparison.Ordinal);
+        if (ContainsAny(normalized, CommerceCartAliases))
+            return "commerce.cart";
         return string.Join(' ', normalized.Split(
             [' ', '\t', '\r', '\n', '?', '!', '.', ',', '/', '\\'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -1147,6 +1375,12 @@ public static class DeveloperIntentMatcher
         ("인쇄 장치", "프린터"), ("인쇄장치", "프린터"), ("printer", "프린터"),
         ("와이 파이", "와이파이"), ("wi-fi", "와이파이"), ("wifi", "와이파이"),
         ("블루투스", "bluetooth"),
+    ];
+
+    private static readonly string[] CommerceCartAliases =
+    [
+        "장바구니", "내 카트", "카트", "담아둔 상품", "담은 상품", "담은 거", "담은거",
+        "담은 것", "담은것", "shopping cart", "my cart", "basket", "cart",
     ];
 
     private static readonly HashSet<string> StopWords = new(StringComparer.Ordinal)

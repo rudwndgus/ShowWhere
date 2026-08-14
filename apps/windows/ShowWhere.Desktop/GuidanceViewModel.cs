@@ -332,6 +332,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ClearClarificationChoices();
         if (immediateReplay is not null && replayObservation is not null)
         {
+            DesktopDiagnostics.WriteEvent(
+                "CACHE_HIT",
+                ("kind", "approved_replay"),
+                ("targetId", immediateReplay.TargetId));
             _session = TaskSessionStateMachine.Create(query);
             StatusText = "검증된 정답 즉시 적용";
             if (immediateReplay.TargetId is null && immediateReplay.TargetBounds is not null)
@@ -367,7 +371,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _session = TaskSessionStateMachine.WaitingForUser(_session, immediateSafeReply.Message);
             StatusText = "같은 화면의 검증된 답변 즉시 적용";
             DesktopDiagnostics.WriteEvent(
-                "safe_reply_cache_hit",
+                "CACHE_HIT",
+                ("kind", "safe_reply"),
                 ("action", immediateSafeReply.Action));
             return;
         }
@@ -491,12 +496,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     currentObservation.Context,
                     prioritizedCandidates,
                     out var correctedTarget,
-                    out _))
+                    out var matchedKnowledge))
                 {
                     DesktopDiagnostics.WriteEvent(
-                        "persisted_gold_replay_hit",
+                        matchedKnowledge.HumanGold is null ? "KNOWLEDGE_HIT" : "HUMAN_GOLD_HIT",
                         ("targetId", correctedTarget.Id),
-                        ("label", correctedTarget.Label));
+                        ("label", correctedTarget.Label),
+                        ("intent", matchedKnowledge.HumanGold?.NormalizedIntent),
+                        ("confidence", matchedKnowledge.HumanGold?.Confidence));
                     decision = new GuideDecision(
                         GuideStatuses.InProgress,
                         GuideActions.Highlight,
@@ -511,8 +518,12 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     currentObservation.Context,
                     currentObservation.SnapshotHash,
                     out var correctedVisualTarget,
-                    out _))
+                    out var visualKnowledge))
                 {
+                    DesktopDiagnostics.WriteEvent(
+                        visualKnowledge.HumanGold is null ? "KNOWLEDGE_HIT" : "HUMAN_GOLD_HIT",
+                        ("kind", "visual_evidence"),
+                        ("label", correctedVisualTarget.Label));
                     // Persisted visual feedback is normalized to the physical desktop
                     // screenshot. Re-read the current Win32 bounds instead of using WPF
                     // DIPs, which differ on 125%/150% mixed-DPI monitor layouts.
@@ -531,6 +542,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 }
                 else
                 {
+                    DesktopDiagnostics.WriteEvent(
+                        "GPT_FALLBACK",
+                        ("goal", _session.OriginalUserMessage),
+                        ("application", currentObservation.Context.ApplicationName));
                     StatusText = $"현재 화면과 후보 {prioritizedCandidates.Count}개를 GPT가 분석 중";
                     (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
                 }
