@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -22,7 +24,10 @@ public partial class FloatingAssistantWindow : Window
     private readonly GuidancePanelWindow _panel;
     private readonly AssistantPositionStore _positionStore;
     private readonly Action _rememberForegroundWindow;
+    private readonly AssistantSpeechBubbleWindow _speechBubble;
     private HwndSource? _windowSource;
+    private GuidanceViewModel? _viewModel;
+    private ChatMessageItem? _observedMessage;
     private DateTime _lastContextMenuOpenedUtc = DateTime.MinValue;
     private Point? _mouseDownPosition;
     private bool _dragging;
@@ -51,7 +56,10 @@ public partial class FloatingAssistantWindow : Window
         _positionStore = positionStore;
         CharacterStore = characterStore;
         _rememberForegroundWindow = rememberForegroundWindow;
+        _speechBubble = new AssistantSpeechBubbleWindow(characterStore);
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+        _panel.ResponseRequested += OnResponseRequested;
         var saved = _positionStore.Load();
         Left = saved?.Left ?? SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - Width - 24;
         Top = saved?.Top ?? SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight / 2 - Height / 2;
@@ -93,6 +101,7 @@ public partial class FloatingAssistantWindow : Window
         finally { IsStanding = false; }
         SnapAndConstrain();
         _positionStore.Save(Left, Top);
+        if (_speechBubble.IsVisible) UpdateSpeechBubblePosition();
     }
 
     private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs eventArgs)
@@ -151,8 +160,12 @@ public partial class FloatingAssistantWindow : Window
 
     protected override void OnClosed(EventArgs eventArgs)
     {
+        _panel.ResponseRequested -= OnResponseRequested;
+        if (_viewModel is not null) _viewModel.Messages.CollectionChanged -= OnMessagesChanged;
+        ObserveMessage(null);
         _windowSource?.RemoveHook(WindowMessageHook);
         _windowSource = null;
+        _speechBubble.Close();
         base.OnClosed(eventArgs);
     }
 
@@ -163,6 +176,7 @@ public partial class FloatingAssistantWindow : Window
             _panel.Hide();
             return;
         }
+        _speechBubble.Hide();
         if (_panel.WindowState == WindowState.Minimized) _panel.WindowState = WindowState.Normal;
         _rememberForegroundWindow();
         _panel.PositionNear(Left, Top, Width, Height);
@@ -170,6 +184,56 @@ public partial class FloatingAssistantWindow : Window
         _panel.Activate();
         _panel.FocusGoalInput();
     }
+
+    private void OnResponseRequested()
+    {
+        _panel.Hide();
+        _speechBubble.BubbleText = "답변을 준비하고 있어요…";
+        UpdateSpeechBubblePosition();
+        if (!_speechBubble.IsVisible) _speechBubble.Show();
+    }
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs eventArgs)
+    {
+        if (_viewModel is not null) _viewModel.Messages.CollectionChanged -= OnMessagesChanged;
+        ObserveMessage(null);
+        _viewModel = eventArgs.NewValue as GuidanceViewModel;
+        if (_viewModel is not null) _viewModel.Messages.CollectionChanged += OnMessagesChanged;
+    }
+
+    private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs eventArgs)
+    {
+        var latestAssistant = eventArgs.NewItems?.OfType<ChatMessageItem>()
+            .LastOrDefault(message => message.Role == "assistant");
+        if (latestAssistant is null) return;
+        ObserveMessage(latestAssistant);
+        if (!_speechBubble.IsVisible) _speechBubble.Show();
+        UpdateBubbleText();
+    }
+
+    private void ObserveMessage(ChatMessageItem? message)
+    {
+        if (_observedMessage is not null) _observedMessage.PropertyChanged -= OnMessagePropertyChanged;
+        _observedMessage = message;
+        if (_observedMessage is not null) _observedMessage.PropertyChanged += OnMessagePropertyChanged;
+    }
+
+    private void OnMessagePropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (eventArgs.PropertyName is nameof(ChatMessageItem.Text) or nameof(ChatMessageItem.IsPending))
+            UpdateBubbleText();
+    }
+
+    private void UpdateBubbleText()
+    {
+        if (_observedMessage is null) return;
+        _speechBubble.BubbleText = _observedMessage.IsPending
+            ? "답변을 준비하고 있어요…"
+            : _observedMessage.Text;
+        UpdateSpeechBubblePosition();
+    }
+
+    private void UpdateSpeechBubblePosition() => _speechBubble.PositionNear(Left, Top, Width);
 
     private void SnapAndConstrain()
     {
