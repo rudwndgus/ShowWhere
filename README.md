@@ -8,7 +8,9 @@ ShowWhere is an AI-powered visual guide that understands what a user wants to do
 
 [![Download ShowWhere.exe](https://img.shields.io/badge/Windows-ShowWhere.exe%20다운로드-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
 
-공식 Windows 프로그램은 `ShowWhere.exe` 하나입니다. 별도의 설치 프로그램, Node.js, .NET SDK, Python, 프로젝트 복제, API 키 또는 로컬 백엔드가 필요하지 않습니다.
+공식 Windows 배포 파일은 GitHub Release의 `ShowWhere.exe` 하나입니다. 이 파일은 Railway Production HTTPS 서버를 사용하도록 빌드된 Windows 10/11 x64용 self-contained 실행 파일입니다. 별도의 설치 프로그램, Node.js, .NET 런타임/SDK, Python, 프로젝트 복제, API 키 또는 로컬 백엔드가 필요하지 않습니다.
+
+`build/local-windows`, `bin/Debug`, `bin/Release`의 파일은 개발용이며 배포 대상이 아닙니다. 일반 사용자는 항상 위의 **최신 Release 다운로드 링크**에서 `ShowWhere.exe`만 받아야 합니다.
 
 요구 환경: Windows 10/11 x64와 인터넷 연결. 현재 시험 서명 단계에서는 Windows SmartScreen 경고가 나타날 수 있습니다.
 
@@ -16,11 +18,20 @@ ShowWhere is an AI-powered visual guide that understands what a user wants to do
 
 1. 위 링크에서 `ShowWhere.exe`를 다운로드합니다.
 2. 파일을 더블클릭합니다.
-3. 화면에 나타난 고릴라 assistant를 누릅니다.
+3. 화면에 나타난 assistant 캐릭터를 누릅니다.
 4. “프린터 설정은 어디서 해?”, “아마존에서 로그인하고 싶어”처럼 목표를 입력합니다.
 5. ShowWhere가 화면 위에 표시한 위치를 누릅니다.
 
-ShowWhere는 사용자를 대신해 자동 클릭하지 않습니다. 고릴라를 마우스 오른쪽 버튼으로 누른 뒤 `종료`를 선택하면 종료됩니다. 중복 실행은 자동으로 차단됩니다.
+ShowWhere는 사용자를 대신해 자동 클릭하지 않습니다. assistant 캐릭터를 마우스 오른쪽 버튼으로 누른 뒤 `종료`를 선택하면 종료됩니다. 중복 실행은 자동으로 차단됩니다.
+
+## Current ShowWhere 2.0
+
+- 고릴라·로봇·오리 assistant 캐릭터 선택과 응답 말풍선
+- Windows 및 웹 화면 관찰, 다중 모니터 좌표 보정과 정확한 overlay 안내
+- Railway Production 기반 Guide API, 모바일 QR 연결, WebSocket 대화와 STT 음성 입력
+- 로컬 우선 Knowledge, 중앙 Knowledge 동기화, Human Gold `O`/교정 `X`/완료 `끝` 학습
+- Amazon 웹 탐색 지식과 BLUU DELI 키오스크/UP Solution 백오피스 사전 지식
+- GitHub Release SHA-256 검증을 사용하는 자동 업데이트
 
 ## Mobile Remote
 
