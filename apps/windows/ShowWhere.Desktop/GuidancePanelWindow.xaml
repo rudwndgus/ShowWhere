@@ -128,7 +128,9 @@
                    Foreground="{DynamicResource AccentBrush}" FontSize="15"
                    FontWeight="Bold" VerticalAlignment="Center" />
 
-        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                    Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Panel.ZIndex="1">
           <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
                   Style="{StaticResource QuietButton}" Padding="0" Click="OnMinimize" ToolTip="최소화" />
           <Button Content="×" Width="30" Height="30" FontSize="20"
