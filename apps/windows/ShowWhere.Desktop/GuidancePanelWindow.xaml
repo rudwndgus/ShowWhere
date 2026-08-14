@@ -361,6 +361,29 @@
         </Grid>
       </Border>
 
+      <Border Grid.Row="4" Margin="17,9,17,0" Padding="12" MaxHeight="320"
+              Background="#FFEFFAF1" BorderBrush="#FF80C990" BorderThickness="1" CornerRadius="9"
+              Visibility="{Binding IsPositiveConfirmationVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="✓ 이 안내가 정확합니까?" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
+            <TextBlock Text="사용자 질문" FontSize="11" FontWeight="SemiBold" Margin="0,9,0,3" />
+            <TextBox Text="{Binding PositiveQuestion}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+            <TextBlock Text="현재 상황" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
+            <TextBox Text="{Binding PositiveSituation}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+            <TextBlock Text="안내 대상" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
+            <TextBox Text="{Binding PositiveTarget}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+            <TextBlock Text="선택 코멘트" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
+            <TextBox Text="{Binding PositiveCommentText, UpdateSourceTrigger=PropertyChanged}" MinHeight="42"
+                     TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+              <Button Content="취소" Command="{Binding CancelPositiveAnswerCommand}" Style="{StaticResource QuietButton}" Margin="0,0,7,0" />
+              <Button Content="확인" Command="{Binding ConfirmPositiveAnswerCommand}" Style="{StaticResource QuietButton}" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
       <Border Grid.Row="4" Margin="17,9,17,0" Padding="12" MaxHeight="370"
               Background="#FFFFF9E8" BorderBrush="#FFFFD778" BorderThickness="1"
               CornerRadius="9"
@@ -375,14 +398,25 @@
           <TextBlock Text="{Binding CorrectionDataDirectory, StringFormat=이 PC의 학습 저장 위치 · {0}}"
                      TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource MutedBrush}"
                      Margin="0,0,0,7" ToolTip="EXE에서도 이 폴더에 저장되며 즉시 현재 실행에 반영됩니다" />
+          <TextBlock Text="사용자 질문" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,4,0,3" />
+          <TextBox Text="{Binding CorrectionQuestion}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+          <TextBlock Text="현재 상황" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <TextBox Text="{Binding CorrectionCurrentSituation}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+          <TextBlock Text="잘못 가리킨 대상" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <TextBox Text="{Binding CorrectionWrongTarget}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
+          <TextBlock Text="왜 틀렸나요?" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <ComboBox ItemsSource="{Binding CorrectionErrorReasons}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                    SelectedValue="{Binding CorrectionErrorReason}" Padding="7,5" />
+          <TextBlock Text="올바른 다음 단계 *" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
           <TextBox Text="{Binding CorrectionIntentText, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
-                   ToolTip="예: 유튜브 뮤직 웹페이지 안에서 음악을 검색한다" />
+                   ToolTip="예: Bluetooth 및 장치로 이동" />
           <TextBlock Text="개발자 코멘트" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextBrush}" Margin="0,8,0,4" />
           <TextBox Text="{Binding CorrectionCommentText, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
                    ToolTip="무엇이 틀렸고 어떻게 고쳐야 하는지 자유롭게 적으세요" />
+          <StackPanel Visibility="Collapsed">
           <TextBlock Text="GPT 피드백 라벨" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextBrush}" Margin="0,10,0,4" />
           <TextBlock Text="점(.)으로 계층을 구분합니다. 빈칸은 현재 질문과 화면에서 자동 생성합니다."
@@ -400,9 +434,10 @@
                    ToolTip="성공 증거를 쉼표 또는 줄바꿈으로 입력" />
           <ComboBox ItemsSource="{Binding CorrectionOutcomeLabels}" SelectedItem="{Binding CorrectionOutcomeLabel}"
                     Padding="7,5" ToolTip="오답 원인 또는 학습 결과 라벨" />
+          </StackPanel>
           <TextBlock Text="{Binding CorrectionSelectionSummary}" TextWrapping="Wrap"
                      FontSize="10" Foreground="#FF7A5A16" Margin="0,7,0,0" />
-          <CheckBox IsChecked="{Binding SaveCorrectionScreenshot}" Margin="0,8,0,7"
+          <CheckBox IsChecked="{Binding SaveCorrectionScreenshot}" Margin="0,8,0,7" Visibility="Collapsed"
                     FontSize="11" Foreground="{StaticResource TextBrush}"
                     Content="학습용 전체 화면을 로컬에 저장" />
           <TextBlock Text="드래그는 미리보기일 뿐 저장되지 않습니다. 확인 후 저장을 누르세요."

@@ -76,7 +76,9 @@ public sealed record DeveloperCorrectionRecord(
     string? RefinedComment = null,
     IReadOnlyList<string>? IssueTags = null,
     DeveloperLearningLabels? LearningLabels = null,
-    HumanGoldKnowledge? HumanGold = null);
+    HumanGoldKnowledge? HumanGold = null,
+    string? KnowledgeStatus = null,
+    string? InvalidReason = null);
 
 public sealed record AnswerFeedbackRecord(
     int SchemaVersion,
@@ -123,6 +125,71 @@ public sealed record DeveloperLearningHistoryRecord(
     string? Comment,
     bool Active,
     bool HasEdits = false);
+
+public static class DeveloperKnowledgePolicy
+{
+    public const string Active = "active";
+    public const string Invalid = "invalid";
+    public const string Revoked = "revoked";
+
+    private static readonly HashSet<string> GenericConcepts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "settings", "setting", "window", "application", "chrome", "home", "page",
+        "button", "menu", "start", "unknown", "unknown_target", "unknown.target",
+        "visual_target", "visual target", "시작", "설정", "홈", "창",
+    };
+
+    public static bool IsNegative(DeveloperCorrectionRecord record) =>
+        string.Equals(record.LearningLabels?.OutcomeLabel, "wrong_target", StringComparison.OrdinalIgnoreCase)
+        || record.IssueTags?.Contains("wrong_target", StringComparer.OrdinalIgnoreCase) == true;
+
+    public static bool HasExplicitCorrectTarget(DeveloperCorrectionRecord record) =>
+        record.CorrectTarget is not null || record.NormalizedVisualTarget is not null;
+
+    public static bool IsActive(DeveloperCorrectionRecord record) =>
+        string.IsNullOrWhiteSpace(record.KnowledgeStatus)
+        || string.Equals(record.KnowledgeStatus, Active, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsGenericConcept(string? value)
+    {
+        var concept = DeveloperIntentMatcher.CreateConceptKey(value);
+        return string.IsNullOrWhiteSpace(concept) || GenericConcepts.Contains(concept);
+    }
+
+    public static bool CanBecomePositiveGold(DeveloperCorrectionRecord record)
+    {
+        if (!record.DeveloperVerified || !IsActive(record)) return false;
+
+        var explicitlyPositive = record.IssueTags?.Contains("positive_feedback", StringComparer.OrdinalIgnoreCase) == true
+            || string.Equals(record.LearningLabels?.OutcomeLabel, "correct_target", StringComparison.OrdinalIgnoreCase);
+        var correctedNegative = IsNegative(record) && HasExplicitCorrectTarget(record);
+        if (!explicitlyPositive && !correctedNegative) return false;
+
+        var target = record.CorrectTarget?.Label
+            ?? record.CorrectTarget?.Description
+            ?? record.CorrectTarget?.AutomationId
+            ?? record.NormalizedVisualTarget?.Label
+            ?? record.LearningLabels?.TargetConcept;
+        if (!IsGenericConcept(target)) return true;
+        if (record.NormalizedVisualTarget is not null && !string.IsNullOrWhiteSpace(record.SnapshotHash)) return true;
+        var stableIdentifier = record.CorrectTarget?.AutomationId;
+        return !string.IsNullOrWhiteSpace(stableIdentifier) && !IsGenericConcept(stableIdentifier);
+    }
+
+    public static DeveloperCorrectionRecord NormalizeForRuntime(DeveloperCorrectionRecord record)
+    {
+        if (CanBecomePositiveGold(record)) return record;
+        if (record.HumanGold is null) return record;
+        return record with
+        {
+            HumanGold = null,
+            KnowledgeStatus = Invalid,
+            InvalidReason = IsNegative(record) && !HasExplicitCorrectTarget(record)
+                ? "wrong_target_without_correct_next_step"
+                : "invalid_positive_human_gold",
+        };
+    }
+}
 
 public sealed record RefinedDeveloperComment(
     string Raw,
@@ -541,13 +608,14 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         _statusPath = Path.Combine(DataDirectory, "learning-status.jsonl");
         _editsPath = Path.Combine(DataDirectory, "learning-edits.jsonl");
         Directory.CreateDirectory(DataDirectory);
-        _records = LoadRecords(_recordsPath);
+        _records = LoadRecords(_recordsPath, out var recordsMigrated);
         _completions = LoadCompletionRecords(_completionsPath);
         _feedback = LoadFeedbackRecords(_feedbackPath);
         _statusChanges = LoadStatusRecords(_statusPath);
         _edits = LoadEditRecords(_editsPath);
         if (File.Exists(_recordsPath)
-            && File.ReadLines(_recordsPath).Count(line => !string.IsNullOrWhiteSpace(line)) != _records.Count)
+            && (recordsMigrated
+                || File.ReadLines(_recordsPath).Count(line => !string.IsNullOrWhiteSpace(line)) != _records.Count))
             RewriteRecords();
     }
 
@@ -583,6 +651,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                         || string.IsNullOrWhiteSpace(record.OriginalGoal) || string.IsNullOrWhiteSpace(record.EffectiveGoal)
                         || record.Context is null) return Task.FromResult(false);
                     record = PrepareHumanGold(record with { ScreenshotPath = null });
+                    var conflictsRevoked = InvalidateConflictingKnowledge(record);
                     var existingIndex = FindKnowledgeIndex(record);
                     if (existingIndex >= 0)
                     {
@@ -595,6 +664,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                     }
                     else
                     {
+                        if (conflictsRevoked) RewriteRecords();
                         File.AppendAllText(_recordsPath, JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine);
                         _records.Add(record);
                     }
@@ -672,6 +742,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(IsCorrectionUsable)
                 .Where(record => record.CorrectTarget is not null)
                 .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
+                .Where(record => KnowledgeContextMatches(record, context))
                 .OrderByDescending(record => record.CreatedAtUtc)
                 .ToList();
         }
@@ -754,6 +825,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         var saved = PrepareHumanGold(Sanitize(correction));
         lock (_gate)
         {
+            if (InvalidateConflictingKnowledge(saved)) RewriteRecords();
             var existingIndex = FindKnowledgeIndex(saved);
             if (existingIndex >= 0)
                 saved = MergeKnowledge(_records[existingIndex], saved);
@@ -816,6 +888,7 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         IReadOnlyList<UiCandidate> candidates)
     {
         HashSet<string> rejectedIds;
+        HashSet<string> rejectedConcepts;
         lock (_gate)
         {
             rejectedIds = _feedback
@@ -829,9 +902,25 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 .Where(item => string.Equals(GetEffectiveRating(item.Id, item.Rating), "incorrect", StringComparison.OrdinalIgnoreCase))
                 .Select(item => item.TargetId!)
                 .ToHashSet(StringComparer.Ordinal);
+            rejectedConcepts = _records
+                .Where(DeveloperKnowledgePolicy.IsNegative)
+                .Where(record => RecordMatchesGoal(goal, record.FeedbackId, record.OriginalGoal, record.EffectiveGoal, record.CorrectedIntent))
+                .Where(record => string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(record => new[] { record.PreviousTargetLabel, record.PreviousTargetId })
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(DeveloperIntentMatcher.CreateConceptKey)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToHashSet(StringComparer.Ordinal);
         }
-        if (rejectedIds.Count == 0) return candidates;
-        var filtered = candidates.Where(candidate => !rejectedIds.Contains(candidate.Id)).ToArray();
+        if (rejectedIds.Count == 0 && rejectedConcepts.Count == 0) return candidates;
+        var filtered = candidates.Where(candidate =>
+        {
+            if (rejectedIds.Contains(candidate.Id)) return false;
+            var concepts = new[] { candidate.Label, candidate.Description, Attribute(candidate, "automationId") }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(DeveloperIntentMatcher.CreateConceptKey);
+            return !concepts.Any(rejectedConcepts.Contains);
+        }).ToArray();
         return filtered.Length == 0 ? candidates : filtered;
     }
 
@@ -930,6 +1019,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
     private bool IsCorrectionUsable(DeveloperCorrectionRecord record)
     {
+        if (!DeveloperKnowledgePolicy.IsActive(record)) return false;
+        if (DeveloperKnowledgePolicy.IsNegative(record) && !DeveloperKnowledgePolicy.HasExplicitCorrectTarget(record)) return false;
+        if (record.HumanGold is not null && !DeveloperKnowledgePolicy.CanBecomePositiveGold(record)) return false;
         if (!IsFeedbackActive(record.FeedbackId)) return false;
         if (string.IsNullOrWhiteSpace(record.FeedbackId)) return true;
         var feedback = _feedback.LastOrDefault(item => string.Equals(item.Id, record.FeedbackId, StringComparison.Ordinal));
@@ -998,10 +1090,32 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
 
     private static DeveloperCorrectionRecord PrepareHumanGold(DeveloperCorrectionRecord record)
     {
-        var isGold = record.DeveloperVerified
-            && (record.IssueTags?.Contains("human_gold", StringComparer.OrdinalIgnoreCase) == true
-                || string.Equals(record.LearningLabels?.Authority, "human_gold", StringComparison.OrdinalIgnoreCase));
-        return isGold ? record with { HumanGold = DeveloperSemanticKnowledge.Ensure(record) } : record;
+        record = DeveloperKnowledgePolicy.NormalizeForRuntime(record);
+        if (!DeveloperKnowledgePolicy.CanBecomePositiveGold(record)) return record with { HumanGold = null };
+
+        var targetConcept = record.CorrectTarget?.Label
+            ?? record.CorrectTarget?.Description
+            ?? record.CorrectTarget?.AutomationId
+            ?? record.NormalizedVisualTarget?.Label
+            ?? record.LearningLabels?.TargetConcept
+            ?? "visual target";
+        var gold = DeveloperSemanticKnowledge.Create(
+            record.EffectiveGoal,
+            record.Context,
+            targetConcept,
+            record.CorrectTarget,
+            record.PreviousAction ?? GuideActions.Highlight,
+            record.SnapshotHash,
+            record.HumanGold?.LastVerifiedAt ?? record.CreatedAtUtc);
+        if (record.HumanGold is not null
+            && string.Equals(record.HumanGold.Identity, gold.Identity, StringComparison.Ordinal))
+            gold = DeveloperSemanticKnowledge.Merge(record.HumanGold, gold);
+        return record with
+        {
+            HumanGold = gold,
+            KnowledgeStatus = record.KnowledgeStatus,
+            InvalidReason = null,
+        };
     }
 
     private int FindKnowledgeIndex(DeveloperCorrectionRecord record)
@@ -1011,6 +1125,32 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         return _records.FindIndex(item =>
             string.Equals(item.Id, record.Id, StringComparison.Ordinal)
             || string.Equals(item.HumanGold?.Identity, record.HumanGold.Identity, StringComparison.Ordinal));
+    }
+
+    private bool InvalidateConflictingKnowledge(DeveloperCorrectionRecord incoming)
+    {
+        if (incoming.HumanGold is null || string.IsNullOrWhiteSpace(incoming.SnapshotHash)) return false;
+        var changed = false;
+        for (var index = 0; index < _records.Count; index++)
+        {
+            var existing = _records[index];
+            if (existing.HumanGold is null || !DeveloperKnowledgePolicy.IsActive(existing)
+                || string.Equals(existing.Id, incoming.Id, StringComparison.Ordinal)
+                || !string.Equals(existing.SnapshotHash, incoming.SnapshotHash, StringComparison.Ordinal)
+                || existing.HumanGold.LastVerifiedAt > incoming.HumanGold.LastVerifiedAt
+                || !string.Equals(existing.HumanGold.SiteOrApplication, incoming.HumanGold.SiteOrApplication, StringComparison.Ordinal)
+                || !string.Equals(existing.HumanGold.NormalizedIntent, incoming.HumanGold.NormalizedIntent, StringComparison.Ordinal)
+                || !string.Equals(existing.HumanGold.SemanticState, incoming.HumanGold.SemanticState, StringComparison.Ordinal)
+                || string.Equals(existing.HumanGold.TargetConcept, incoming.HumanGold.TargetConcept, StringComparison.Ordinal)) continue;
+            _records[index] = existing with
+            {
+                HumanGold = null,
+                KnowledgeStatus = DeveloperKnowledgePolicy.Revoked,
+                InvalidReason = $"superseded_by:{incoming.Id}",
+            };
+            changed = true;
+        }
+        return changed;
     }
 
     private static DeveloperCorrectionRecord MergeKnowledge(
@@ -1065,8 +1205,9 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
         ExpectedEvidence = value.ExpectedEvidence.Select(item => DeveloperLearningPrivacy.Redact(item)!).ToArray(),
     };
 
-    private static List<DeveloperCorrectionRecord> LoadRecords(string path)
+    private static List<DeveloperCorrectionRecord> LoadRecords(string path, out bool migrated)
     {
+        migrated = false;
         if (!File.Exists(path)) return [];
         var records = new List<DeveloperCorrectionRecord>();
         foreach (var line in File.ReadLines(path))
@@ -1077,7 +1218,12 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
                 var record = JsonSerializer.Deserialize<DeveloperCorrectionRecord>(line, JsonOptions);
                 if (record is not null && record.SchemaVersion == 1)
                 {
-                    record = PrepareHumanGold(record);
+                    var prepared = PrepareHumanGold(record);
+                    if (!string.Equals(
+                            JsonSerializer.Serialize(record, JsonOptions),
+                            JsonSerializer.Serialize(prepared, JsonOptions),
+                            StringComparison.Ordinal)) migrated = true;
+                    record = prepared;
                     var duplicateIndex = record.HumanGold is null ? -1 : records.FindIndex(item =>
                         string.Equals(item.HumanGold?.Identity, record.HumanGold.Identity, StringComparison.Ordinal));
                     if (duplicateIndex >= 0)
@@ -1249,6 +1395,24 @@ public sealed class JsonlDeveloperCorrectionStore : IDeveloperCorrectionStore
             || learnedTokens.Overlaps(currentTokens);
     }
 
+    private static bool KnowledgeContextMatches(
+        DeveloperCorrectionRecord record,
+        ApplicationContext context)
+    {
+        if (!string.Equals(record.Context.ApplicationName, context.ApplicationName, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (IsBrowserApplication(context.ApplicationName))
+        {
+            if (Uri.TryCreate(record.Context.Url, UriKind.Absolute, out var learned)
+                && Uri.TryCreate(context.Url, UriKind.Absolute, out var current))
+                return string.Equals(learned.Host, current.Host, StringComparison.OrdinalIgnoreCase);
+            // Without URL evidence, defer site validation to ScoreTarget, which can
+            // compare the live browser-content container against the saved signature.
+            return true;
+        }
+        return true;
+    }
+
     private static bool CompletionContextMatches(
         ApplicationContext learnedContext,
         ApplicationContext currentContext)
@@ -1298,7 +1462,15 @@ public static class DeveloperIntentMatcher
 {
     public static string CreateIntentKey(string? value) => Normalize(value).Replace(' ', '_');
 
-    public static string CreateConceptKey(string? value) => Normalize(value).Replace(' ', '_');
+    public static string CreateConceptKey(string? value)
+    {
+        var normalized = Normalize(value).Replace(' ', '_');
+        return normalized switch
+        {
+            "start" => "시작",
+            _ => normalized,
+        };
+    }
 
     public static bool IsSameIntent(string? left, string? right)
     {

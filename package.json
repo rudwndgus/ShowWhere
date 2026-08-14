@@ -13,6 +13,8 @@
     "crawl:compress": "tsx services/crawler/src/cli.ts compress",
     "crawl:install": "playwright install chromium",
     "crawl:smoke": "tsx services/crawler/src/smoke.ts",
+    "training:audit": "node scripts/audit-training.mjs",
+    "training:audit:fix": "node scripts/audit-training.mjs --fix",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src services vite.config.ts vitest.config.ts eslint.config.js",

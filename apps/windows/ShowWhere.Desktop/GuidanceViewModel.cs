@@ -52,8 +52,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private string _submittedGoal = string.Empty;
     private string _correctionIntentText = string.Empty;
     private string _correctionCommentText = string.Empty;
+    private string _correctionErrorReason = "wrong_function";
     private string _correctionSelectionSummary = "정답 영역을 아직 선택하지 않았습니다.";
     private bool _isCorrectionEditorVisible;
+    private bool _isPositiveConfirmationVisible;
+    private string _positiveCommentText = string.Empty;
     private bool _saveCorrectionScreenshot = true;
     private bool _isDeveloperMode;
     private bool _isLearningHistoryVisible;
@@ -67,6 +70,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private readonly Dictionary<string, ApprovedReplay> _recentReplays = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RecentSafeReply> _recentSafeReplies = new(StringComparer.Ordinal);
     private ChatMessageItem? _correctionAnswer;
+    private ChatMessageItem? _positiveAnswer;
     private AnswerFeedbackRecord? _correctionFeedback;
     private UiBounds? _pendingCorrectionSelection;
     private UiCandidate? _pendingCorrectionCandidate;
@@ -102,6 +106,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         SaveCorrectionCommand = new AsyncRelayCommand(SaveCorrectionAsync, CanSaveCorrection);
         CancelCorrectionEditCommand = new RelayCommand(CloseCorrectionEditor);
         MarkAnswerCorrectCommand = new AsyncParameterRelayCommand(MarkAnswerCorrectAsync, CanEvaluateAnswer);
+        ConfirmPositiveAnswerCommand = new AsyncRelayCommand(ConfirmPositiveAnswerAsync);
+        CancelPositiveAnswerCommand = new RelayCommand(CancelPositiveAnswer);
         MarkAnswerIncorrectCommand = new AsyncParameterRelayCommand(MarkAnswerIncorrectAsync, CanEvaluateAnswer);
         MarkAnswerCompletedCommand = new AsyncParameterRelayCommand(MarkAnswerCompletedAsync, CanEvaluateAnswer);
         TogglePauseCommand = new RelayCommand(TogglePause);
@@ -142,6 +148,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand SaveCorrectionCommand { get; }
     public ICommand CancelCorrectionEditCommand { get; }
     public ICommand MarkAnswerCorrectCommand { get; }
+    public ICommand ConfirmPositiveAnswerCommand { get; }
+    public ICommand CancelPositiveAnswerCommand { get; }
     public ICommand MarkAnswerIncorrectCommand { get; }
     public ICommand MarkAnswerCompletedCommand { get; }
     public ICommand TogglePauseCommand { get; }
@@ -184,6 +192,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             if (!value)
             {
                 ResetCorrectionDraft();
+                CancelPositiveAnswer();
                 IsLearningHistoryVisible = false;
             }
         }
@@ -198,6 +207,31 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _isCorrectionEditorVisible;
         private set { if (Set(ref _isCorrectionEditorVisible, value)) RaiseCommandStates(); }
     }
+    public bool IsPositiveConfirmationVisible
+    {
+        get => _isPositiveConfirmationVisible;
+        private set => Set(ref _isPositiveConfirmationVisible, value);
+    }
+    public string PositiveCommentText
+    {
+        get => _positiveCommentText;
+        set => Set(ref _positiveCommentText, value);
+    }
+    public string PositiveQuestion => _positiveAnswer?.OriginalGoal ?? string.Empty;
+    public string PositiveSituation
+    {
+        get
+        {
+            var context = _positiveAnswer?.Context;
+            if (context is null) return "현재 화면 정보를 확인하지 못했습니다.";
+            return string.IsNullOrWhiteSpace(context.WindowTitle)
+                ? context.ApplicationName
+                : $"{context.ApplicationName} > {context.WindowTitle}";
+        }
+    }
+    public string PositiveTarget => _positiveAnswer?.TargetLabel
+        ?? _positiveAnswer?.Decision?.VisualTarget?.Label
+        ?? "설명형 답변";
     public string CorrectionIntentText
     {
         get => _correctionIntentText;
@@ -208,6 +242,37 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _correctionCommentText;
         set { if (Set(ref _correctionCommentText, value)) RaiseCommandStates(); }
     }
+    public string CorrectionErrorReason
+    {
+        get => _correctionErrorReason;
+        set => Set(ref _correctionErrorReason, value);
+    }
+    public IReadOnlyList<DeveloperCorrectionReasonOption> CorrectionErrorReasons { get; } =
+    [
+        new("wrong_function", "잘못된 기능을 선택함"),
+        new("wrong_target", "잘못된 버튼/대상을 선택함"),
+        new("skipped_step", "현재 단계를 건너뜀"),
+        new("stale_step", "이미 지나간 단계를 안내함"),
+        new("other", "기타"),
+    ];
+    public string CorrectionQuestion => _correctionAnswer?.OriginalGoal
+        ?? _session?.OriginalUserMessage
+        ?? string.Empty;
+    public string CorrectionCurrentSituation
+    {
+        get
+        {
+            var context = _correctionAnswer?.Context ?? _lastObservation?.Context;
+            if (context is null) return "현재 화면 정보를 확인하지 못했습니다.";
+            return string.IsNullOrWhiteSpace(context.WindowTitle)
+                ? context.ApplicationName
+                : $"{context.ApplicationName} > {context.WindowTitle}";
+        }
+    }
+    public string CorrectionWrongTarget => _correctionAnswer?.TargetLabel
+        ?? _lastHighlightedCandidate?.Label
+        ?? _lastDecision?.VisualTarget?.Label
+        ?? "대상 없음";
     public string CorrectionTaskId { get => _correctionTaskId; set { if (Set(ref _correctionTaskId, value)) RaiseCommandStates(); } }
     public string CorrectionStateId { get => _correctionStateId; set { if (Set(ref _correctionStateId, value)) RaiseCommandStates(); } }
     public string CorrectionTargetConcept { get => _correctionTargetConcept; set { if (Set(ref _correctionTargetConcept, value)) RaiseCommandStates(); } }
@@ -481,6 +546,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     _session.OriginalUserMessage,
                     currentObservation.Context,
                     currentObservation.Candidates);
+                DesktopDiagnostics.WriteEvent(
+                    "INTENT_NORMALIZED",
+                    ("intent", DeveloperIntentMatcher.CreateIntentKey(_session.OriginalUserMessage)),
+                    ("application", currentObservation.Context.ApplicationName));
+                if (prioritizedCandidates.Count != currentObservation.Candidates.Count)
+                    DesktopDiagnostics.WriteEvent(
+                        "NEGATIVE_EVIDENCE",
+                        ("rejected", currentObservation.Candidates.Count - prioritizedCandidates.Count));
                 StatusText = $"후보 {prioritizedCandidates.Count}개 분석 중";
                 _session = TaskSessionStateMachine.AiRequested(_session);
                 var request = new GuideRequest(_session, currentObservation.Context, prioritizedCandidates);
@@ -499,7 +572,19 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     out var matchedKnowledge))
                 {
                     DesktopDiagnostics.WriteEvent(
+                        "HUMAN_GOLD_CANDIDATE",
+                        ("knowledgeId", matchedKnowledge.Id),
+                        ("intent", matchedKnowledge.HumanGold?.NormalizedIntent));
+                    DesktopDiagnostics.WriteEvent("INTENT_MATCH", ("knowledgeId", matchedKnowledge.Id));
+                    DesktopDiagnostics.WriteEvent("STATE_MATCH", ("knowledgeId", matchedKnowledge.Id));
+                    DesktopDiagnostics.WriteEvent("TARGET_MATCH", ("targetId", correctedTarget.Id));
+                    DesktopDiagnostics.WriteEvent(
+                        "GOLD_SCORE",
+                        ("knowledgeId", matchedKnowledge.Id),
+                        ("confidence", matchedKnowledge.HumanGold?.Confidence ?? 0));
+                    DesktopDiagnostics.WriteEvent(
                         matchedKnowledge.HumanGold is null ? "KNOWLEDGE_HIT" : "HUMAN_GOLD_HIT",
+                        ("knowledgeId", matchedKnowledge.Id),
                         ("targetId", correctedTarget.Id),
                         ("label", correctedTarget.Label),
                         ("intent", matchedKnowledge.HumanGold?.NormalizedIntent),
@@ -542,6 +627,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 }
                 else
                 {
+                    DesktopDiagnostics.WriteEvent(
+                        "GOLD_REJECTED",
+                        ("intent", DeveloperIntentMatcher.CreateIntentKey(_session.OriginalUserMessage)),
+                        ("reason", "no_valid_intent_state_target_match"));
                     DesktopDiagnostics.WriteEvent(
                         "GPT_FALLBACK",
                         ("goal", _session.OriginalUserMessage),
@@ -808,10 +897,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _session is not null && _correctionAnswer is not null
         && IsCorrectionEditorVisible
         && (_pendingCorrectionSelection is not null
-            || !string.IsNullOrWhiteSpace(CorrectionIntentText)
-            || !string.IsNullOrWhiteSpace(CorrectionCommentText)
-            || !string.IsNullOrWhiteSpace(CorrectionTaskId)
-            || !string.IsNullOrWhiteSpace(CorrectionTargetConcept));
+            || !string.IsNullOrWhiteSpace(CorrectionIntentText));
 
     private static bool CanEvaluateAnswer(object? parameter) =>
         parameter is ChatMessageItem { CanEvaluate: true };
@@ -819,6 +905,20 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private async Task MarkAnswerCorrectAsync(object? parameter)
     {
         if (parameter is not ChatMessageItem message || !message.CanEvaluate) return;
+        _positiveAnswer = message;
+        PositiveCommentText = string.Empty;
+        OnPropertyChanged(nameof(PositiveQuestion));
+        OnPropertyChanged(nameof(PositiveSituation));
+        OnPropertyChanged(nameof(PositiveTarget));
+        IsPositiveConfirmationVisible = true;
+        StatusText = "O 정답 확인 대기";
+        await Task.CompletedTask;
+    }
+
+    private async Task ConfirmPositiveAnswerAsync()
+    {
+        var message = _positiveAnswer;
+        if (message is null || !message.CanEvaluate) return;
         try
         {
             var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "correct"));
@@ -826,7 +926,33 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     feedback,
                     message.TargetSignature,
                     message.Decision?.VisualTarget) is { } positiveCorrection)
+            {
+                if (!string.IsNullOrWhiteSpace(PositiveCommentText))
+                {
+                    var refined = DeveloperCommentRefiner.Refine(PositiveCommentText);
+                    positiveCorrection = positiveCorrection with
+                    {
+                        DeveloperComment = refined.Raw,
+                        RefinedComment = refined.Normalized,
+                        IssueTags = positiveCorrection.IssueTags?
+                            .Concat(refined.IssueTags).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    };
+                }
                 await _correctionStore.SaveAsync(positiveCorrection, null);
+            }
+            if (!string.IsNullOrWhiteSpace(PositiveCommentText))
+            {
+                await _correctionStore.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+                    1,
+                    Guid.NewGuid().ToString("D"),
+                    DateTimeOffset.UtcNow,
+                    feedback.Id,
+                    "correct",
+                    message.OriginalGoal ?? message.EffectiveGoal ?? "unknown",
+                    message.Text,
+                    message.TargetLabel ?? message.Decision?.VisualTarget?.Label,
+                    DeveloperLearningPrivacy.Redact(PositiveCommentText.Trim())));
+            }
             RememberApprovedReplay(message);
             DesktopDiagnostics.WriteEvent(
                 "approved_replay_saved",
@@ -834,6 +960,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 ("label", message.TargetLabel),
                 ("snapshotHash", message.SnapshotHash));
             message.MarkEvaluated("correct");
+            CancelPositiveAnswer();
             StatusText = message.TargetSignature is null
                 ? "정답으로 영구 저장됨"
                 : "정답으로 영구 저장됨 · 같은 의도의 질문은 AI 없이 즉시 안내";
@@ -843,6 +970,13 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             DesktopDiagnostics.Write(exception);
             StatusText = "평가 저장 오류";
         }
+    }
+
+    private void CancelPositiveAnswer()
+    {
+        IsPositiveConfirmationVisible = false;
+        PositiveCommentText = string.Empty;
+        _positiveAnswer = null;
     }
 
     private async Task MarkAnswerIncorrectAsync(object? parameter)
@@ -951,7 +1085,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         CorrectionCommentText = string.Empty;
         CorrectionTaskId = string.Empty;
         CorrectionStateId = string.Empty;
-        CorrectionTargetConcept = answer.TargetLabel ?? answer.Decision?.VisualTarget?.Label ?? string.Empty;
+        CorrectionTargetConcept = string.Empty;
         CorrectionExpectedNextState = answer.Decision?.ExpectedChange ?? string.Empty;
         CorrectionExpectedEvidence = CorrectionTargetConcept;
         CorrectionOutcomeLabel = "wrong_target";
@@ -959,6 +1093,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _pendingCorrectionSelection = null;
         _pendingCorrectionCandidate = null;
         _pendingCorrectionCapture = null;
+        OnPropertyChanged(nameof(CorrectionQuestion));
+        OnPropertyChanged(nameof(CorrectionCurrentSituation));
+        OnPropertyChanged(nameof(CorrectionWrongTarget));
         IsCorrectionEditorVisible = true;
     }
 
@@ -1001,6 +1138,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _pendingCorrectionSelection = selection;
             _pendingCorrectionCandidate = matchedCandidate;
             _pendingCorrectionCapture = capture;
+            CorrectionIntentText = targetLabel;
+            CorrectionTargetConcept = targetLabel;
             CorrectionSelectionSummary = matchedCandidate is null
                 ? $"선택됨: 화면 영역 {Math.Round(selection.X)}, {Math.Round(selection.Y)} · 저장 전"
                 : $"선택됨: {targetLabel} · 저장 전";
@@ -1025,9 +1164,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         try
         {
             var refined = DeveloperCommentRefiner.Refine(CorrectionCommentText);
-            var correctedIntent = string.IsNullOrWhiteSpace(CorrectionIntentText)
-                ? null
-                : CorrectionIntentText.Trim();
+            string? correctedIntent = null;
             VisualTarget? normalizedTarget = null;
             CorrectionTargetSignature? signature = null;
             if (_pendingCorrectionSelection is not null && _pendingCorrectionCapture is not null)
@@ -1147,12 +1284,15 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _correctionFeedback?.Id,
             string.IsNullOrWhiteSpace(refinedComment.Raw) ? null : refinedComment.Raw,
             string.IsNullOrWhiteSpace(refinedComment.Normalized) ? null : refinedComment.Normalized,
-            refinedComment.IssueTags.Count == 0 ? null : refinedComment.IssueTags,
+            refinedComment.IssueTags
+                .Concat(["wrong_target", CorrectionErrorReason])
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
             DeveloperLabeling.CreateCorrectionLabels(
                 _correctionAnswer?.OriginalGoal ?? _session!.OriginalUserMessage,
                 context,
                 string.IsNullOrWhiteSpace(CorrectionTargetConcept)
-                    ? (_pendingCorrectionCandidate?.Label ?? _correctionAnswer?.TargetLabel ?? "unknown target")
+                    ? (_pendingCorrectionCandidate?.Label ?? CorrectionIntentText.Trim())
                     : CorrectionTargetConcept,
                 CorrectionTaskId,
                 CorrectionStateId,
@@ -1182,6 +1322,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         IsCorrectionEditorVisible = false;
         CorrectionIntentText = string.Empty;
         CorrectionCommentText = string.Empty;
+        CorrectionErrorReason = "wrong_function";
         CorrectionTaskId = string.Empty;
         CorrectionStateId = string.Empty;
         CorrectionTargetConcept = string.Empty;

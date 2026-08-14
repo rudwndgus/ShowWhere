@@ -723,6 +723,156 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal(record.HumanGold?.Identity, knowledge.HumanGold?.Identity);
     }
 
+    [Fact]
+    public async Task Wrong_target_without_correct_next_step_is_negative_only_and_never_runtime_gold()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var bad = Record() with
+        {
+            OriginalGoal = "Where are printer settings?",
+            EffectiveGoal = "Where are printer settings?",
+            Context = context,
+            PreviousTargetId = "start",
+            PreviousTargetLabel = "Start",
+            IssueTags = ["wrong_target"],
+            LearningLabels = DeveloperLabeling.CreateCorrectionLabels(
+                "Where are printer settings?", context, "Start", null, null, null, null, "wrong_target"),
+        };
+        bad = bad with
+        {
+            HumanGold = DeveloperSemanticKnowledge.Create(
+                bad.EffectiveGoal, context, "Start", null, GuideActions.Highlight, bad.SnapshotHash, bad.CreatedAtUtc),
+        };
+
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var saved = await store.SaveAsync(bad, null);
+
+        Assert.Null(saved.HumanGold);
+        Assert.Equal(DeveloperKnowledgePolicy.Invalid, saved.KnowledgeStatus);
+        Assert.Equal("wrong_target_without_correct_next_step", saved.InvalidReason);
+        var remaining = store.FilterRejectedCandidates(
+            "printer settings", context,
+            [Candidate("start-new", "Start", "start", "foreground_application"),
+             Candidate("printers", "Printers & scanners", "printers", "foreground_application")]);
+        Assert.DoesNotContain(remaining, item => item.Label == "Start");
+        Assert.Contains(remaining, item => item.Label == "Printers & scanners");
+    }
+
+    [Fact]
+    public async Task X_with_an_explicit_correct_next_step_learns_only_the_correct_target()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var correct = Candidate("printers", "Printers & scanners", "printers", "foreground_application");
+        var signature = DeveloperCorrectionMatcher.CreateSignature(correct);
+        var correction = RecordForGoal("Where are printer settings?", signature) with
+        {
+            Context = context,
+            PreviousTargetId = "start",
+            PreviousTargetLabel = "Start",
+            IssueTags = ["wrong_target", "wrong_function"],
+            LearningLabels = DeveloperLabeling.CreateCorrectionLabels(
+                "Where are printer settings?", context, "Printers & scanners", null, null, null, null, "wrong_target"),
+        };
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+
+        var saved = await store.SaveAsync(correction, null);
+
+        Assert.NotNull(saved.HumanGold);
+        Assert.Contains("Printers & scanners", saved.HumanGold!.TargetAliases);
+        Assert.NotEqual("start", saved.HumanGold.TargetConcept);
+        Assert.True(store.TryResolveTarget(
+            "printer settings", context, [correct with { Id = "printers-live" }], out var target, out _));
+        Assert.Equal("printers-live", target.Id);
+    }
+
+    [Fact]
+    public async Task Generic_or_unknown_targets_cannot_become_runtime_gold()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var target = Candidate("settings", "Settings", "settings", "foreground_application");
+        var feedback = Feedback("correct", "Open settings") with
+        {
+            OriginalGoal = "Where are printer settings?",
+            EffectiveGoal = "Where are printer settings?",
+            Context = context,
+            TargetId = target.Id,
+            TargetLabel = target.Label,
+        };
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+
+        var saved = await store.SaveAsync(
+            DeveloperPositiveFeedback.Create(feedback, DeveloperCorrectionMatcher.CreateSignature(target))!, null);
+
+        Assert.Null(saved.HumanGold);
+        Assert.Equal(DeveloperKnowledgePolicy.Invalid, saved.KnowledgeStatus);
+    }
+
+    [Fact]
+    public void Legacy_bad_gold_migration_is_idempotent_and_preserves_raw_correction()
+    {
+        Directory.CreateDirectory(_directory);
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var bad = Record() with
+        {
+            Id = "legacy-bad",
+            OriginalGoal = "Where are printer settings?",
+            EffectiveGoal = "Where are printer settings?",
+            Context = context,
+            PreviousTargetLabel = "unknown target",
+            IssueTags = ["wrong_target"],
+            LearningLabels = DeveloperLabeling.CreateCorrectionLabels(
+                "Where are printer settings?", context, "unknown target", null, null, null, null, "wrong_target"),
+        };
+        bad = bad with
+        {
+            HumanGold = DeveloperSemanticKnowledge.Create(
+                bad.EffectiveGoal, context, "unknown target", null, GuideActions.Explain, bad.SnapshotHash, bad.CreatedAtUtc),
+        };
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        File.WriteAllText(Path.Combine(_directory, "corrections.jsonl"), JsonSerializer.Serialize(bad, options) + Environment.NewLine);
+
+        _ = new JsonlDeveloperCorrectionStore(_directory);
+        var first = File.ReadAllText(Path.Combine(_directory, "corrections.jsonl"));
+        _ = new JsonlDeveloperCorrectionStore(_directory);
+        var second = File.ReadAllText(Path.Combine(_directory, "corrections.jsonl"));
+
+        Assert.Equal(first, second);
+        Assert.Contains("legacy-bad", second);
+        Assert.Contains("\"knowledgeStatus\":\"invalid\"", second);
+        Assert.DoesNotContain("\"humanGold\"", second);
+    }
+
+    [Fact]
+    public async Task Newer_gold_on_the_same_screen_revokes_a_conflicting_old_target()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var oldTarget = Candidate("old", "Start", "start-button", "foreground_application");
+        var newTarget = Candidate("new", "Printers & scanners", "printers", "foreground_application");
+        var oldFeedback = Feedback("correct", "Start") with
+        {
+            Id = "old-feedback", OriginalGoal = "printer settings", EffectiveGoal = "printer settings",
+            Context = context, SnapshotHash = "same-screen", TargetId = oldTarget.Id, TargetLabel = oldTarget.Label,
+        };
+        var newFeedback = oldFeedback with
+        {
+            Id = "new-feedback", CreatedAtUtc = oldFeedback.CreatedAtUtc.AddSeconds(1),
+            AnswerText = "Printers & scanners", TargetId = newTarget.Id, TargetLabel = newTarget.Label,
+        };
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(
+            oldFeedback, DeveloperCorrectionMatcher.CreateSignature(oldTarget))!, null);
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(
+            newFeedback, DeveloperCorrectionMatcher.CreateSignature(newTarget))!, null);
+
+        var persisted = File.ReadAllLines(Path.Combine(_directory, "corrections.jsonl"))
+            .Select(line => JsonDocument.Parse(line).RootElement.Clone()).ToArray();
+        Assert.Contains(persisted, item => item.TryGetProperty("knowledgeStatus", out var status)
+            && status.GetString() == DeveloperKnowledgePolicy.Revoked);
+        Assert.True(store.TryResolveTarget(
+            "printer settings", context, [oldTarget, newTarget], out var resolved, out _));
+        Assert.Equal("new", resolved.Id);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);

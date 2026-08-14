@@ -147,6 +147,38 @@ public sealed class GuidanceViewModelTests : IDisposable
         Assert.Equal(260d / 1080, storedTarget.Y, 6);
     }
 
+    [Fact]
+    public async Task Developer_O_uses_a_simple_confirmation_and_preserves_optional_comment()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var viewModel = new GuidanceViewModel(
+            new FixedObserver(CreateObservation("positive-screen")),
+            new NoChangeMonitor(),
+            new CountingScreenCapture(),
+            new CountingGuideApiClient(new GuideDecision(
+                GuideStatuses.NeedsClarification, GuideActions.AskUser, "정확한 안내", 0.9)),
+            new RecordingOverlay(),
+            new NoSelectionService(),
+            store,
+            () => { });
+        viewModel.GoalText = "도와줘";
+        await SubmitAsync(viewModel);
+        var answer = viewModel.Messages.Last(item => item.CanEvaluate);
+        viewModel.ToggleDeveloperModeCommand.Execute(null);
+
+        await InvokeAsync(viewModel, "MarkAnswerCorrectAsync", answer);
+
+        Assert.True(viewModel.IsPositiveConfirmationVisible);
+        Assert.False(File.Exists(Path.Combine(_directory, "answer-feedback.jsonl")));
+        viewModel.PositiveCommentText = "이 답변은 현재 화면에서 정확함";
+        await InvokeAsync(viewModel, "ConfirmPositiveAnswerAsync");
+        Assert.False(viewModel.IsPositiveConfirmationVisible);
+        Assert.Single(File.ReadAllLines(Path.Combine(_directory, "answer-feedback.jsonl")));
+        using var edit = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(_directory, "learning-edits.jsonl")));
+        Assert.Contains("현재 화면에서 정확함", edit.RootElement.GetProperty("comment").GetString());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
