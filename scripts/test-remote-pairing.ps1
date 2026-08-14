@@ -31,9 +31,9 @@ function Connect-PairingSocket([Uri] $uri, [string] $secret) {
     $socket.Options.AddSubProtocol('showwhere-v1')
     $socket.Options.AddSubProtocol($secret)
     $timeout = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(15))
-    try { $socket.ConnectAsync($uri, $timeout.Token).GetAwaiter().GetResult() }
+    try { $null = $socket.ConnectAsync($uri, $timeout.Token).GetAwaiter().GetResult() }
     finally { $timeout.Dispose() }
-    return $socket
+    return ,$socket
 }
 
 function Receive-UserMessage([Net.WebSockets.ClientWebSocket] $socket) {
@@ -82,7 +82,7 @@ try {
     $mobile = Connect-PairingSocket $mobileSocketUri $claim.mobileSecret
 
     $payload = [Text.Encoding]::UTF8.GetBytes('{"type":"user_message","id":"remote-ci","text":"pairing test"}')
-    $mobile.SendAsync(
+    $null = $mobile.SendAsync(
         [ArraySegment[byte]]::new($payload),
         [Net.WebSockets.WebSocketMessageType]::Text,
         $true,
