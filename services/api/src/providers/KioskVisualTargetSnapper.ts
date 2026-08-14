@@ -57,8 +57,10 @@ const targets: PixelTarget[] = [
 ];
 
 function product(label: string, index: number): PixelTarget {
-  const columns = [[103, 144], [247, 143], [392, 146]] as const;
-  const rows = [[165, 142], [309, 142], [453, 141], [596, 143]] as const;
+  // Measured from the latest native 538x956 capture. Keep the full colored
+  // card (image, name and price) inside the guidance rectangle.
+  const columns = [[107, 143], [251, 143], [395, 143]] as const;
+  const rows = [[168, 142], [312, 142], [456, 142], [600, 143]] as const;
   const [x, width] = columns[index % 3];
   const [y, height] = rows[Math.floor(index / 3)];
   return { aliases: [label], box: [x, y, width, height], kioskSpecific: true };
@@ -86,6 +88,21 @@ function targetFor(label: string): PixelTarget | undefined {
   }));
 }
 
+function targetFromUserIntent(request: GuideRequest): PixelTarget | undefined {
+  const intent = normalize(`${request.session.originalUserMessage} ${request.session.goal ?? ''}`);
+  const matches = targets.flatMap((target) => target.aliases
+    .map((alias) => ({ target, alias: normalize(alias) }))
+    .filter(({ alias }) => {
+      if (!alias) return false;
+      if (` ${intent} `.includes(` ${alias} `)) return true;
+      // Korean particles can be attached directly to an English menu name,
+      // for example "TEA를". startsWith is token-local, so TEA never matches LATTE.
+      return !alias.includes(' ') && /^[a-z0-9]+$/u.test(alias)
+        && intent.split(' ').some((token) => token === alias || token.startsWith(alias));
+    }));
+  return matches.sort((left, right) => right.alias.length - left.alias.length)[0]?.target;
+}
+
 function hasKioskContext(request: GuideRequest): boolean {
   const context = normalize(`${request.context.applicationName} ${request.context.windowTitle ?? ''}`);
   const goal = normalize(`${request.session.originalUserMessage} ${request.session.goal ?? ''}`);
@@ -97,7 +114,9 @@ export function snapKioskVisualTarget(request: GuideRequest, visualTarget: Visua
   if (!request.screenshotBounds) return visualTarget;
   const ratio = request.screenshotBounds.width / request.screenshotBounds.height;
   if (ratio < 0.50 || ratio > 0.62) return visualTarget;
-  const known = targetFor(visualTarget.label);
+  // The user's requested menu is authoritative. Vision labels are only a
+  // fallback because visually similar cards can be misread (TEA vs LATTE).
+  const known = targetFromUserIntent(request) ?? targetFor(visualTarget.label);
   if (!known || (!known.kioskSpecific && !hasKioskContext(request))) return visualTarget;
   const [x, y, width, height] = known.box;
   return {
@@ -105,6 +124,6 @@ export function snapKioskVisualTarget(request: GuideRequest, visualTarget: Visua
     y: y / REFERENCE_HEIGHT,
     width: width / REFERENCE_WIDTH,
     height: height / REFERENCE_HEIGHT,
-    label: visualTarget.label,
+    label: known.aliases[0].toLocaleUpperCase(),
   };
 }

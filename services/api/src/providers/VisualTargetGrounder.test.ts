@@ -104,7 +104,29 @@ describe('VisualTargetGrounder', () => {
     });
 
     expect(grounded.visualTarget).toEqual({
-      x: 392 / 538, y: 309 / 956, width: 146 / 538, height: 142 / 956, label: 'LATTE',
+      x: 395 / 538, y: 312 / 956, width: 143 / 538, height: 142 / 956, label: 'LATTE',
+    });
+  });
+
+  it('uses the requested menu name when vision confuses TEA with LATTE', () => {
+    const request = {
+      ...guideRequestFixture,
+      session: {
+        ...guideRequestFixture.session,
+        originalUserMessage: 'TEA를 찾아줘',
+        goal: 'TEA 메뉴 위치 안내',
+      },
+      context: { ...guideRequestFixture.context, applicationName: 'UPR KIOSK', windowTitle: 'BLUU DELI' },
+      screenshotBounds: { x: 0, y: 0, width: 538, height: 956 },
+      candidates: [],
+    };
+    const grounded = groundVisualDecision(request, {
+      status: 'in_progress', action: 'highlight_visual', message: 'TEA를 누르세요.', confidence: 0.9,
+      visualTarget: { x: 0.74, y: 0.33, width: 0.25, height: 0.15, label: 'LATTE' },
+    });
+
+    expect(grounded.visualTarget).toEqual({
+      x: 251 / 538, y: 600 / 956, width: 143 / 538, height: 143 / 956, label: 'TEA',
     });
   });
 
