@@ -25,6 +25,13 @@ jobs:
       - name: Test Windows client
         run: dotnet test apps/windows/ShowWhere.Windows.Tests/ShowWhere.Windows.Tests.csproj -c Release
 
+      - name: Test public mobile pairing end to end
+        shell: pwsh
+        env:
+          SHOWWHERE_CLIENT_TOKEN: ${{ secrets.SHOWWHERE_CLIENT_TOKEN }}
+          SHOWWHERE_BACKEND_URL: ${{ vars.SHOWWHERE_BACKEND_URL }}
+        run: ./scripts/test-remote-pairing.ps1 -BackendUrl $env:SHOWWHERE_BACKEND_URL
+
       - name: Publish self-contained executable
         shell: pwsh
         env:
