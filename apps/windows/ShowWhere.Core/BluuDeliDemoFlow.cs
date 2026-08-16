@@ -29,6 +29,7 @@ public enum BluuDeliDemoStage
 public sealed class BluuDeliDemoFlow
 {
     private bool _respondInKorean;
+    private bool _presetIcedOrder;
     private sealed record TargetSpec(
         string Label,
         string[] Aliases,
@@ -53,6 +54,7 @@ public sealed class BluuDeliDemoFlow
 
         Stage = BluuDeliDemoStage.SelectLatte;
         _respondInKorean = UserLanguage.IsKorean(message);
+        _presetIcedOrder = Contains(normalized, "ice") || Contains(normalized, "iced");
         return true;
     }
 
@@ -131,7 +133,11 @@ public sealed class BluuDeliDemoFlow
         if (spec is not null) Stage = spec.NextStage;
     }
 
-    public void Reset() => Stage = BluuDeliDemoStage.Inactive;
+    public void Reset()
+    {
+        Stage = BluuDeliDemoStage.Inactive;
+        _presetIcedOrder = false;
+    }
 
     private string Message(string korean, string english) => _respondInKorean ? korean : english;
 
@@ -160,11 +166,14 @@ public sealed class BluuDeliDemoFlow
         _ => english,
     };
 
-    private static TargetSpec? GetTargetSpec(BluuDeliDemoStage stage) => stage switch
+    private TargetSpec? GetTargetSpec(BluuDeliDemoStage stage) => stage switch
     {
         BluuDeliDemoStage.SelectLatte => new(
             "LATTE", ["LATTE"], Box(403, 314, 146, 145, "LATTE"),
-            "To order a latte, please click here on LATTE.", BluuDeliDemoStage.AskLatteModifier),
+            _presetIcedOrder
+                ? "To order your iced latte, please click here on LATTE."
+                : "To order a latte, please click here on LATTE.",
+            _presetIcedOrder ? BluuDeliDemoStage.SelectIce : BluuDeliDemoStage.AskLatteModifier),
         BluuDeliDemoStage.SelectIce => new(
             "ICE", ["ICE", "ICED"], Box(10, 586, 132, 141, "ICE"),
             "Please click ICE here to make your latte iced.", BluuDeliDemoStage.AddLatteToCart),
@@ -178,13 +187,15 @@ public sealed class BluuDeliDemoFlow
             "BACON & CHEESE OMELETTE",
             ["BACON & CHEESE OMELETTE", "BACON AND CHEESE OMELETTE", "BACON & CHEESE OMLETTE"],
             Box(109, 314, 146, 146, "BACON & CHEESE OMELETTE"),
-            "Now, please click BACON & CHEESE OMELETTE here.", BluuDeliDemoStage.AskOmeletteModifier),
+            "Now, please click BACON & CHEESE OMELETTE here.",
+            _presetIcedOrder ? BluuDeliDemoStage.AddOmeletteToCart : BluuDeliDemoStage.AskOmeletteModifier),
         BluuDeliDemoStage.AddOmeletteToCart => new(
             "Add to Cart", ["ADD TO CART", "ADD CART"], Box(462, 906, 88, 61, "Add to Cart"),
             "Perfect. Please click Add to Cart to add the omelette without extra modifiers.", BluuDeliDemoStage.SelectCredit),
         BluuDeliDemoStage.SelectCredit => new(
             "Credit", ["CREDIT"], Box(426, 914, 62, 63, "Credit"),
-            "Please click Credit here to continue to payment.", BluuDeliDemoStage.AskTip),
+            "Please click Credit here to continue to payment.",
+            _presetIcedOrder ? BluuDeliDemoStage.Completed : BluuDeliDemoStage.AskTip),
         BluuDeliDemoStage.SelectTip => new(
             "tip amount", ["3%", "TIP"], Box(94, 186, 164, 126, "tip amount"),
             "Please select the tip amount you would like.", BluuDeliDemoStage.SelectApplyAndTender),

@@ -79,6 +79,23 @@ public sealed class BluuDeliDemoFlowTests
     }
 
     [Fact]
+    public void Preset_ice_order_advances_only_through_the_requested_click_sequence()
+    {
+        var flow = new BluuDeliDemoFlow();
+        Assert.True(flow.TryStart("where can I order Ice latte and bacon cheese omlete"));
+
+        AssertStep(flow, "LATTE", BluuDeliDemoStage.SelectIce);
+        AssertStep(flow, "ICE", BluuDeliDemoStage.AddLatteToCart);
+        AssertStep(flow, "Add to Cart", BluuDeliDemoStage.SelectBreakfast);
+        AssertStep(flow, "BREAKFAST", BluuDeliDemoStage.SelectBaconCheeseOmelette);
+        AssertStep(flow, "BACON & CHEESE OMELETTE", BluuDeliDemoStage.AddOmeletteToCart);
+        AssertStep(flow, "Add to Cart", BluuDeliDemoStage.SelectCredit);
+        AssertStep(flow, "Credit", BluuDeliDemoStage.Completed);
+
+        Assert.Equal(GuideStatuses.Completed, flow.Resolve([]).Status);
+    }
+
+    [Fact]
     public void Supports_selecting_a_tip_or_going_directly_to_apply_and_tender()
     {
         var tipFlow = AdvanceToTipPrompt();

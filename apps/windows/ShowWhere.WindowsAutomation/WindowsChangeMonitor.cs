@@ -48,6 +48,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         {
             _interactionDiagnostic?.Invoke("monitor_started");
             using var lowLevelClicks = new LowLevelTargetClickTracker(targetBounds);
+            using var dedicatedClickPoller = new DedicatedTargetClickPoller(targetBounds, timeout.Token);
             _ = GetAsyncKeyState(VirtualKeyLeftButton);
             var wasPressed = false;
             var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(160);
@@ -62,11 +63,13 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                 wasPressed = isPressed;
 
                 var hookClick = lowLevelClicks.ConsumeClick();
+                var dedicatedClick = dedicatedClickPoller.ConsumeClick();
                 var polledClick = wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor);
-                if (hookClick || polledClick)
+                if (hookClick || dedicatedClick || polledClick)
                 {
-                    _interactionDiagnostic?.Invoke(hookClick
-                        ? "low_level_click_inside_target"
+                    _interactionDiagnostic?.Invoke(
+                        hookClick ? "low_level_click_inside_target"
+                        : dedicatedClick ? "dedicated_click_inside_target"
                         : "polled_click_inside_target");
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
                     return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
@@ -274,6 +277,51 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
             if (_hook == IntPtr.Zero) return;
             _ = UnhookWindowsHookEx(_hook);
             _hook = IntPtr.Zero;
+        }
+    }
+
+    private sealed class DedicatedTargetClickPoller : IDisposable
+    {
+        private readonly UiBounds _targetBounds;
+        private readonly CancellationTokenSource _cancellation;
+        private readonly Task _worker;
+        private int _clicked;
+
+        public DedicatedTargetClickPoller(UiBounds targetBounds, CancellationToken cancellationToken)
+        {
+            _targetBounds = targetBounds;
+            _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _worker = Task.Factory.StartNew(
+                Poll,
+                _cancellation.Token,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+        }
+
+        public bool ConsumeClick() => Interlocked.Exchange(ref _clicked, 0) != 0;
+
+        private void Poll()
+        {
+            _ = GetAsyncKeyState(VirtualKeyLeftButton);
+            var wasPressed = false;
+            while (!_cancellation.IsCancellationRequested)
+            {
+                var pressed = (GetAsyncKeyState(VirtualKeyLeftButton) & KeyPressedMask) != 0;
+                if (pressed && !wasPressed
+                    && GetCursorPos(out var cursor)
+                    && Contains(_targetBounds, cursor))
+                    Interlocked.Exchange(ref _clicked, 1);
+                wasPressed = pressed;
+                Thread.Sleep(2);
+            }
+        }
+
+        public void Dispose()
+        {
+            _cancellation.Cancel();
+            try { _worker.Wait(TimeSpan.FromMilliseconds(100)); }
+            catch (AggregateException) { }
+            _cancellation.Dispose();
         }
     }
 
