@@ -40,15 +40,13 @@ public partial class App : Application
         base.OnStartup(eventArgs);
         _httpClient = new HttpClient();
         var observer = new WindowsUiObserver();
-        var targetActivationSignal = new TargetActivationSignal();
         var monitor = new WindowsChangeMonitor(
             observer,
             trigger => DesktopDiagnostics.WriteEvent(
                 "target_interaction_monitor",
-                ("trigger", trigger)),
-            targetActivationSignal);
+                ("trigger", trigger)));
         var screenCapture = new WindowsScreenCaptureService();
-        _overlay = new HighlightOverlayWindow(targetActivationSignal);
+        _overlay = new HighlightOverlayWindow();
         var apiOptions = GuideApiClientOptions.FromEnvironment();
         var apiClient = new GuideApiClient(_httpClient, apiOptions);
         var correctionSelection = new DeveloperRegionSelectionService();

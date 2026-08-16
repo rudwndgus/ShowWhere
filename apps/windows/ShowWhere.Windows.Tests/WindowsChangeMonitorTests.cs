@@ -56,4 +56,36 @@ public sealed class WindowsChangeMonitorTests
 
         Assert.False(WindowsChangeMonitor.HasMeaningfulVisualChange(baseline, current));
     }
+
+    [Fact]
+    public void Kiosk_touch_requires_a_persistent_change_inside_the_selected_button()
+    {
+        var baseline = Enumerable.Repeat((byte)240, 24 * 24 * 3).ToArray();
+        var changed = baseline.ToArray();
+        for (var pixel = 0; pixel < 120; pixel++)
+        {
+            changed[pixel * 3] = 30;
+            changed[pixel * 3 + 1] = 70;
+            changed[pixel * 3 + 2] = 110;
+        }
+        var detector = new WindowsChangeMonitor.PersistentTargetVisualChangeDetector(baseline, 3);
+
+        Assert.False(detector.Observe(changed));
+        Assert.False(detector.Observe(changed));
+        Assert.True(detector.Observe(changed));
+    }
+
+    [Fact]
+    public void Kiosk_visual_confirmation_resets_when_the_target_returns_to_baseline()
+    {
+        var baseline = Enumerable.Repeat((byte)240, 24 * 24 * 3).ToArray();
+        var changed = Enumerable.Repeat((byte)20, 24 * 24 * 3).ToArray();
+        var detector = new WindowsChangeMonitor.PersistentTargetVisualChangeDetector(baseline, 3);
+
+        Assert.False(detector.Observe(changed));
+        Assert.False(detector.Observe(baseline));
+        Assert.False(detector.Observe(changed));
+        Assert.False(detector.Observe(changed));
+        Assert.True(detector.Observe(changed));
+    }
 }

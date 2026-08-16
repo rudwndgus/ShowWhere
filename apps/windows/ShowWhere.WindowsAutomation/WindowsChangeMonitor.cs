@@ -24,16 +24,13 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
     private const uint BiRgb = 0;
     private readonly IWindowsUiObserver _observer;
     private readonly Action<string>? _interactionDiagnostic;
-    private readonly TargetActivationSignal? _targetActivationSignal;
 
     public WindowsChangeMonitor(
         IWindowsUiObserver observer,
-        Action<string>? interactionDiagnostic = null,
-        TargetActivationSignal? targetActivationSignal = null)
+        Action<string>? interactionDiagnostic = null)
     {
         _observer = observer;
         _interactionDiagnostic = interactionDiagnostic;
-        _targetActivationSignal = targetActivationSignal;
     }
 
     public async Task<WindowsObservation?> WaitForTargetInteractionAsync(
@@ -55,10 +52,14 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
             _ = GetAsyncKeyState(VirtualKeyLeftButton);
             var wasPressed = false;
             var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(160);
-            var nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
-            var baselineVisualFingerprint = requireExplicitTargetClick
+            var nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(
+                requireExplicitTargetClick ? 180 : 110);
+            var baselineVisualFingerprint = TryCaptureVisualFingerprint(targetBounds);
+            var persistentVisualChange = baselineVisualFingerprint is null
                 ? null
-                : TryCaptureVisualFingerprint(targetBounds);
+                : new PersistentTargetVisualChangeDetector(
+                    baselineVisualFingerprint,
+                    requireExplicitTargetClick ? 3 : 1);
 
             while (!timeout.IsCancellationRequested)
             {
@@ -69,32 +70,33 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 
                 var hookClick = lowLevelClicks.ConsumeClick();
                 var dedicatedClick = dedicatedClickPoller.ConsumeClick();
-                var overlayActivation = _targetActivationSignal?.TryConsumeInside(targetBounds) == true;
                 var polledClick = wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor);
-                if (overlayActivation || hookClick || dedicatedClick || polledClick)
+                if (hookClick || dedicatedClick || polledClick)
                 {
                     _interactionDiagnostic?.Invoke(
-                        overlayActivation ? "overlay_touch_inside_target"
-                        : hookClick ? "low_level_click_inside_target"
+                        hookClick ? "low_level_click_inside_target"
                         : dedicatedClick ? "dedicated_click_inside_target"
                         : "polled_click_inside_target");
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
                     return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
                 }
 
-                if (!requireExplicitTargetClick
-                    && baselineVisualFingerprint is not null
+                if (persistentVisualChange is not null
                     && DateTimeOffset.UtcNow >= nextVisualCheck)
                 {
                     nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
                     var currentVisualFingerprint = TryCaptureVisualFingerprint(targetBounds);
                     if (currentVisualFingerprint is not null
-                        && HasMeaningfulVisualChange(baselineVisualFingerprint, currentVisualFingerprint))
+                        && persistentVisualChange.Observe(currentVisualFingerprint))
                     {
-                        // Canvas/Electron kiosk screens frequently expose no useful UIA
-                        // structure change. A material pixel change inside the highlighted
-                        // control is sufficient evidence that the requested interaction ran.
-                        _interactionDiagnostic?.Invoke("visual_target_change");
+                        // Touch is delivered straight through the input-transparent overlay.
+                        // Canvas kiosks often expose no touch/mouse event to another process,
+                        // so confirm the physical activation from a persistent visual outcome
+                        // inside this exact target only. Animated banners elsewhere are ignored.
+                        _interactionDiagnostic?.Invoke(
+                            requireExplicitTargetClick
+                                ? "persistent_target_visual_change"
+                                : "visual_target_change");
                         await Task.Delay(TimeSpan.FromMilliseconds(300), timeout.Token).ConfigureAwait(false);
                         return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
                     }
@@ -184,12 +186,39 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
             && totalDifference / (double)pixelCount >= 8;
     }
 
+    internal sealed class PersistentTargetVisualChangeDetector
+    {
+        private readonly byte[] _baseline;
+        private readonly int _requiredConsecutiveSamples;
+        private int _consecutiveChangedSamples;
+
+        public PersistentTargetVisualChangeDetector(byte[] baseline, int requiredConsecutiveSamples)
+        {
+            _baseline = baseline;
+            _requiredConsecutiveSamples = Math.Max(1, requiredConsecutiveSamples);
+        }
+
+        public bool Observe(byte[] current)
+        {
+            if (HasMeaningfulVisualChange(_baseline, current))
+                _consecutiveChangedSamples++;
+            else
+                _consecutiveChangedSamples = 0;
+
+            return _consecutiveChangedSamples >= _requiredConsecutiveSamples;
+        }
+    }
+
     private static byte[]? TryCaptureVisualFingerprint(UiBounds targetBounds)
     {
-        var sourceX = (int)Math.Floor(targetBounds.X);
-        var sourceY = (int)Math.Floor(targetBounds.Y);
-        var sourceWidth = Math.Max(2, (int)Math.Ceiling(targetBounds.Width));
-        var sourceHeight = Math.Max(2, (int)Math.Ceiling(targetBounds.Height));
+        // Do not sample the red outline itself. The inset keeps the fingerprint on
+        // the real kiosk control content and avoids treating overlay redraws as input.
+        var insetX = targetBounds.Width >= 24 ? Math.Min(8d, targetBounds.Width * 0.08) : 0;
+        var insetY = targetBounds.Height >= 24 ? Math.Min(8d, targetBounds.Height * 0.08) : 0;
+        var sourceX = (int)Math.Floor(targetBounds.X + insetX);
+        var sourceY = (int)Math.Floor(targetBounds.Y + insetY);
+        var sourceWidth = Math.Max(2, (int)Math.Ceiling(targetBounds.Width - insetX * 2));
+        var sourceHeight = Math.Max(2, (int)Math.Ceiling(targetBounds.Height - insetY * 2));
         var screenDc = GetDC(IntPtr.Zero);
         if (screenDc == IntPtr.Zero) return null;
         var memoryDc = CreateCompatibleDC(screenDc);

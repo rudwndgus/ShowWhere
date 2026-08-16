@@ -5,20 +5,6 @@ namespace ShowWhere.Windows.Tests;
 public sealed class CoreContractTests
 {
     [Fact]
-    public void Target_activation_signal_accepts_only_one_touch_inside_the_selected_area()
-    {
-        var signal = new TargetActivationSignal();
-        var selectedArea = new UiBounds(100, 200, 80, 60);
-
-        signal.Record(140, 230);
-
-        Assert.True(signal.TryConsumeInside(selectedArea));
-        Assert.False(signal.TryConsumeInside(selectedArea));
-        signal.Record(20, 30);
-        Assert.False(signal.TryConsumeInside(selectedArea));
-    }
-
-    [Fact]
     public void Unknown_target_id_is_rejected()
     {
         var request = CreateRequest();
