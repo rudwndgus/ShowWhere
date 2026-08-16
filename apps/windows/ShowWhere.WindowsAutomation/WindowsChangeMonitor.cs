@@ -60,6 +60,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                 : new PersistentTargetVisualChangeDetector(
                     baselineVisualFingerprint,
                     requireExplicitTargetClick ? 3 : 1);
+            var baselineInputTick = TryGetLastInputTick();
 
             while (!timeout.IsCancellationRequested)
             {
@@ -86,8 +87,14 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                 {
                     nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
                     var currentVisualFingerprint = TryCaptureVisualFingerprint(targetBounds);
-                    if (currentVisualFingerprint is not null
-                        && persistentVisualChange.Observe(currentVisualFingerprint))
+                    var visualChangeConfirmed = currentVisualFingerprint is not null
+                        && persistentVisualChange.Observe(currentVisualFingerprint);
+                    if (visualChangeConfirmed
+                        && CanConfirmVisualInteraction(
+                            requireExplicitTargetClick,
+                            baselineInputTick,
+                            TryGetLastInputTick(),
+                            unchecked((uint)Environment.TickCount)))
                     {
                         // Touch is delivered straight through the input-transparent overlay.
                         // Canvas kiosks often expose no touch/mouse event to another process,
@@ -99,6 +106,12 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                                 : "visual_target_change");
                         await Task.Delay(TimeSpan.FromMilliseconds(300), timeout.Token).ConfigureAwait(false);
                         return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
+                    }
+                    if (visualChangeConfirmed && requireExplicitTargetClick)
+                    {
+                        // A changing/hovering control without fresh user input must never
+                        // advance the deterministic kiosk flow. Start confirmation over.
+                        persistentVisualChange.Reset();
                     }
                 }
 
@@ -186,6 +199,25 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
             && totalDifference / (double)pixelCount >= 8;
     }
 
+    internal static bool CanConfirmVisualInteraction(
+        bool requireExplicitTargetClick,
+        uint? baselineInputTick,
+        uint? lastInputTick,
+        uint currentTick,
+        uint maximumInputAgeMilliseconds = 1_500)
+    {
+        if (!requireExplicitTargetClick) return true;
+        if (baselineInputTick is null || lastInputTick is null) return false;
+        if (lastInputTick.Value == baselineInputTick.Value) return false;
+        return unchecked(currentTick - lastInputTick.Value) <= maximumInputAgeMilliseconds;
+    }
+
+    private static uint? TryGetLastInputTick()
+    {
+        var information = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
+        return GetLastInputInfo(ref information) ? information.Time : null;
+    }
+
     internal sealed class PersistentTargetVisualChangeDetector
     {
         private readonly byte[] _baseline;
@@ -207,6 +239,8 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 
             return _consecutiveChangedSamples >= _requiredConsecutiveSamples;
         }
+
+        public void Reset() => _consecutiveChangedSamples = 0;
     }
 
     private static byte[]? TryCaptureVisualFingerprint(UiBounds targetBounds)
@@ -413,10 +447,21 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         public IntPtr ExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LastInputInfo
+    {
+        public uint Size;
+        public uint Time;
+    }
+
     private delegate IntPtr LowLevelMouseProcedure(int code, IntPtr message, IntPtr data);
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int virtualKey);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetLastInputInfo(ref LastInputInfo information);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

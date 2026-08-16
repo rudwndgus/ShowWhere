@@ -88,4 +88,39 @@ public sealed class WindowsChangeMonitorTests
         Assert.False(detector.Observe(changed));
         Assert.True(detector.Observe(changed));
     }
+
+    [Fact]
+    public void Kiosk_visual_change_cannot_advance_without_new_user_input()
+    {
+        Assert.False(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: true,
+            baselineInputTick: 1_000,
+            lastInputTick: 1_000,
+            currentTick: 1_400));
+    }
+
+    [Fact]
+    public void Kiosk_visual_change_is_accepted_only_immediately_after_new_user_input()
+    {
+        Assert.True(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: true,
+            baselineInputTick: 1_000,
+            lastInputTick: 1_200,
+            currentTick: 1_400));
+        Assert.False(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: true,
+            baselineInputTick: 1_000,
+            lastInputTick: 1_200,
+            currentTick: 2_701));
+    }
+
+    [Fact]
+    public void Ordinary_guidance_keeps_visual_fallback_without_input_correlation()
+    {
+        Assert.True(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: false,
+            baselineInputTick: null,
+            lastInputTick: null,
+            currentTick: 10_000));
+    }
 }
