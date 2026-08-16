@@ -153,7 +153,7 @@ public partial class FloatingAssistantWindow : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem
         {
-            Header = "종료",
+            Header = "Exit",
             Command = viewModel.ExitCommand,
         });
         ContextMenu = menu;
@@ -190,7 +190,7 @@ public partial class FloatingAssistantWindow : Window
     private void OnResponseRequested()
     {
         _panel.Hide();
-        _speechBubble.BubbleText = "답변을 준비하고 있어요…";
+        _speechBubble.BubbleText = "Preparing an answer…";
         UpdateSpeechBubblePosition();
         if (!_speechBubble.IsVisible) _speechBubble.Show();
         BringCharacterToFront();
@@ -232,7 +232,7 @@ public partial class FloatingAssistantWindow : Window
     {
         if (_observedMessage is null) return;
         _speechBubble.BubbleText = _observedMessage.IsPending
-            ? "답변을 준비하고 있어요…"
+            ? "Preparing an answer…"
             : _observedMessage.Text;
         UpdateSpeechBubblePosition();
     }

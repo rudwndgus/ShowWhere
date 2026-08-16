@@ -1,4 +1,5 @@
 import type { GuideDecision, GuideRequest, UiCandidate } from '../../../../src/contracts';
+import { inRequestLanguage } from './responseLanguage';
 
 const stopWords = new Set([
   '어디', '어디서', '어떻게', '해줘', '해주세요', '하고', '싶어', '싶어요', '보여줘', '알려줘',
@@ -63,12 +64,13 @@ export function resolveLocally(request: GuideRequest): GuideDecision | undefined
   const second = ranked[1];
   if (second && best.exactLabel === second.exactLabel && best.tokenMatches === second.tokenMatches) return undefined;
   const label = best.candidate.label ?? best.candidate.description ?? best.candidate.role;
+  const original = request.session.originalUserMessage;
   return {
     status: 'in_progress',
     action: 'highlight',
     targetId: best.candidate.id,
-    message: `화면의 '${label}'을(를) 눌러주세요.`,
-    expectedChange: `'${label}' 화면이 열립니다.`,
+    message: inRequestLanguage(original, `화면의 '${label}'을(를) 눌러주세요.`, `Select '${label}' on the screen.`),
+    expectedChange: inRequestLanguage(original, `'${label}' 화면이 열립니다.`, `'${label}' opens.`),
     confidence: best.exactLabel ? 0.98 : 0.9,
   };
 }

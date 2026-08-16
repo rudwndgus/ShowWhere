@@ -1,4 +1,5 @@
 import type { GuideDecision, GuideRequest, UiCandidate } from '../../../../src/contracts';
+import { inRequestLanguage } from '../providers/responseLanguage';
 import {
   meaningfulWebTokens,
   normalizeUiName,
@@ -274,12 +275,13 @@ export function resolveWebKnowledge(
   }
   if (!target) return undefined;
   const label = target.candidate.label ?? target.candidate.description ?? target.candidate.role;
+  const original = request.session.originalUserMessage;
   return {
     status: 'in_progress',
     action: 'highlight',
     targetId: target.candidate.id,
-    message: `웹사이트에서 '${label}' 항목을 눌러주세요.`,
-    expectedChange: `${target.step.semanticLabel} 기능으로 이동합니다.`,
+    message: inRequestLanguage(original, `웹사이트에서 '${label}' 항목을 눌러주세요.`, `Select '${label}' on the website.`),
+    expectedChange: inRequestLanguage(original, `${target.step.semanticLabel} 기능으로 이동합니다.`, `The ${target.step.semanticLabel} section opens.`),
     confidence: source === 'site' ? 0.97 : 0.82,
   };
 }

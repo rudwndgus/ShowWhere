@@ -9,13 +9,13 @@
         MouseLeftButtonUp="OnMouseLeftButtonUp"
         MouseRightButtonUp="OnMouseRightButtonUp"
         MouseMove="OnMouseMove">
-  <Grid Background="Transparent" ToolTip="ShowWhere — 하고 싶은 일을 말해보세요">
+  <Grid Background="Transparent" ToolTip="ShowWhere — tell me what you want to do">
     <local:AssistantGlyph />
     <Grid.ContextMenu>
       <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
         <MenuItem Header="{Binding PauseMenuText}" Command="{Binding TogglePauseCommand}" />
         <Separator />
-        <MenuItem Header="종료" Command="{Binding ExitCommand}" />
+        <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
       </ContextMenu>
     </Grid.ContextMenu>
   </Grid>

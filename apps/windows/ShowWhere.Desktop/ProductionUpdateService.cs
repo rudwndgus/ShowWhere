@@ -29,8 +29,8 @@ internal static class ProductionUpdateService
         {
             DesktopDiagnostics.Write(exception);
             MessageBox.Show(
-                "업데이트를 적용하지 못했습니다. 기존 ShowWhere는 그대로 유지됩니다.",
-                "ShowWhere 업데이트",
+                "The update could not be applied. Your existing ShowWhere installation has been preserved.",
+                "ShowWhere Update",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
@@ -55,11 +55,11 @@ internal static class ProductionUpdateService
 
             var accepted = await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                var message = $"ShowWhere {release.Version.ToString(3)} 업데이트가 준비되었습니다.\n\n지금 업데이트할까요?";
+                var message = $"ShowWhere {release.Version.ToString(3)} is available.\n\nUpdate now?";
                 var owner = Application.Current.MainWindow;
                 var result = owner is null
-                    ? MessageBox.Show(message, "ShowWhere 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information)
-                    : MessageBox.Show(owner, message, "ShowWhere 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    ? MessageBox.Show(message, "ShowWhere Update", MessageBoxButton.YesNo, MessageBoxImage.Information)
+                    : MessageBox.Show(owner, message, "ShowWhere Update", MessageBoxButton.YesNo, MessageBoxImage.Information);
                 return result == MessageBoxResult.Yes;
             });
             if (!accepted) return;

@@ -169,7 +169,7 @@ export function createApiServer(
           'X-Content-Type-Options': 'nosniff',
         });
         response.end(script);
-      } catch { sendJson(response, 404, { message: 'QR 판독기를 찾을 수 없습니다.' }); }
+      } catch { sendJson(response, 404, { message: 'QR reader not found.' }); }
       return;
     }
     if (request.method === 'GET' && url.pathname === '/mobile/gorilla.png') {
@@ -177,22 +177,22 @@ export function createApiServer(
         const image = await readFile(resolve('apps/windows/ShowWhere.Desktop/Assets/Assistant/monkey-sit.png'));
         response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
         response.end(image);
-      } catch { sendJson(response, 404, { message: '이미지를 찾을 수 없습니다.' }); }
+      } catch { sendJson(response, 404, { message: 'Image not found.' }); }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/pairing/claim') {
       if (!pairingClaimLimiter.allow(clientAddress(request, config.security.trustProxy))) {
         response.setHeader('Retry-After', '60');
-        sendJson(response, 429, { message: '연결 시도가 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+        sendJson(response, 429, { message: 'Too many connection attempts. Try again shortly.' });
         return;
       }
       try {
         const body = await readJsonBody(request, 8_192) as { pairingToken?: unknown; code?: unknown };
         if (typeof body.pairingToken !== 'string' || typeof body.code !== 'string') throw new Error('invalid');
         const claimed = pairing.claim(body.pairingToken, body.code);
-        if (!claimed) { sendJson(response, 400, { message: '인증번호가 다르거나 연결 시간이 만료되었습니다.' }); return; }
+        if (!claimed) { sendJson(response, 400, { message: 'The verification code is incorrect or the connection expired.' }); return; }
         sendJson(response, 200, claimed);
-      } catch { sendJson(response, 400, { message: '연결 정보를 확인해 주세요.' }); }
+      } catch { sendJson(response, 400, { message: 'Check the connection information.' }); }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/mobile/transcribe') {
@@ -200,27 +200,27 @@ export function createApiServer(
       const supplied = request.headers['x-showwhere-pairing-secret'];
       const mobileSecret = Array.isArray(supplied) ? supplied[0] : supplied ?? '';
       if (!pairing.authorizeConnectedMobile(sessionId, mobileSecret)) {
-        sendJson(response, 401, { message: 'PC 연결을 다시 확인해 주세요.' });
+        sendJson(response, 401, { message: 'Check the PC connection.' });
         return;
       }
       if (!speechLimiter.allow(`${clientAddress(request, config.security.trustProxy)}:${sessionId}`)) {
-        sendJson(response, 429, { message: '음성 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+        sendJson(response, 429, { message: 'Too many voice requests. Try again shortly.' });
         return;
       }
       const contentType = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() ?? '';
       if (!['audio/mp4', 'audio/x-m4a', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'].includes(contentType)) {
-        sendJson(response, 415, { message: '이 휴대폰의 음성 형식을 처리할 수 없어요.' });
+        sendJson(response, 415, { message: 'This phone audio format is not supported.' });
         return;
       }
       try {
         const audio = await readBinaryBody(request, 5_000_000);
         if (audio.byteLength < 512) {
-          sendJson(response, 400, { message: '음성이 너무 짧아요. 조금 더 길게 말해 주세요.' });
+          sendJson(response, 400, { message: 'The recording is too short. Speak a little longer.' });
           return;
         }
         const transcription = await speechTranscriber.transcribe(audio, contentType);
         if (!transcription.text) {
-          sendJson(response, 422, { message: '음성을 듣지 못했어요. 다시 말해 주세요.' });
+          sendJson(response, 422, { message: 'No speech was detected. Please try again.' });
           return;
         }
         if (config.debug)
@@ -232,7 +232,7 @@ export function createApiServer(
           ? error.message : 'speech_request_failed';
         console.error(`[showwhere:stt] failed=${status} reason=${reason}`);
         sendJson(response, status, {
-          message: status === 413 ? '음성이 너무 길어요. 짧게 나누어 말해 주세요.' : '음성을 변환하지 못했어요. 다시 시도해 주세요.',
+          message: status === 413 ? 'The recording is too long. Send a shorter recording.' : 'Speech could not be transcribed. Try again.',
         });
       }
       return;
@@ -242,16 +242,16 @@ export function createApiServer(
     if (request.method === 'POST' && url.pathname === '/api/pairing/sessions') {
       if (!pairingCreateLimiter.allow(clientAddress(request, config.security.trustProxy))) {
         response.setHeader('Retry-After', '60');
-        sendJson(response, 429, { message: '새 연결 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+        sendJson(response, 429, { message: 'Too many new connection requests. Try again shortly.' });
         return;
       }
-      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
+      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: 'Authentication is required.' }); return; }
       const protocol = request.headers['x-forwarded-proto']?.toString().split(',')[0] ?? 'http';
       const host = request.headers['x-forwarded-host']?.toString().split(',')[0] ?? request.headers.host ?? 'localhost';
       const baseUrl = config.publicBaseUrl ?? `${protocol}://${host}`;
       const session = pairing.create(baseUrl);
       if (!session) {
-        sendJson(response, 503, { message: '현재 연결이 많아요. 잠시 후 다시 시도해 주세요.' });
+        sendJson(response, 503, { message: 'The server has too many active connections. Try again shortly.' });
         return;
       }
       const qrDataUrl = await QRCode.toDataURL(session.mobileUrl, { width: 420, margin: 2, errorCorrectionLevel: 'M' });
@@ -259,7 +259,7 @@ export function createApiServer(
       return;
     }
     if (request.method === 'DELETE' && url.pathname.startsWith('/api/pairing/sessions/')) {
-      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
+      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: 'Authentication is required.' }); return; }
       const suppliedSecret = request.headers['x-showwhere-pairing-secret'];
       const desktopSecret = Array.isArray(suppliedSecret) ? suppliedSecret[0] : suppliedSecret ?? '';
       const disconnected = pairing.disconnect(
@@ -267,51 +267,51 @@ export function createApiServer(
         desktopSecret,
       );
       if (!disconnected) {
-        sendJson(response, 404, { message: '이미 종료되었거나 유효하지 않은 연결입니다.' });
+        sendJson(response, 404, { message: 'This connection is invalid or has already ended.' });
         return;
       }
       sendJson(response, 200, { disconnected: true });
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/knowledge/sync') {
-      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: '인증이 필요합니다.' }); return; }
+      if (!roleAtLeast(role, 'user')) { sendJson(response, 401, { message: 'Authentication is required.' }); return; }
       const cursor = Number(url.searchParams.get('cursor') ?? '0');
-      if (!Number.isSafeInteger(cursor) || cursor < 0) { sendJson(response, 400, { message: '올바르지 않은 동기화 버전입니다.' }); return; }
+      if (!Number.isSafeInteger(cursor) || cursor < 0) { sendJson(response, 400, { message: 'Invalid synchronization version.' }); return; }
       try { sendJson(response, 200, await knowledge.changesAfter(cursor)); }
       catch {
         console.error('[showwhere:central] read_failed');
-        sendJson(response, 503, { message: '중앙 학습 데이터를 잠시 불러올 수 없습니다. 로컬 안내는 계속 사용할 수 있습니다.' });
+        sendJson(response, 503, { message: 'Central learning data is temporarily unavailable. Local guidance remains available.' });
       }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/knowledge/records') {
-      if (!roleAtLeast(role, 'developer')) { sendJson(response, 403, { message: '개발자 권한이 필요합니다.' }); return; }
+      if (!roleAtLeast(role, 'developer')) { sendJson(response, 403, { message: 'Developer access is required.' }); return; }
       try {
         const parsed = centralRecordBatchSchema.parse(await readJsonBody(request, config.maxRequestBytes));
         sendJson(response, 200, await knowledge.upsert(parsed.records));
       } catch (error) {
-        if (error instanceof ZodError) sendJson(response, 400, { message: '학습 데이터 형식을 확인해 주세요.' });
+        if (error instanceof ZodError) sendJson(response, 400, { message: 'Check the learning data format.' });
         else {
           console.error('[showwhere:central] write_failed');
-          sendJson(response, 503, { message: '중앙 저장을 잠시 사용할 수 없습니다. 데이터는 로컬에서 보존됩니다.' });
+          sendJson(response, 503, { message: 'Central storage is temporarily unavailable. Data remains preserved locally.' });
         }
       }
       return;
     }
     if (request.method !== 'POST' || url.pathname !== GUIDE_API_PATH) {
-      sendJson(response, 404, { message: '안내 경로를 찾을 수 없어요.' });
+      sendJson(response, 404, { message: 'Guidance route not found.' });
       return;
     }
     if (!roleAtLeast(role, 'user')) {
       sendJson(response, 401, {
-        status: 'blocked', action: 'explain', message: 'ShowWhere 서버 인증에 실패했어요. 최신 배포본을 사용해 주세요.', confidence: 1,
+        status: 'blocked', action: 'explain', message: 'ShowWhere server authentication failed. Install the latest release.', confidence: 1,
       });
       return;
     }
     if (!limiter.allow(clientAddress(request, config.security.trustProxy))) {
       response.setHeader('Retry-After', String(Math.ceil(config.security.rateLimitWindowMs / 1_000)));
       sendJson(response, 429, {
-        status: 'blocked', action: 'explain', message: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', confidence: 1,
+        status: 'blocked', action: 'explain', message: 'Too many requests. Try again shortly.', confidence: 1,
       });
       return;
     }
@@ -321,7 +321,7 @@ export function createApiServer(
       body = await readJsonBody(request, config.maxRequestBytes);
     } catch (error) {
       const status = error instanceof Error && error.message === 'request_too_large' ? 413 : 400;
-      sendJson(response, status, { message: '화면 정보를 확인할 수 없어요. 다시 시도해 주세요.' });
+      sendJson(response, status, { message: 'The screen information could not be validated. Try again.' });
       return;
     }
 

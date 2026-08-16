@@ -38,7 +38,7 @@ public sealed class GuidanceViewModelTests : IDisposable
         await SubmitAsync(viewModel);
 
         Assert.Equal(1, api.CallCount);
-        Assert.Equal("같은 화면의 검증된 답변 즉시 적용", viewModel.StatusText);
+        Assert.Equal("Saved answer applied instantly on the same screen", viewModel.StatusText);
         Assert.Equal("어떤 작업을 원하시나요?", viewModel.Messages[^1].Text);
     }
 
@@ -99,6 +99,41 @@ public sealed class GuidanceViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Bluu_Deli_demo_keeps_the_conversation_state_and_never_calls_the_AI()
+    {
+        var observation = CreateObservation("bluu-deli-demo");
+        var api = new CountingGuideApiClient(new GuideDecision(
+            GuideStatuses.NeedsClarification, GuideActions.AskUser, "AI should not be called", 0.1));
+        var viewModel = new GuidanceViewModel(
+            new FixedObserver(observation),
+            new AlwaysChangeMonitor(observation),
+            new CountingScreenCapture(),
+            api,
+            new RecordingOverlay(),
+            new NoSelectionService(),
+            new JsonlDeveloperCorrectionStore(_directory),
+            () => { });
+
+        viewModel.GoalText = "where can I order latte and bacon cheese omlete";
+        await SubmitAsync(viewModel);
+        Assert.Contains("add anything to the latte", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.GoalText = "ice";
+        await SubmitAsync(viewModel);
+        Assert.Contains("add anything to the bacon", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.GoalText = "no thanks";
+        await SubmitAsync(viewModel);
+        Assert.Contains("tip", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.GoalText = "no tip";
+        await SubmitAsync(viewModel);
+        Assert.Equal("Task complete", viewModel.StatusText);
+        Assert.Contains("Guidance is complete", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, api.CallCount);
+    }
+
+    [Fact]
     public async Task Developer_visual_correction_is_saved_and_highlighted_immediately()
     {
         var observation = CreateObservation("correction-screen");
@@ -136,7 +171,7 @@ public sealed class GuidanceViewModelTests : IDisposable
         await InvokeAsync(viewModel, "SaveCorrectionAsync");
 
         Assert.Equal(correctedBounds, overlay.LastTarget);
-        Assert.Contains("즉시 적용", viewModel.StatusText);
+        Assert.Contains("saved and applied", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
         Assert.True(store.TryResolveVisualTarget(
             "화면의 올바른 위치",
             observation.Context,
@@ -244,6 +279,13 @@ public sealed class GuidanceViewModelTests : IDisposable
         public Task<WindowsObservation?> WaitForTargetInteractionAsync(
             UiBounds targetBounds, string? goal, TimeSpan maximumWait, CancellationToken cancellationToken) =>
             Task.FromResult<WindowsObservation?>(null);
+    }
+
+    private sealed class AlwaysChangeMonitor(WindowsObservation observation) : IWindowsChangeMonitor
+    {
+        public Task<WindowsObservation?> WaitForTargetInteractionAsync(
+            UiBounds targetBounds, string? goal, TimeSpan maximumWait, CancellationToken cancellationToken) =>
+            Task.FromResult<WindowsObservation?>(observation);
     }
 
     private sealed class RecordingOverlay : IHighlightOverlay

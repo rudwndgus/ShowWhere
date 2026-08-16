@@ -336,9 +336,9 @@ describe('mobile pairing API', () => {
     const html = await response.text();
 
     expect(response.status).toBe(200);
-    expect(html).toContain('휴대폰을 키보드처럼 연결해');
+    expect(html).toContain('Connect your phone like a keyboard');
     expect(html).toContain('controller.abort()');
-    expect(html).toContain('연결 시간이 초과됐어요');
+    expect(html).toContain('Connection timed out');
     expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' ws: wss:");
     expect(response.headers.get('permissions-policy')).toContain('microphone=(self)');
     expect(html).toContain('id="mic"');

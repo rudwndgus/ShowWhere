@@ -171,7 +171,7 @@ public sealed class WindowsObservation
 
 public sealed class WindowsObservationException : Exception
 {
-    public WindowsObservationException() : base("현재 활성 Windows 화면을 확인할 수 없어요.") { }
+    public WindowsObservationException() : base("The active Windows screen could not be inspected.") { }
 }
 
 public interface IWindowsUiObserver

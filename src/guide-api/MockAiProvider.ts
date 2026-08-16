@@ -11,21 +11,33 @@ function truncate(value: string, maximum: number): string {
   return cleaned.length > maximum ? `${cleaned.slice(0, maximum - 1).trim()}…` : cleaned;
 }
 
-function guidanceMessage(candidate: UiCandidate): string {
-  const label = truncate(candidate.label ?? '표시된 항목', 40);
+function inRequestLanguage(request: GuideRequest, korean: string, english: string): string {
+  return /[가-힣]/u.test(request.session.originalUserMessage) ? korean : english;
+}
+
+function guidanceMessage(request: GuideRequest, candidate: UiCandidate): string {
+  const label = truncate(candidate.label ?? inRequestLanguage(request, '표시된 항목', 'highlighted item'), 40);
   const actionType = stringAttribute(candidate, 'actionType');
   const optionButtonFound = candidate.attributes?.optionButtonFound === true;
   if (actionType === 'options' && !optionButtonFound) {
-    return '해당 대화 항목을 표시했어요. 오른쪽의 점 세 개 메뉴를 눌러보세요.';
+    return inRequestLanguage(request,
+      '해당 대화 항목을 표시했어요. 오른쪽의 점 세 개 메뉴를 눌러보세요.',
+      'I highlighted the conversation item. Select the three-dot menu on its right.');
   }
   if (actionType === 'open' || actionType === 'options') {
     const targetName = truncate(label.replace(/\s*(열기|open)$/iu, '').trim(), 40);
-    return `좋아요! ${targetName}을 열려면 빨간색으로 표시한 곳을 눌러보세요.`;
+    return inRequestLanguage(request,
+      `좋아요! ${targetName}을 열려면 빨간색으로 표시한 곳을 눌러보세요.`,
+      `Select the highlighted area to open ${targetName}.`);
   }
   if (actionType === 'select') {
-    return `좋아요! ${label}을 선택하려면 빨간색으로 표시한 곳을 눌러보세요.`;
+    return inRequestLanguage(request,
+      `좋아요! ${label}을 선택하려면 빨간색으로 표시한 곳을 눌러보세요.`,
+      `Select the highlighted area to choose ${label}.`);
   }
-  return `찾았어요. ${label}을 이용하려면 빨간색으로 표시한 곳을 눌러보세요.`;
+  return inRequestLanguage(request,
+    `찾았어요. ${label}을 이용하려면 빨간색으로 표시한 곳을 눌러보세요.`,
+    `I found it. Select the highlighted area to use ${label}.`);
 }
 
 export class MockAiProvider implements AiProvider {
@@ -37,7 +49,9 @@ export class MockAiProvider implements AiProvider {
       return {
         status: 'needs_clarification',
         action: 'ask_user',
-        message: '현재 화면에서 정확히 일치하는 항목을 찾지 못했어요. 화면에 보이는 버튼이나 메뉴 이름을 조금 더 구체적으로 말해 주세요.',
+        message: inRequestLanguage(request,
+          '현재 화면에서 정확히 일치하는 항목을 찾지 못했어요. 화면에 보이는 버튼이나 메뉴 이름을 조금 더 구체적으로 말해 주세요.',
+          'I could not find an exact match on the current screen. Tell me the visible button or menu name more specifically.'),
         confidence: 0,
       };
     }
@@ -46,8 +60,10 @@ export class MockAiProvider implements AiProvider {
       status: 'in_progress',
       action: 'highlight',
       targetId: best.id,
-      message: guidanceMessage(best),
-      expectedChange: '선택한 Windows UI가 열리거나 현재 화면이 변경됩니다.',
+      message: guidanceMessage(request, best),
+      expectedChange: inRequestLanguage(request,
+        '선택한 Windows UI가 열리거나 현재 화면이 변경됩니다.',
+        'The selected Windows interface opens or the current screen changes.'),
       confidence: 0.85,
     };
   }

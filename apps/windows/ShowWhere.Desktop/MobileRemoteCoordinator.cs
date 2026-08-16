@@ -50,7 +50,7 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
     private DateTimeOffset _expiresAt;
     private int _pairingLifetimeSeconds = 60;
     private string _pairingCode = "------";
-    private string _pairingStatus = "연결 준비 중…";
+    private string _pairingStatus = "Preparing connection…";
     private int _remainingSeconds;
     private BitmapImage? _qrImage;
     private bool _isConnected;
@@ -70,7 +70,7 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public bool IsConnected { get => _isConnected; private set => Set(ref _isConnected, value); }
-    public string ConnectionText => IsConnected ? "모바일 연결됨" : "모바일 연결";
+    public string ConnectionText => IsConnected ? "Phone connected" : "Connect phone";
     public string PairingCode { get => _pairingCode; private set => Set(ref _pairingCode, value); }
     public string PairingStatus { get => _pairingStatus; private set => Set(ref _pairingStatus, value); }
     public int RemainingSeconds { get => _remainingSeconds; private set => Set(ref _remainingSeconds, value); }
@@ -113,7 +113,7 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
     public async Task DisconnectAsync()
     {
         CancelCurrentOperation();
-        await UpdateDisconnectedUiAsync("연결이 종료되었어요.").ConfigureAwait(false);
+        await UpdateDisconnectedUiAsync("The connection has ended.").ConfigureAwait(false);
         await _lifecycleGate.WaitAsync().ConfigureAwait(false);
         try { await CleanupSessionCoreAsync(notifyServer: true).ConfigureAwait(false); }
         finally { _lifecycleGate.Release(); }
@@ -169,7 +169,7 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
             {
                 PairingCode = pairing.Code;
                 QrImage = image;
-                PairingStatus = "휴대폰으로 QR을 스캔하고 인증번호를 입력하세요.";
+                PairingStatus = "Scan the QR code with your phone and enter the verification code.";
                 UpdateCountdown();
                 _timer.Start();
             });
@@ -194,14 +194,14 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
         }
         catch (OperationCanceledException) when (!_lifetimeCancellation.IsCancellationRequested)
         {
-            await SetPairingFailureAsync("연결 시간이 초과됐어요. 잠시 후 다시 눌러 주세요.").ConfigureAwait(false);
+            await SetPairingFailureAsync("The connection timed out. Please try again shortly.").ConfigureAwait(false);
             await CleanupSessionCoreAsync(notifyServer: true).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            await SetPairingFailureAsync("모바일 연결 서버를 열지 못했어요. 잠시 후 다시 눌러 주세요.").ConfigureAwait(false);
+            await SetPairingFailureAsync("The mobile connection server could not be reached. Please try again shortly.").ConfigureAwait(false);
             await CleanupSessionCoreAsync(notifyServer: true).ConfigureAwait(false);
         }
         finally
@@ -250,7 +250,7 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
                         {
                             IsConnected = connected;
                             OnPropertyChanged(nameof(ConnectionText));
-                            PairingStatus = connected ? "휴대폰과 연결됐어요." : "휴대폰 연결을 기다리는 중…";
+                            PairingStatus = connected ? "Your phone is connected." : "Waiting for the phone to connect…";
                             if (connected)
                             {
                                 _timer.Stop();
@@ -276,7 +276,7 @@ public sealed class MobileRemoteCoordinator : INotifyPropertyChanged, IDisposabl
         finally
         {
             if (ReferenceEquals(_socket, socket))
-                await UpdateDisconnectedUiAsync("휴대폰 연결이 종료됐어요.").ConfigureAwait(false);
+                await UpdateDisconnectedUiAsync("The phone connection has ended.").ConfigureAwait(false);
         }
     }
 

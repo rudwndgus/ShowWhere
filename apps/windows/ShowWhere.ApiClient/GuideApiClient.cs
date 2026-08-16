@@ -31,7 +31,7 @@ public sealed record GuideApiClientOptions(Uri Endpoint, TimeSpan Timeout, int M
 
 public sealed class GuideApiException : Exception
 {
-    public GuideApiException() : base("지금은 안내 서비스에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.") { }
+    public GuideApiException() : base("The guidance service is unavailable right now. Please try again shortly.") { }
 }
 
 public interface IGuideApiClient

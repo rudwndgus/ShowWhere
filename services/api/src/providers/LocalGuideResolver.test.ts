@@ -28,6 +28,14 @@ describe('local guide resolver', () => {
     expect(resolveLocally(request('검색', [candidate('a', '검색'), candidate('b', '검색')]))).toBeUndefined();
   });
 
+  it('answers in the same language as the request', () => {
+    const english = resolveLocally(request('where is printer settings', [candidate('printer', 'Printer settings')]));
+    expect(english?.message).toBe("Select 'Printer settings' on the screen.");
+
+    const korean = resolveLocally(request('프린터 설정은 어디야', [candidate('printer', '프린터 설정')]));
+    expect(korean?.message).toContain('눌러');
+  });
+
   it('rejects browser chrome unless the user explicitly requests it', () => {
     expect(eligibleCandidates(request('유튜브 뮤직에서 노래 검색', [candidate('address', '검색', 'browser_chrome')]))).toHaveLength(0);
     expect(eligibleCandidates(request('크롬 주소창 표시', [candidate('address', '주소창', 'browser_chrome')]))).toHaveLength(1);

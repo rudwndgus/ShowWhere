@@ -132,14 +132,14 @@
                     Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Panel.ZIndex="1">
           <Button Content="—" Width="30" Height="30" Margin="0,0,2,0"
-                  Style="{StaticResource QuietButton}" Padding="0" Click="OnMinimize" ToolTip="최소화" />
+                  Style="{StaticResource QuietButton}" Padding="0" Click="OnMinimize" ToolTip="Minimize" />
           <Button Content="×" Width="30" Height="30" FontSize="20"
-                  Style="{StaticResource QuietButton}" Padding="0" Click="OnHide" ToolTip="닫기" />
+                  Style="{StaticResource QuietButton}" Padding="0" Click="OnHide" ToolTip="Close" />
         </StackPanel>
 
         <Button Grid.Row="1" Grid.Column="0" HorizontalAlignment="Left"
                 Command="{Binding MobileConnectCommand}" Margin="0,9,8,0" Padding="7,3"
-                  Style="{StaticResource QuietButton}" ToolTip="QR로 휴대폰을 연결하거나 현재 연결을 끊습니다">
+                  Style="{StaticResource QuietButton}" ToolTip="Connect a phone by QR code or disconnect the current phone">
           <StackPanel Orientation="Horizontal">
             <Ellipse Width="8" Height="8" Fill="#FF25A65A" Margin="0,0,5,0"
                      Visibility="{Binding IsMobileConnected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
@@ -152,7 +152,7 @@
                         Margin="0,0,5,0" Padding="0" FontSize="16"
                         Background="Transparent" BorderThickness="0"
                         Foreground="#FF45474D" Cursor="Hand" FocusVisualStyle="{x:Null}"
-                        ToolTip="캐릭터 설정">
+                        ToolTip="Character settings">
             <ToggleButton.Template>
               <ControlTemplate TargetType="ToggleButton">
                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -165,7 +165,7 @@
                  StaysOpen="False" AllowsTransparency="True">
             <Border Width="165" Background="White" BorderBrush="#FFD9DDE4" BorderThickness="1" Padding="10">
               <StackPanel>
-                <TextBlock Text="캐릭터 설정" FontSize="12" FontWeight="Bold"
+                <TextBlock Text="Character Settings" FontSize="12" FontWeight="Bold"
                            Foreground="{StaticResource TextBrush}" Margin="2,0,0,8" />
                 <ListBox ItemsSource="{Binding CharacterStore.Options, ElementName=PanelRoot}"
                          DisplayMemberPath="DisplayName" SelectedValuePath="Key"
@@ -177,11 +177,11 @@
           </Popup>
           <Button Content="LOG" Command="{Binding ToggleLearningHistoryCommand}"
                   Height="30" Margin="0,0,5,0" Padding="8,0" FontSize="10"
-                  Style="{StaticResource QuietButton}" ToolTip="O/X/끝 기록을 확인하고 수정·저장합니다"
+                  Style="{StaticResource QuietButton}" ToolTip="Review, edit, and save O/X/Done records"
                   Visibility="{Binding IsDeveloperMode, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <Button Content="{Binding DeveloperModeText}" Command="{Binding ToggleDeveloperModeCommand}"
                   Height="30" Padding="8,0" FontSize="10"
-                  Style="{StaticResource QuietButton}" ToolTip="GPT 답변 평가와 라벨링을 켜거나 끕니다" />
+                  Style="{StaticResource QuietButton}" ToolTip="Turn GPT answer evaluation and labeling on or off" />
         </StackPanel>
       </Grid>
 
@@ -192,7 +192,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <TextBlock Text="{Binding CurrentApplication, StringFormat=현재 앱 · {0}}"
+          <TextBlock Text="{Binding CurrentApplication, StringFormat=Current app · {0}}"
                      Foreground="{StaticResource TextBrush}" FontSize="12" FontWeight="SemiBold"
                      TextTrimming="CharacterEllipsis" />
           <TextBlock Grid.Row="1" Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}"
@@ -225,15 +225,15 @@
                     <StackPanel Visibility="{Binding DataContext.IsDeveloperMode, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel Orientation="Horizontal"
                                 Visibility="{Binding CanEvaluate, Converter={StaticResource BooleanToVisibilityConverter}}">
-                      <Button Content="O 정답" Margin="0,0,5,0" Padding="8,4" FontSize="10"
+                      <Button Content="O Correct" Margin="0,0,5,0" Padding="8,4" FontSize="10"
                               Style="{StaticResource QuietButton}"
                               Command="{Binding DataContext.MarkAnswerCorrectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                               CommandParameter="{Binding}" />
-                        <Button Content="X 수정" Margin="0,0,5,0" Padding="8,4" FontSize="10"
+                        <Button Content="X Correct" Margin="0,0,5,0" Padding="8,4" FontSize="10"
                                 Style="{StaticResource QuietButton}"
                                 Command="{Binding DataContext.MarkAnswerIncorrectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" />
-                        <Button Content="끝" Padding="8,4" FontSize="10"
+                        <Button Content="Done" Padding="8,4" FontSize="10"
                                 Style="{StaticResource QuietButton}"
                                 Command="{Binding DataContext.MarkAnswerCompletedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" />
@@ -253,7 +253,7 @@
                   </DataTrigger>
                   <DataTrigger Binding="{Binding IsPending}" Value="True">
                     <Setter TargetName="Bubble" Property="Opacity" Value="0.7" />
-                    <Setter TargetName="BubbleText" Property="Text" Value="답변을 준비하고 있어요 · · ·" />
+                    <Setter TargetName="BubbleText" Property="Text" Value="Preparing an answer · · ·" />
                   </DataTrigger>
                 </DataTemplate.Triggers>
               </DataTemplate>
@@ -288,10 +288,10 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <TextBlock Text="DEVELOPER LOG" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
-              <TextBlock Text="어느 질문·답안에서 무엇을 눌렀는지 확인하고 수정 저장할 수 있습니다."
+              <TextBlock Text="Review what was selected for each question and answer, then edit or save it."
                          FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,3,8,8" />
             </StackPanel>
-            <Button Grid.Column="1" Content="닫기" Command="{Binding ToggleLearningHistoryCommand}"
+            <Button Grid.Column="1" Content="Close" Command="{Binding ToggleLearningHistoryCommand}"
                     Style="{StaticResource QuietButton}" Padding="8,4" VerticalAlignment="Top" />
           </Grid>
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -314,17 +314,17 @@
                         <TextBlock Grid.Column="1" Text="{Binding TimeText}" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="8,2" />
                         <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="10" FontWeight="SemiBold" />
                       </Grid>
-                      <TextBlock Text="질문" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,7,0,2" />
+                      <TextBlock Text="Question" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,7,0,2" />
                       <TextBox Text="{Binding Goal, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                TextWrapping="Wrap" AcceptsReturn="True" MinHeight="34" Padding="5" FontSize="10" />
-                      <TextBlock Text="답안" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
+                      <TextBlock Text="Answer" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
                       <TextBox Text="{Binding Answer, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                TextWrapping="Wrap" AcceptsReturn="True" MinHeight="48" MaxHeight="90"
                                VerticalScrollBarVisibility="Auto" Padding="5" FontSize="10" />
-                      <TextBlock Text="표시/클릭 대상" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
+                      <TextBlock Text="Highlighted/clicked target" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
                       <TextBox Text="{Binding TargetLabel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                Padding="5" FontSize="10" />
-                      <TextBlock Text="개발자 코멘트" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
+                      <TextBlock Text="Developer comment" FontSize="9" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,2" />
                       <TextBox Text="{Binding Comment, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                TextWrapping="Wrap" AcceptsReturn="True" MinHeight="38" Padding="5" FontSize="10" />
                       <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
@@ -354,8 +354,8 @@
                    FontSize="14" Foreground="{StaticResource TextBrush}"
                    BorderBrush="#FFCfd2d7" BorderThickness="1"
                    PreviewKeyDown="OnGoalInputPreviewKeyDown"
-                   ToolTip="하고 싶은 일을 입력하세요" />
-          <Button Content="보내기" Command="{Binding SubmitCommand}"
+                   ToolTip="Enter what you want to do" />
+          <Button Content="Send" Command="{Binding SubmitCommand}"
                   Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                   MinWidth="58" Height="32" Margin="0,0,7,7" Padding="9,5"
                   Background="{DynamicResource AccentBrush}" BorderBrush="{DynamicResource AccentBrush}"
@@ -368,19 +368,19 @@
               Visibility="{Binding IsPositiveConfirmationVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel>
-            <TextBlock Text="✓ 이 안내가 정확합니까?" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
-            <TextBlock Text="사용자 질문" FontSize="11" FontWeight="SemiBold" Margin="0,9,0,3" />
+            <TextBlock Text="✓ Is this guidance correct?" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextBrush}" />
+            <TextBlock Text="User question" FontSize="11" FontWeight="SemiBold" Margin="0,9,0,3" />
             <TextBox Text="{Binding PositiveQuestion, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
-            <TextBlock Text="현재 상황" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
+            <TextBlock Text="Current context" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
             <TextBox Text="{Binding PositiveSituation, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
-            <TextBlock Text="안내 대상" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
+            <TextBlock Text="Guidance target" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
             <TextBox Text="{Binding PositiveTarget, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
-            <TextBlock Text="선택 코멘트" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
+            <TextBlock Text="Optional comment" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,3" />
             <TextBox Text="{Binding PositiveCommentText, UpdateSourceTrigger=PropertyChanged}" MinHeight="42"
                      TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-              <Button Content="취소" Command="{Binding CancelPositiveAnswerCommand}" Style="{StaticResource QuietButton}" Margin="0,0,7,0" />
-              <Button Content="확인" Command="{Binding ConfirmPositiveAnswerCommand}" Style="{StaticResource QuietButton}" />
+              <Button Content="Cancel" Command="{Binding CancelPositiveAnswerCommand}" Style="{StaticResource QuietButton}" Margin="0,0,7,0" />
+              <Button Content="Confirm" Command="{Binding ConfirmPositiveAnswerCommand}" Style="{StaticResource QuietButton}" />
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
@@ -392,57 +392,57 @@
               Visibility="{Binding IsCorrectionEditorVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel>
-          <TextBlock Text="개발자 교정 모드" FontSize="13" FontWeight="Bold"
+          <TextBlock Text="Developer Correction Mode" FontSize="13" FontWeight="Bold"
                      Foreground="{StaticResource TextBrush}" />
-          <TextBlock Text="X로 선택한 답변을 수정합니다. 질문의 정확한 뜻이 다르면 아래에 적어 주세요."
+          <TextBlock Text="Correct the answer marked X. If the intended meaning differs, enter it below."
                      TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
                      Margin="0,4,0,7" />
-          <TextBlock Text="{Binding CorrectionDataDirectory, StringFormat=이 PC의 학습 저장 위치 · {0}}"
+          <TextBlock Text="{Binding CorrectionDataDirectory, StringFormat=Training data on this PC · {0}}"
                      TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource MutedBrush}"
-                     Margin="0,0,0,7" ToolTip="EXE에서도 이 폴더에 저장되며 즉시 현재 실행에 반영됩니다" />
-          <TextBlock Text="사용자 질문" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,4,0,3" />
+                     Margin="0,0,0,7" ToolTip="The EXE saves here and applies changes immediately" />
+          <TextBlock Text="User question" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,4,0,3" />
           <TextBox Text="{Binding CorrectionQuestion, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
-          <TextBlock Text="현재 상황" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <TextBlock Text="Current context" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
           <TextBox Text="{Binding CorrectionCurrentSituation, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
-          <TextBlock Text="잘못 가리킨 대상" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <TextBlock Text="Incorrect target" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
           <TextBox Text="{Binding CorrectionWrongTarget, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Padding="8,6" />
-          <TextBlock Text="왜 틀렸나요?" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <TextBlock Text="What was wrong?" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
           <ComboBox ItemsSource="{Binding CorrectionErrorReasons}" DisplayMemberPath="Label" SelectedValuePath="Value"
                     SelectedValue="{Binding CorrectionErrorReason}" Padding="7,5" />
-          <TextBlock Text="올바른 다음 단계 *" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
+          <TextBlock Text="Correct next step *" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,3" />
           <TextBox Text="{Binding CorrectionIntentText, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
-                   ToolTip="예: Bluetooth 및 장치로 이동" />
-          <TextBlock Text="개발자 코멘트" FontSize="11" FontWeight="SemiBold"
+                   ToolTip="Example: Open Bluetooth &amp; devices" />
+          <TextBlock Text="Developer comment" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextBrush}" Margin="0,8,0,4" />
           <TextBox Text="{Binding CorrectionCommentText, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="46" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,6"
-                   ToolTip="무엇이 틀렸고 어떻게 고쳐야 하는지 자유롭게 적으세요" />
+                   ToolTip="Describe what was wrong and how it should be corrected" />
           <StackPanel Visibility="Collapsed">
-          <TextBlock Text="GPT 피드백 라벨" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="GPT feedback labels" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextBrush}" Margin="0,10,0,4" />
-          <TextBlock Text="점(.)으로 계층을 구분합니다. 빈칸은 현재 질문과 화면에서 자동 생성합니다."
+          <TextBlock Text="Use dots (.) for hierarchy. Blank values are generated from the current question and screen."
                      TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,6" />
           <TextBox Text="{Binding CorrectionTaskId, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
-                   ToolTip="작업 ID 예: windows.printer.add" />
+                   ToolTip="Task ID example: windows.printer.add" />
           <TextBox Text="{Binding CorrectionStateId, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
-                   ToolTip="현재 상태 예: windows.settings.home" />
+                   ToolTip="Current state example: windows.settings.home" />
           <TextBox Text="{Binding CorrectionTargetConcept, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
-                   ToolTip="정답 대상 예: windows.settings.printers_scanners" />
+                   ToolTip="Correct target example: windows.settings.printers_scanners" />
           <TextBox Text="{Binding CorrectionExpectedNextState, UpdateSourceTrigger=PropertyChanged}" Padding="8,5" Margin="0,0,0,5"
-                   ToolTip="예상 다음 상태 예: windows.settings.printers_scanners" />
+                   ToolTip="Expected next state example: windows.settings.printers_scanners" />
           <TextBox Text="{Binding CorrectionExpectedEvidence, UpdateSourceTrigger=PropertyChanged}"
                    MinHeight="38" TextWrapping="Wrap" AcceptsReturn="True" Padding="8,5" Margin="0,0,0,5"
-                   ToolTip="성공 증거를 쉼표 또는 줄바꿈으로 입력" />
+                   ToolTip="Enter success evidence separated by commas or new lines" />
           <ComboBox ItemsSource="{Binding CorrectionOutcomeLabels}" SelectedItem="{Binding CorrectionOutcomeLabel}"
-                    Padding="7,5" ToolTip="오답 원인 또는 학습 결과 라벨" />
+                    Padding="7,5" ToolTip="Error reason or learning outcome label" />
           </StackPanel>
           <TextBlock Text="{Binding CorrectionSelectionSummary}" TextWrapping="Wrap"
                      FontSize="10" Foreground="#FF7A5A16" Margin="0,7,0,0" />
           <CheckBox IsChecked="{Binding SaveCorrectionScreenshot}" Margin="0,8,0,7" Visibility="Collapsed"
                     FontSize="11" Foreground="{StaticResource TextBrush}"
-                    Content="학습용 전체 화면을 로컬에 저장" />
-          <TextBlock Text="드래그는 미리보기일 뿐 저장되지 않습니다. 확인 후 저장을 누르세요."
+                    Content="Save the full screen locally for training" />
+          <TextBlock Text="Dragging only creates a preview. Review it, then select Save."
                      FontSize="10" Foreground="#FF9B5D12" Margin="0,0,0,8" />
           <Grid>
             <Grid.ColumnDefinitions>
@@ -452,11 +452,11 @@
               <ColumnDefinition Width="6" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Button Content="정답 영역 선택" Command="{Binding CaptureCorrectionCommand}"
+            <Button Content="Select correct area" Command="{Binding CaptureCorrectionCommand}"
                     Style="{StaticResource QuietButton}" FontSize="11" />
-            <Button Grid.Column="2" Content="저장" Command="{Binding SaveCorrectionCommand}"
+            <Button Grid.Column="2" Content="Save" Command="{Binding SaveCorrectionCommand}"
                     Style="{StaticResource QuietButton}" FontSize="11" />
-            <Button Grid.Column="4" Content="취소" Command="{Binding CancelCorrectionEditCommand}"
+            <Button Grid.Column="4" Content="Cancel" Command="{Binding CancelCorrectionEditCommand}"
                     Style="{StaticResource QuietButton}" FontSize="11" />
           </Grid>
         </StackPanel>
@@ -474,12 +474,12 @@
             <ColumnDefinition Width="8" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
-          <Button Content="다시 찾기" Command="{Binding RecoveryCommand}"
+          <Button Content="Find another" Command="{Binding RecoveryCommand}"
                   Style="{StaticResource BottomActionButton}" />
-          <Button Grid.Column="2" Content="작업 취소" Command="{Binding CancelCommand}"
+          <Button Grid.Column="2" Content="Cancel task" Command="{Binding CancelCommand}"
                   Style="{StaticResource BottomActionButton}" />
         </Grid>
-        <TextBlock Grid.Row="1" Text="표시된 버튼은 사용자가 직접 눌러야 합니다."
+        <TextBlock Grid.Row="1" Text="You must select the highlighted button yourself."
                    Foreground="#FF84878E" FontSize="10" TextAlignment="Center" Margin="0,9,0,0" />
       </Grid>
     </Grid>

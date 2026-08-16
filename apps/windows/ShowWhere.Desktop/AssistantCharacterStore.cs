@@ -21,9 +21,9 @@ public sealed class AssistantCharacterStore : INotifyPropertyChanged
 
     public IReadOnlyList<AssistantCharacterOption> Options { get; } =
     [
-        new("monkey", "원숭이"),
-        new("robot", "로봇"),
-        new("duck", "오리"),
+        new("monkey", "Monkey"),
+        new("robot", "Robot"),
+        new("duck", "Duck"),
     ];
 
     public string SelectedCharacterKey
