@@ -30,7 +30,8 @@ public sealed class GuidanceViewModelTests : IDisposable
             new RecordingOverlay(),
             new NoSelectionService(),
             new JsonlDeveloperCorrectionStore(_directory),
-            () => { });
+            () => { },
+            delayAsync: (_, _) => Task.CompletedTask);
 
         viewModel.GoalText = "이 화면에서 도와줘";
         await SubmitAsync(viewModel);
@@ -102,6 +103,7 @@ public sealed class GuidanceViewModelTests : IDisposable
     public async Task Bluu_Deli_demo_keeps_the_conversation_state_and_never_calls_the_AI()
     {
         var observation = CreateObservation("bluu-deli-demo");
+        var demoDelays = new List<TimeSpan>();
         var api = new CountingGuideApiClient(new GuideDecision(
             GuideStatuses.NeedsClarification, GuideActions.AskUser, "AI should not be called", 0.1));
         var viewModel = new GuidanceViewModel(
@@ -112,15 +114,20 @@ public sealed class GuidanceViewModelTests : IDisposable
             new RecordingOverlay(),
             new NoSelectionService(),
             new JsonlDeveloperCorrectionStore(_directory),
-            () => { });
+            () => { },
+            delayAsync: (delay, _) =>
+            {
+                demoDelays.Add(delay);
+                return Task.CompletedTask;
+            });
 
         viewModel.GoalText = "where can I order latte and bacon cheese omlete";
         await SubmitAsync(viewModel);
-        Assert.Contains("add anything to the latte", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("modifiers for your latte", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
 
         viewModel.GoalText = "ice";
         await SubmitAsync(viewModel);
-        Assert.Contains("add anything to the bacon", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("modifiers for your bacon", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
 
         viewModel.GoalText = "no thanks";
         await SubmitAsync(viewModel);
@@ -131,6 +138,8 @@ public sealed class GuidanceViewModelTests : IDisposable
         Assert.Equal("Task complete", viewModel.StatusText);
         Assert.Contains("Guidance is complete", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, api.CallCount);
+        Assert.NotEmpty(demoDelays);
+        Assert.All(demoDelays, delay => Assert.Equal(TimeSpan.FromMilliseconds(1500), delay));
     }
 
     [Fact]
@@ -277,14 +286,14 @@ public sealed class GuidanceViewModelTests : IDisposable
     private sealed class NoChangeMonitor : IWindowsChangeMonitor
     {
         public Task<WindowsObservation?> WaitForTargetInteractionAsync(
-            UiBounds targetBounds, string? goal, TimeSpan maximumWait, CancellationToken cancellationToken) =>
+            UiBounds targetBounds, string? goal, string? baselineSnapshotHash, TimeSpan maximumWait, CancellationToken cancellationToken) =>
             Task.FromResult<WindowsObservation?>(null);
     }
 
     private sealed class AlwaysChangeMonitor(WindowsObservation observation) : IWindowsChangeMonitor
     {
         public Task<WindowsObservation?> WaitForTargetInteractionAsync(
-            UiBounds targetBounds, string? goal, TimeSpan maximumWait, CancellationToken cancellationToken) =>
+            UiBounds targetBounds, string? goal, string? baselineSnapshotHash, TimeSpan maximumWait, CancellationToken cancellationToken) =>
             Task.FromResult<WindowsObservation?>(observation);
     }
 

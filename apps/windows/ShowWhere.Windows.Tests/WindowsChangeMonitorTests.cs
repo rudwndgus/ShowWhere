@@ -19,4 +19,16 @@ public sealed class WindowsChangeMonitorTests
 
         Assert.Equal(expected, actual);
     }
+
+    [Theory]
+    [InlineData("menu", "latte-detail", true)]
+    [InlineData("menu", "menu", false)]
+    [InlineData("", "latte-detail", false)]
+    public void Screen_transition_is_detected_even_when_the_mouse_click_event_was_missed(
+        string baseline,
+        string current,
+        bool expected)
+    {
+        Assert.Equal(expected, WindowsChangeMonitor.HasMeaningfulScreenChange(baseline, current));
+    }
 }

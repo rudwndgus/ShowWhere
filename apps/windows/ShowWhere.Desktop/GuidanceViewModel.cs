@@ -35,6 +35,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private readonly IDeveloperCorrectionStore _correctionStore;
     private readonly Action _exit;
     private readonly MobileRemoteCoordinator? _mobileRemote;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private CancellationTokenSource? _taskCancellation;
     private TaskSession? _session;
     private string _goalText = string.Empty;
@@ -86,7 +87,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ICorrectionSelectionService correctionSelection,
         IDeveloperCorrectionStore correctionStore,
         Action exit,
-        MobileRemoteCoordinator? mobileRemote = null)
+        MobileRemoteCoordinator? mobileRemote = null,
+        Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
     {
         _observer = observer;
         _changeMonitor = changeMonitor;
@@ -97,6 +99,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _correctionStore = correctionStore;
         _exit = exit;
         _mobileRemote = mobileRemote;
+        _delayAsync = delayAsync ?? Task.Delay;
         SubmitCommand = new AsyncRelayCommand(SubmitAsync, CanSubmit);
         SelectClarificationCommand = new AsyncParameterRelayCommand(SelectClarificationAsync);
         RecoveryCommand = new AsyncRelayCommand(
@@ -706,6 +709,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     StatusText = $"GPT is analyzing the screen and {prioritizedCandidates.Count} candidates";
                     (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
                 }
+                if (_bluuDeliDemoFlow.IsActive)
+                {
+                    StatusText = "Preparing the next kiosk step";
+                    await _delayAsync(TimeSpan.FromMilliseconds(1500), cancellationToken);
+                }
                 _lastObservation = currentObservation;
                 _lastDecision = decision;
                 DesktopDiagnostics.WriteEvent(
@@ -863,6 +871,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     var changed = await _changeMonitor.WaitForTargetInteractionAsync(
                         bounds,
                         _session.OriginalUserMessage,
+                        currentObservation.SnapshotHash,
                         TimeSpan.FromSeconds(60),
                         cancellationToken);
                     if (changed is null)

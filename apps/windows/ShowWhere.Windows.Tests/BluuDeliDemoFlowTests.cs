@@ -35,6 +35,23 @@ public sealed class BluuDeliDemoFlowTests
     }
 
     [Fact]
+    public void Uses_polite_contextual_English_instead_of_terse_tap_commands()
+    {
+        var flow = new BluuDeliDemoFlow();
+        Assert.True(flow.TryStart("where can I order latte and bacon cheese omlete"));
+        Assert.Equal("To order a latte, please click here on LATTE.", flow.Resolve([]).Message);
+
+        flow.TargetInteracted();
+        flow.TryAcceptReply("no thanks");
+        flow.TargetInteracted();
+        var breakfast = flow.Resolve([]);
+
+        Assert.Contains("omelette is in the Breakfast menu", breakfast.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("please click BREAKFAST", breakfast.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(breakfast.Message.StartsWith("Tap ", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Runs_the_complete_iced_latte_and_plain_omelette_demo_sequence()
     {
         var flow = new BluuDeliDemoFlow();

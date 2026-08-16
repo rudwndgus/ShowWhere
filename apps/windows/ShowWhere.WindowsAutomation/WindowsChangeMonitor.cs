@@ -8,6 +8,7 @@ public interface IWindowsChangeMonitor
     Task<WindowsObservation?> WaitForTargetInteractionAsync(
         UiBounds targetBounds,
         string? goal,
+        string? baselineSnapshotHash,
         TimeSpan maximumWait,
         CancellationToken cancellationToken);
 }
@@ -21,6 +22,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
     public async Task<WindowsObservation?> WaitForTargetInteractionAsync(
         UiBounds targetBounds,
         string? goal,
+        string? baselineSnapshotHash,
         TimeSpan maximumWait,
         CancellationToken cancellationToken)
     {
@@ -31,6 +33,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         {
             _ = GetAsyncKeyState(VirtualKeyLeftButton);
             var wasPressed = false;
+            var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(180);
 
             while (!timeout.IsCancellationRequested)
             {
@@ -43,6 +46,23 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
                     return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
+                }
+
+                if (!string.IsNullOrWhiteSpace(baselineSnapshotHash)
+                    && DateTimeOffset.UtcNow >= nextScreenCheck)
+                {
+                    nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(220);
+                    try
+                    {
+                        var observation = await _observer.ObserveAsync(goal, timeout.Token).ConfigureAwait(false);
+                        if (HasMeaningfulScreenChange(baselineSnapshotHash, observation.SnapshotHash))
+                            return observation;
+                    }
+                    catch (WindowsObservationException)
+                    {
+                        // The kiosk can briefly remove its accessibility tree while navigating.
+                        // Keep polling until the new screen becomes observable.
+                    }
                 }
 
                 await Task.Delay(TimeSpan.FromMilliseconds(35), timeout.Token).ConfigureAwait(false);
@@ -79,6 +99,11 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
     internal static bool Contains(UiBounds bounds, NativePoint point) =>
         point.X >= bounds.X && point.X <= bounds.X + bounds.Width
         && point.Y >= bounds.Y && point.Y <= bounds.Y + bounds.Height;
+
+    internal static bool HasMeaningfulScreenChange(string? baselineSnapshotHash, string? currentSnapshotHash) =>
+        !string.IsNullOrWhiteSpace(baselineSnapshotHash)
+        && !string.IsNullOrWhiteSpace(currentSnapshotHash)
+        && !string.Equals(baselineSnapshotHash, currentSnapshotHash, StringComparison.Ordinal);
 
     internal const int VirtualKeyLeftButton = 0x01;
     private const int KeyPressedMask = 0x8000;
