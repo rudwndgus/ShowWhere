@@ -144,6 +144,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public event Action<UiBounds>? TargetHighlighted;
     public event Action? CorrectionSelectionStarted;
     public event Action? CorrectionSelectionCompleted;
+    public event Action? RemoteResponseRequested;
     public ICommand SubmitCommand { get; }
     public ICommand SelectClarificationCommand { get; }
     public ICommand RecoveryCommand { get; }
@@ -374,6 +375,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public async Task SubmitRemoteAsync(string query, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query)) return;
+        RemoteResponseRequested?.Invoke();
         while (IsLoading) await Task.Delay(100, cancellationToken);
         if (IsPaused)
         {

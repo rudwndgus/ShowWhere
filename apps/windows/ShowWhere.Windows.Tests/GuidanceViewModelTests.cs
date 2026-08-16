@@ -100,6 +100,27 @@ public sealed class GuidanceViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Mobile_submission_notifies_the_desktop_shell_to_switch_to_the_speech_bubble()
+    {
+        var viewModel = new GuidanceViewModel(
+            new FixedObserver(CreateObservation("remote-bubble")),
+            new NoChangeMonitor(),
+            new CountingScreenCapture(),
+            new CountingGuideApiClient(new GuideDecision(
+                GuideStatuses.NeedsClarification, GuideActions.AskUser, "Remote reply", 0.8)),
+            new RecordingOverlay(),
+            new NoSelectionService(),
+            new JsonlDeveloperCorrectionStore(_directory),
+            () => { });
+        var responseRequested = 0;
+        viewModel.RemoteResponseRequested += () => responseRequested++;
+
+        await viewModel.SubmitRemoteAsync("remote request");
+
+        Assert.Equal(1, responseRequested);
+    }
+
+    [Fact]
     public async Task Bluu_Deli_demo_keeps_the_conversation_state_and_never_calls_the_AI()
     {
         var observation = CreateObservation("bluu-deli-demo");

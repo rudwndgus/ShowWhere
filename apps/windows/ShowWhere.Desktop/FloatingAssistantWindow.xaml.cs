@@ -163,7 +163,11 @@ public partial class FloatingAssistantWindow : Window
     protected override void OnClosed(EventArgs eventArgs)
     {
         _panel.ResponseRequested -= OnResponseRequested;
-        if (_viewModel is not null) _viewModel.Messages.CollectionChanged -= OnMessagesChanged;
+        if (_viewModel is not null)
+        {
+            _viewModel.Messages.CollectionChanged -= OnMessagesChanged;
+            _viewModel.RemoteResponseRequested -= OnResponseRequested;
+        }
         ObserveMessage(null);
         _windowSource?.RemoveHook(WindowMessageHook);
         _windowSource = null;
@@ -198,10 +202,18 @@ public partial class FloatingAssistantWindow : Window
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs eventArgs)
     {
-        if (_viewModel is not null) _viewModel.Messages.CollectionChanged -= OnMessagesChanged;
+        if (_viewModel is not null)
+        {
+            _viewModel.Messages.CollectionChanged -= OnMessagesChanged;
+            _viewModel.RemoteResponseRequested -= OnResponseRequested;
+        }
         ObserveMessage(null);
         _viewModel = eventArgs.NewValue as GuidanceViewModel;
-        if (_viewModel is not null) _viewModel.Messages.CollectionChanged += OnMessagesChanged;
+        if (_viewModel is not null)
+        {
+            _viewModel.Messages.CollectionChanged += OnMessagesChanged;
+            _viewModel.RemoteResponseRequested += OnResponseRequested;
+        }
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs eventArgs)
