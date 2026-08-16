@@ -45,6 +45,8 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     private NativeWindowPlacement? _lastPlacement;
     private UiBounds? _activeTarget;
     private int _activationPending;
+    private Point? _pendingMouseActivation;
+    private Point? _pendingTouchActivation;
 
     public HighlightOverlayWindow(TargetActivationSignal? targetActivationSignal = null)
     {
@@ -90,7 +92,9 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         };
         _visibilityTimer.Tick += (_, _) => ReassertNativeTopmost();
         PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
+        PreviewMouseLeftButtonUp += OnPreviewMouseLeftButtonUp;
         PreviewTouchDown += OnPreviewTouchDown;
+        PreviewTouchUp += OnPreviewTouchUp;
         Closed += (_, _) => _visibilityTimer.Stop();
     }
 
@@ -113,6 +117,8 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     {
         _activeTarget = target;
         Interlocked.Exchange(ref _activationPending, 0);
+        _pendingMouseActivation = null;
+        _pendingTouchActivation = null;
         var monitorArea = MonitorUtilities.GetMonitorArea(target);
         if (OverlayPlacementCalculator.IsOutside(target, monitorArea))
         {
@@ -188,6 +194,8 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         _visibilityTimer.Stop();
         _lastPlacement = null;
         _activeTarget = null;
+        _pendingMouseActivation = null;
+        _pendingTouchActivation = null;
         if (IsVisible) Hide();
         _message.Text = string.Empty;
     }
@@ -211,35 +219,63 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
 
     private void OnPreviewMouseLeftButtonDown(object? sender, MouseButtonEventArgs eventArgs)
     {
+        if (_pendingTouchActivation is not null) return;
         var point = PointToScreen(eventArgs.GetPosition(this));
-        if (ActivateTarget(point.X, point.Y)) eventArgs.Handled = true;
+        if (!ReserveTarget(point.X, point.Y)) return;
+        _pendingMouseActivation = point;
+        _ = Mouse.Capture(this, CaptureMode.Element);
+        eventArgs.Handled = true;
+    }
+
+    private void OnPreviewMouseLeftButtonUp(object? sender, MouseButtonEventArgs eventArgs)
+    {
+        if (_pendingMouseActivation is not { } point) return;
+        _pendingMouseActivation = null;
+        if (Mouse.Captured == this) Mouse.Capture(null);
+        CompleteTargetActivation(point.X, point.Y);
+        eventArgs.Handled = true;
     }
 
     private void OnPreviewTouchDown(object? sender, TouchEventArgs eventArgs)
     {
         var point = PointToScreen(eventArgs.GetTouchPoint(this).Position);
-        if (ActivateTarget(point.X, point.Y)) eventArgs.Handled = true;
+        if (!ReserveTarget(point.X, point.Y)) return;
+        _pendingTouchActivation = point;
+        _ = eventArgs.TouchDevice.Capture(this, CaptureMode.Element);
+        eventArgs.Handled = true;
     }
 
-    private bool ActivateTarget(double x, double y)
+    private void OnPreviewTouchUp(object? sender, TouchEventArgs eventArgs)
     {
-        if (_targetActivationSignal is null || !IsInsideActiveTarget(x, y)
-            || Interlocked.Exchange(ref _activationPending, 1) != 0) return false;
+        if (_pendingTouchActivation is not { } point) return;
+        _pendingTouchActivation = null;
+        eventArgs.TouchDevice.Capture(null);
+        CompleteTargetActivation(point.X, point.Y);
+        eventArgs.Handled = true;
+    }
 
-        _targetActivationSignal.Record(x, y);
+    private bool ReserveTarget(double x, double y)
+    {
+        if (_targetActivationSignal is null || !IsInsideActiveTarget(x, y)) return false;
+        return Interlocked.Exchange(ref _activationPending, 1) == 0;
+    }
+
+    private void CompleteTargetActivation(double x, double y)
+    {
+        _targetActivationSignal?.Record(x, y);
         Clear();
-        _ = Dispatcher.BeginInvoke(
-            () => ForwardActivationToKiosk(x, y),
-            DispatcherPriority.Input);
-        return true;
+        ForwardActivationToKioskAfterRelease(x, y);
     }
 
     private bool IsInsideActiveTarget(double x, double y) => _activeTarget is { } target
         && x >= target.X && x <= target.X + target.Width
         && y >= target.Y && y <= target.Y + target.Height;
 
-    private static void ForwardActivationToKiosk(double x, double y)
+    private async void ForwardActivationToKioskAfterRelease(double x, double y)
     {
+        // Let Windows finish the physical touch/mouse release and remove this
+        // HWND from hit testing before delivering the one relayed activation.
+        await Task.Delay(TimeSpan.FromMilliseconds(80));
         _ = SetCursorPos((int)Math.Round(x), (int)Math.Round(y));
         mouse_event(MouseEventLeftDown, 0, 0, 0, UIntPtr.Zero);
         mouse_event(MouseEventLeftUp, 0, 0, 0, UIntPtr.Zero);
