@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ShowWhere.Core;
@@ -21,6 +22,11 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     private const int WsExTransparent = 0x00000020;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
+    private const int WmNcHitTest = 0x0084;
+    private const int HitTestClient = 1;
+    private const int HitTestTransparent = -1;
+    private const uint MouseEventLeftDown = 0x0002;
+    private const uint MouseEventLeftUp = 0x0004;
     private const uint MonitorDefaultToNearest = 2;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
@@ -35,10 +41,14 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     private readonly Border _tooltip;
     private readonly TextBlock _message;
     private readonly DispatcherTimer _visibilityTimer;
+    private readonly TargetActivationSignal? _targetActivationSignal;
     private NativeWindowPlacement? _lastPlacement;
+    private UiBounds? _activeTarget;
+    private int _activationPending;
 
-    public HighlightOverlayWindow()
+    public HighlightOverlayWindow(TargetActivationSignal? targetActivationSignal = null)
     {
+        _targetActivationSignal = targetActivationSignal;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         WindowStyle = WindowStyle.None;
@@ -79,6 +89,8 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
             Interval = TimeSpan.FromMilliseconds(75),
         };
         _visibilityTimer.Tick += (_, _) => ReassertNativeTopmost();
+        PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
+        PreviewTouchDown += OnPreviewTouchDown;
         Closed += (_, _) => _visibilityTimer.Stop();
     }
 
@@ -87,11 +99,20 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         base.OnSourceInitialized(eventArgs);
         var handle = new WindowInteropHelper(this).Handle;
         var style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
-        _ = SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExTransparent | WsExToolWindow | WsExNoActivate));
+        var clickThroughStyle = _targetActivationSignal is null ? WsExTransparent : 0;
+        var combinedStyle = (style & ~(long)WsExTransparent)
+            | (long)clickThroughStyle | WsExToolWindow | WsExNoActivate;
+        _ = SetWindowLongPtr(
+            handle,
+            GwlExStyle,
+            new IntPtr(combinedStyle));
+        if (HwndSource.FromHwnd(handle) is { } source) source.AddHook(WindowProcedure);
     }
 
     public void ShowTarget(UiBounds target, string message)
     {
+        _activeTarget = target;
+        Interlocked.Exchange(ref _activationPending, 0);
         var monitorArea = MonitorUtilities.GetMonitorArea(target);
         if (OverlayPlacementCalculator.IsOutside(target, monitorArea))
         {
@@ -128,6 +149,7 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
 
     public void ShowScrollHint(UiBounds target, string message)
     {
+        _activeTarget = null;
         var workingArea = MonitorUtilities.GetWorkingArea(target);
         var monitorArea = MonitorUtilities.GetMonitorArea(target);
         var down = target.Y + target.Height / 2 >= monitorArea.Y + monitorArea.Height / 2;
@@ -165,8 +187,62 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     {
         _visibilityTimer.Stop();
         _lastPlacement = null;
+        _activeTarget = null;
         if (IsVisible) Hide();
         _message.Text = string.Empty;
+    }
+
+    private IntPtr WindowProcedure(
+        IntPtr windowHandle,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (message != WmNcHitTest || _targetActivationSignal is null) return IntPtr.Zero;
+        var packed = lParam.ToInt64();
+        var x = unchecked((short)(packed & 0xffff));
+        var y = unchecked((short)((packed >> 16) & 0xffff));
+        handled = true;
+        return IsInsideActiveTarget(x, y)
+            ? new IntPtr(HitTestClient)
+            : new IntPtr(HitTestTransparent);
+    }
+
+    private void OnPreviewMouseLeftButtonDown(object? sender, MouseButtonEventArgs eventArgs)
+    {
+        var point = PointToScreen(eventArgs.GetPosition(this));
+        if (ActivateTarget(point.X, point.Y)) eventArgs.Handled = true;
+    }
+
+    private void OnPreviewTouchDown(object? sender, TouchEventArgs eventArgs)
+    {
+        var point = PointToScreen(eventArgs.GetTouchPoint(this).Position);
+        if (ActivateTarget(point.X, point.Y)) eventArgs.Handled = true;
+    }
+
+    private bool ActivateTarget(double x, double y)
+    {
+        if (_targetActivationSignal is null || !IsInsideActiveTarget(x, y)
+            || Interlocked.Exchange(ref _activationPending, 1) != 0) return false;
+
+        _targetActivationSignal.Record(x, y);
+        Clear();
+        _ = Dispatcher.BeginInvoke(
+            () => ForwardActivationToKiosk(x, y),
+            DispatcherPriority.Input);
+        return true;
+    }
+
+    private bool IsInsideActiveTarget(double x, double y) => _activeTarget is { } target
+        && x >= target.X && x <= target.X + target.Width
+        && y >= target.Y && y <= target.Y + target.Height;
+
+    private static void ForwardActivationToKiosk(double x, double y)
+    {
+        _ = SetCursorPos((int)Math.Round(x), (int)Math.Round(y));
+        mouse_event(MouseEventLeftDown, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(MouseEventLeftUp, 0, 0, 0, UIntPtr.Zero);
     }
 
     private static void SetElementBounds(FrameworkElement element, PhysicalRectangle rectangle, double scale)
@@ -339,6 +415,18 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(IntPtr windowHandle, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(
+        uint flags,
+        uint deltaX,
+        uint deltaY,
+        uint data,
+        UIntPtr extraInformation);
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.Bool)]

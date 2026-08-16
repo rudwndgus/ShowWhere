@@ -24,13 +24,16 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
     private const uint BiRgb = 0;
     private readonly IWindowsUiObserver _observer;
     private readonly Action<string>? _interactionDiagnostic;
+    private readonly TargetActivationSignal? _targetActivationSignal;
 
     public WindowsChangeMonitor(
         IWindowsUiObserver observer,
-        Action<string>? interactionDiagnostic = null)
+        Action<string>? interactionDiagnostic = null,
+        TargetActivationSignal? targetActivationSignal = null)
     {
         _observer = observer;
         _interactionDiagnostic = interactionDiagnostic;
+        _targetActivationSignal = targetActivationSignal;
     }
 
     public async Task<WindowsObservation?> WaitForTargetInteractionAsync(
@@ -53,7 +56,9 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
             var wasPressed = false;
             var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(160);
             var nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
-            var baselineVisualFingerprint = TryCaptureVisualFingerprint(targetBounds);
+            var baselineVisualFingerprint = requireExplicitTargetClick
+                ? null
+                : TryCaptureVisualFingerprint(targetBounds);
 
             while (!timeout.IsCancellationRequested)
             {
@@ -64,11 +69,13 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 
                 var hookClick = lowLevelClicks.ConsumeClick();
                 var dedicatedClick = dedicatedClickPoller.ConsumeClick();
+                var overlayActivation = _targetActivationSignal?.TryConsumeInside(targetBounds) == true;
                 var polledClick = wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor);
-                if (hookClick || dedicatedClick || polledClick)
+                if (overlayActivation || hookClick || dedicatedClick || polledClick)
                 {
                     _interactionDiagnostic?.Invoke(
-                        hookClick ? "low_level_click_inside_target"
+                        overlayActivation ? "overlay_touch_inside_target"
+                        : hookClick ? "low_level_click_inside_target"
                         : dedicatedClick ? "dedicated_click_inside_target"
                         : "polled_click_inside_target");
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
