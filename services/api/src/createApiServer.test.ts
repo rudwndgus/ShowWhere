@@ -28,7 +28,7 @@ const config: ApiConfig = {
     fastModel: 'gpt-5.6-luna',
     model: 'gpt-5.6-terra',
     strongModel: 'gpt-5.6-sol',
-    sttModel: 'gpt-4o-transcribe',
+    sttModel: 'gpt-transcribe',
     sttTimeoutMs: 25_000,
     baseUrl: 'https://api.openai.com/v1',
     requestTimeoutMs: 30_000,

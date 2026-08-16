@@ -7,9 +7,10 @@ describe('OpenAiSpeechTranscriber', () => {
   it('sends audio as multipart form data and returns verbatim text', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const form = init?.body as FormData;
-      expect(form.get('model')).toBe('gpt-4o-transcribe');
+      expect(form.get('model')).toBe('gpt-transcribe');
       expect(form.get('response_format')).toBe('json');
-      expect(form.get('prompt')).toContain('Transcribe verbatim');
+      expect(form.get('prompt')).toContain('computer guidance request');
+      expect(form.getAll('languages[]')).toEqual(['en', 'ko']);
       expect((form.get('file') as File).name).toBe('showwhere-speech.m4a');
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer server-secret');
       return Response.json({ text: '프린터 연결 상태 확인하고 싶어' });
@@ -17,7 +18,7 @@ describe('OpenAiSpeechTranscriber', () => {
     vi.stubGlobal('fetch', fetchMock);
     const transcriber = new OpenAiSpeechTranscriber({
       apiKey: 'server-secret', baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o-transcribe', requestTimeoutMs: 5_000,
+      model: 'gpt-transcribe', requestTimeoutMs: 5_000,
     });
 
     const result = await transcriber.transcribe(Buffer.alloc(1_024), 'audio/mp4');

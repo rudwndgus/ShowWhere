@@ -15,12 +15,15 @@ const optionalSecretFromEnvironment = (minimum: number) => z.preprocess(
   z.string().trim().min(minimum).optional(),
 );
 
+const sttModelFromEnvironment = z.string().trim().min(1).default('gpt-transcribe')
+  .transform((model) => model === 'gpt-4o-transcribe' ? 'gpt-transcribe' : model);
+
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),
   OPENAI_FAST_MODEL: z.string().trim().min(1).default('gpt-5.6-luna'),
   OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.6-terra'),
   OPENAI_STRONG_MODEL: z.string().trim().min(1).default('gpt-5.6-sol'),
-  OPENAI_STT_MODEL: z.string().trim().min(1).default('gpt-4o-transcribe'),
+  OPENAI_STT_MODEL: sttModelFromEnvironment,
   OPENAI_STT_TIMEOUT_MS: integerFromEnvironment(3_000, 60_000).default(25_000),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   OPENAI_REQUEST_TIMEOUT_MS: integerFromEnvironment(1_000, 120_000).default(30_000),

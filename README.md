@@ -2,6 +2,14 @@
 
 ShowWhere is an AI-powered visual guide that understands what a user wants to do, observes the current Windows or web interface, and shows exactly where to click next.
 
+## Official links
+
+- GitHub: https://github.com/rudwndgus/ShowWhere
+- Latest Windows download: https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe
+- Mobile web (Railway): https://api-production-6901.up.railway.app/mobile/
+
+The mobile web app connects to ShowWhere on the PC through a QR code. Its STT preserves the spoken language: English speech is entered in English, Korean speech is entered in Korean, and mixed speech keeps both languages.
+
 화면을 설명하지 않아도 됩니다. 하고 싶은 일을 말하면 ShowWhere가 현재 화면을 확인하고 **다음에 눌러야 할 정확한 위치를 화면 위에 표시**합니다.
 
 ## Download ShowWhere

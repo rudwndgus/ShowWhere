@@ -51,8 +51,12 @@ export class OpenAiSpeechTranscriber implements SpeechTranscriber {
     form.set('response_format', 'json');
     form.set(
       'prompt',
-      'Transcribe verbatim. Preserve Korean, English, mixed-language speech, product names, and UI labels exactly. Do not summarize or answer.',
+      'A short computer guidance request. Preserve product names and visible UI labels exactly.',
     );
+    if (this.options.model === 'gpt-transcribe') {
+      form.append('languages[]', 'en');
+      form.append('languages[]', 'ko');
+    }
     form.set('file', new Blob([Uint8Array.from(audio)], { type: contentType }), `showwhere-speech.${extensionFor(contentType)}`);
 
     const controller = new AbortController();
