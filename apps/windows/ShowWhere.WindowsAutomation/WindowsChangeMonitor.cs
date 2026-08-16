@@ -15,9 +15,22 @@ public interface IWindowsChangeMonitor
 
 public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 {
+    private const int FingerprintWidth = 24;
+    private const int FingerprintHeight = 24;
+    private const int SrcCopy = 0x00CC0020;
+    private const int CaptureBlt = 0x40000000;
+    private const int DibRgbColors = 0;
+    private const uint BiRgb = 0;
     private readonly IWindowsUiObserver _observer;
+    private readonly Action<string>? _interactionDiagnostic;
 
-    public WindowsChangeMonitor(IWindowsUiObserver observer) => _observer = observer;
+    public WindowsChangeMonitor(
+        IWindowsUiObserver observer,
+        Action<string>? interactionDiagnostic = null)
+    {
+        _observer = observer;
+        _interactionDiagnostic = interactionDiagnostic;
+    }
 
     public async Task<WindowsObservation?> WaitForTargetInteractionAsync(
         UiBounds targetBounds,
@@ -31,9 +44,12 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 
         try
         {
+            _interactionDiagnostic?.Invoke("monitor_started");
             _ = GetAsyncKeyState(VirtualKeyLeftButton);
             var wasPressed = false;
-            var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(180);
+            var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(160);
+            var nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
+            var baselineVisualFingerprint = TryCaptureVisualFingerprint(targetBounds);
 
             while (!timeout.IsCancellationRequested)
             {
@@ -44,19 +60,40 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
 
                 if (wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor))
                 {
+                    _interactionDiagnostic?.Invoke("click_inside_target");
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
                     return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
+                }
+
+                if (baselineVisualFingerprint is not null
+                    && DateTimeOffset.UtcNow >= nextVisualCheck)
+                {
+                    nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
+                    var currentVisualFingerprint = TryCaptureVisualFingerprint(targetBounds);
+                    if (currentVisualFingerprint is not null
+                        && HasMeaningfulVisualChange(baselineVisualFingerprint, currentVisualFingerprint))
+                    {
+                        // Canvas/Electron kiosk screens frequently expose no useful UIA
+                        // structure change. A material pixel change inside the highlighted
+                        // control is sufficient evidence that the requested interaction ran.
+                        _interactionDiagnostic?.Invoke("visual_target_change");
+                        await Task.Delay(TimeSpan.FromMilliseconds(300), timeout.Token).ConfigureAwait(false);
+                        return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(baselineSnapshotHash)
                     && DateTimeOffset.UtcNow >= nextScreenCheck)
                 {
-                    nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(220);
+                    nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(280);
                     try
                     {
                         var observation = await _observer.ObserveAsync(goal, timeout.Token).ConfigureAwait(false);
                         if (HasMeaningfulScreenChange(baselineSnapshotHash, observation.SnapshotHash))
+                        {
+                            _interactionDiagnostic?.Invoke("uia_snapshot_change");
                             return observation;
+                        }
                     }
                     catch (WindowsObservationException)
                     {
@@ -65,11 +102,12 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                     }
                 }
 
-                await Task.Delay(TimeSpan.FromMilliseconds(35), timeout.Token).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMilliseconds(12), timeout.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            _interactionDiagnostic?.Invoke("monitor_timeout");
             return null;
         }
 
@@ -105,6 +143,92 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         && !string.IsNullOrWhiteSpace(currentSnapshotHash)
         && !string.Equals(baselineSnapshotHash, currentSnapshotHash, StringComparison.Ordinal);
 
+    internal static bool HasMeaningfulVisualChange(byte[] baseline, byte[] current)
+    {
+        if (baseline.Length == 0 || baseline.Length != current.Length || baseline.Length % 3 != 0)
+            return false;
+
+        var changedPixels = 0;
+        long totalDifference = 0;
+        var pixelCount = baseline.Length / 3;
+        for (var offset = 0; offset < baseline.Length; offset += 3)
+        {
+            var difference = (
+                Math.Abs(baseline[offset] - current[offset])
+                + Math.Abs(baseline[offset + 1] - current[offset + 1])
+                + Math.Abs(baseline[offset + 2] - current[offset + 2])) / 3;
+            totalDifference += difference;
+            if (difference >= 22) changedPixels++;
+        }
+
+        return changedPixels >= Math.Max(12, (int)Math.Ceiling(pixelCount * 0.12))
+            && totalDifference / (double)pixelCount >= 8;
+    }
+
+    private static byte[]? TryCaptureVisualFingerprint(UiBounds targetBounds)
+    {
+        var sourceX = (int)Math.Floor(targetBounds.X);
+        var sourceY = (int)Math.Floor(targetBounds.Y);
+        var sourceWidth = Math.Max(2, (int)Math.Ceiling(targetBounds.Width));
+        var sourceHeight = Math.Max(2, (int)Math.Ceiling(targetBounds.Height));
+        var screenDc = GetDC(IntPtr.Zero);
+        if (screenDc == IntPtr.Zero) return null;
+        var memoryDc = CreateCompatibleDC(screenDc);
+        var bitmap = CreateCompatibleBitmap(screenDc, FingerprintWidth, FingerprintHeight);
+        if (memoryDc == IntPtr.Zero || bitmap == IntPtr.Zero)
+        {
+            if (bitmap != IntPtr.Zero) _ = DeleteObject(bitmap);
+            if (memoryDc != IntPtr.Zero) _ = DeleteDC(memoryDc);
+            _ = ReleaseDC(IntPtr.Zero, screenDc);
+            return null;
+        }
+
+        var previous = SelectObject(memoryDc, bitmap);
+        try
+        {
+            _ = SetStretchBltMode(memoryDc, 4); // HALFTONE
+            if (!StretchBlt(
+                    memoryDc, 0, 0, FingerprintWidth, FingerprintHeight,
+                    screenDc, sourceX, sourceY, sourceWidth, sourceHeight,
+                    SrcCopy | CaptureBlt)) return null;
+
+            var pixels = new byte[FingerprintWidth * FingerprintHeight * 4];
+            var bitmapInfo = new BitmapInfo
+            {
+                Header = new BitmapInfoHeader
+                {
+                    Size = (uint)Marshal.SizeOf<BitmapInfoHeader>(),
+                    Width = FingerprintWidth,
+                    Height = -FingerprintHeight,
+                    Planes = 1,
+                    BitCount = 32,
+                    Compression = BiRgb,
+                },
+            };
+            if (GetDIBits(
+                    memoryDc, bitmap, 0, FingerprintHeight, pixels,
+                    ref bitmapInfo, DibRgbColors) == 0) return null;
+
+            var fingerprint = new byte[FingerprintWidth * FingerprintHeight * 3];
+            for (int sourceOffset = 0, targetOffset = 0;
+                 sourceOffset < pixels.Length;
+                 sourceOffset += 4, targetOffset += 3)
+            {
+                fingerprint[targetOffset] = pixels[sourceOffset + 2];
+                fingerprint[targetOffset + 1] = pixels[sourceOffset + 1];
+                fingerprint[targetOffset + 2] = pixels[sourceOffset];
+            }
+            return fingerprint;
+        }
+        finally
+        {
+            _ = SelectObject(memoryDc, previous);
+            _ = DeleteObject(bitmap);
+            _ = DeleteDC(memoryDc);
+            _ = ReleaseDC(IntPtr.Zero, screenDc);
+        }
+    }
+
     internal const int VirtualKeyLeftButton = 0x01;
     private const int KeyPressedMask = 0x8000;
     private const int KeyClickedMask = 0x0001;
@@ -122,10 +246,82 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         public int Y;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfoHeader
+    {
+        public uint Size;
+        public int Width;
+        public int Height;
+        public ushort Planes;
+        public ushort BitCount;
+        public uint Compression;
+        public uint SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public uint ColorsUsed;
+        public uint ColorsImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfo
+    {
+        public BitmapInfoHeader Header;
+        public uint Colors;
+    }
+
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int virtualKey);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr windowHandle);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr windowHandle, IntPtr deviceContext);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleDC(IntPtr deviceContext);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteDC(IntPtr deviceContext);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleBitmap(IntPtr deviceContext, int width, int height);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr deviceContext, IntPtr graphicsObject);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr graphicsObject);
+
+    [DllImport("gdi32.dll")]
+    private static extern int SetStretchBltMode(IntPtr deviceContext, int mode);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool StretchBlt(
+        IntPtr destination,
+        int destinationX,
+        int destinationY,
+        int destinationWidth,
+        int destinationHeight,
+        IntPtr source,
+        int sourceX,
+        int sourceY,
+        int sourceWidth,
+        int sourceHeight,
+        int operation);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDIBits(
+        IntPtr deviceContext,
+        IntPtr bitmap,
+        uint startScan,
+        int scanLines,
+        [Out] byte[] bits,
+        ref BitmapInfo bitmapInfo,
+        int usage);
 }

@@ -31,4 +31,29 @@ public sealed class WindowsChangeMonitorTests
     {
         Assert.Equal(expected, WindowsChangeMonitor.HasMeaningfulScreenChange(baseline, current));
     }
+
+    [Fact]
+    public void Large_visual_change_inside_the_highlighted_control_advances_the_kiosk()
+    {
+        var baseline = Enumerable.Repeat((byte)240, 24 * 24 * 3).ToArray();
+        var current = baseline.ToArray();
+        for (var pixel = 0; pixel < 120; pixel++)
+        {
+            current[pixel * 3] = 30;
+            current[pixel * 3 + 1] = 70;
+            current[pixel * 3 + 2] = 110;
+        }
+
+        Assert.True(WindowsChangeMonitor.HasMeaningfulVisualChange(baseline, current));
+    }
+
+    [Fact]
+    public void Tiny_rendering_noise_does_not_advance_the_kiosk()
+    {
+        var baseline = Enumerable.Repeat((byte)120, 24 * 24 * 3).ToArray();
+        var current = baseline.Select((value, index) =>
+            (byte)(index % 7 == 0 ? value + 2 : value)).ToArray();
+
+        Assert.False(WindowsChangeMonitor.HasMeaningfulVisualChange(baseline, current));
+    }
 }

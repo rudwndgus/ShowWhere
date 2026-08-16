@@ -40,7 +40,11 @@ public partial class App : Application
         base.OnStartup(eventArgs);
         _httpClient = new HttpClient();
         var observer = new WindowsUiObserver();
-        var monitor = new WindowsChangeMonitor(observer);
+        var monitor = new WindowsChangeMonitor(
+            observer,
+            trigger => DesktopDiagnostics.WriteEvent(
+                "target_interaction_monitor",
+                ("trigger", trigger)));
         var screenCapture = new WindowsScreenCaptureService();
         _overlay = new HighlightOverlayWindow();
         var apiOptions = GuideApiClientOptions.FromEnvironment();
