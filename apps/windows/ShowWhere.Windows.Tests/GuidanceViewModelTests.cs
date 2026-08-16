@@ -106,9 +106,10 @@ public sealed class GuidanceViewModelTests : IDisposable
         var demoDelays = new List<TimeSpan>();
         var api = new CountingGuideApiClient(new GuideDecision(
             GuideStatuses.NeedsClarification, GuideActions.AskUser, "AI should not be called", 0.1));
+        var changeMonitor = new AlwaysChangeMonitor(observation);
         var viewModel = new GuidanceViewModel(
             new FixedObserver(observation),
-            new AlwaysChangeMonitor(observation),
+            changeMonitor,
             new CountingScreenCapture(),
             api,
             new RecordingOverlay(),
@@ -138,6 +139,7 @@ public sealed class GuidanceViewModelTests : IDisposable
         Assert.Equal("Task complete", viewModel.StatusText);
         Assert.Contains("Guidance is complete", viewModel.Messages[^1].Text, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, api.CallCount);
+        Assert.True(changeMonitor.LastRequiredExplicitTargetClick);
         Assert.NotEmpty(demoDelays);
         Assert.All(demoDelays, delay => Assert.Equal(TimeSpan.FromMilliseconds(1500), delay));
     }
@@ -286,15 +288,22 @@ public sealed class GuidanceViewModelTests : IDisposable
     private sealed class NoChangeMonitor : IWindowsChangeMonitor
     {
         public Task<WindowsObservation?> WaitForTargetInteractionAsync(
-            UiBounds targetBounds, string? goal, string? baselineSnapshotHash, TimeSpan maximumWait, CancellationToken cancellationToken) =>
+            UiBounds targetBounds, string? goal, string? baselineSnapshotHash, TimeSpan maximumWait,
+            bool requireExplicitTargetClick, CancellationToken cancellationToken) =>
             Task.FromResult<WindowsObservation?>(null);
     }
 
     private sealed class AlwaysChangeMonitor(WindowsObservation observation) : IWindowsChangeMonitor
     {
+        public bool LastRequiredExplicitTargetClick { get; private set; }
+
         public Task<WindowsObservation?> WaitForTargetInteractionAsync(
-            UiBounds targetBounds, string? goal, string? baselineSnapshotHash, TimeSpan maximumWait, CancellationToken cancellationToken) =>
-            Task.FromResult<WindowsObservation?>(observation);
+            UiBounds targetBounds, string? goal, string? baselineSnapshotHash, TimeSpan maximumWait,
+            bool requireExplicitTargetClick, CancellationToken cancellationToken)
+        {
+            LastRequiredExplicitTargetClick = requireExplicitTargetClick;
+            return Task.FromResult<WindowsObservation?>(observation);
+        }
     }
 
     private sealed class RecordingOverlay : IHighlightOverlay

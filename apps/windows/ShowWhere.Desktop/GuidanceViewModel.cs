@@ -873,6 +873,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         _session.OriginalUserMessage,
                         currentObservation.SnapshotHash,
                         TimeSpan.FromSeconds(60),
+                        _bluuDeliDemoFlow.IsActive,
                         cancellationToken);
                     if (changed is null)
                     {

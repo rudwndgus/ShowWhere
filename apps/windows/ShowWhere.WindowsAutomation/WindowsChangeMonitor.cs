@@ -10,6 +10,7 @@ public interface IWindowsChangeMonitor
         string? goal,
         string? baselineSnapshotHash,
         TimeSpan maximumWait,
+        bool requireExplicitTargetClick,
         CancellationToken cancellationToken);
 }
 
@@ -37,6 +38,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         string? goal,
         string? baselineSnapshotHash,
         TimeSpan maximumWait,
+        bool requireExplicitTargetClick,
         CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -45,6 +47,7 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         try
         {
             _interactionDiagnostic?.Invoke("monitor_started");
+            using var lowLevelClicks = new LowLevelTargetClickTracker(targetBounds);
             _ = GetAsyncKeyState(VirtualKeyLeftButton);
             var wasPressed = false;
             var nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(160);
@@ -58,14 +61,19 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                 var wasClicked = (isPressed && !wasPressed) || (buttonState & KeyClickedMask) != 0;
                 wasPressed = isPressed;
 
-                if (wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor))
+                var hookClick = lowLevelClicks.ConsumeClick();
+                var polledClick = wasClicked && GetCursorPos(out var cursor) && Contains(targetBounds, cursor);
+                if (hookClick || polledClick)
                 {
-                    _interactionDiagnostic?.Invoke("click_inside_target");
+                    _interactionDiagnostic?.Invoke(hookClick
+                        ? "low_level_click_inside_target"
+                        : "polled_click_inside_target");
                     await Task.Delay(TimeSpan.FromMilliseconds(650), timeout.Token).ConfigureAwait(false);
                     return await ObserveAfterInteractionAsync(goal, timeout.Token).ConfigureAwait(false);
                 }
 
-                if (baselineVisualFingerprint is not null
+                if (!requireExplicitTargetClick
+                    && baselineVisualFingerprint is not null
                     && DateTimeOffset.UtcNow >= nextVisualCheck)
                 {
                     nextVisualCheck = DateTimeOffset.UtcNow.AddMilliseconds(110);
@@ -82,7 +90,8 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(baselineSnapshotHash)
+                if (!requireExplicitTargetClick
+                    && !string.IsNullOrWhiteSpace(baselineSnapshotHash)
                     && DateTimeOffset.UtcNow >= nextScreenCheck)
                 {
                     nextScreenCheck = DateTimeOffset.UtcNow.AddMilliseconds(280);
@@ -229,9 +238,50 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         }
     }
 
+    private sealed class LowLevelTargetClickTracker : IDisposable
+    {
+        private readonly UiBounds _targetBounds;
+        private readonly LowLevelMouseProcedure _procedure;
+        private IntPtr _hook;
+        private int _clicked;
+
+        public LowLevelTargetClickTracker(UiBounds targetBounds)
+        {
+            _targetBounds = targetBounds;
+            _procedure = HandleMouseEvent;
+            _hook = SetWindowsHookEx(
+                LowLevelMouseHook,
+                _procedure,
+                GetModuleHandle(null),
+                0);
+        }
+
+        public bool ConsumeClick() => Interlocked.Exchange(ref _clicked, 0) != 0;
+
+        private IntPtr HandleMouseEvent(int code, IntPtr message, IntPtr data)
+        {
+            if (code >= 0 && message == new IntPtr(LeftButtonDown))
+            {
+                var mouse = Marshal.PtrToStructure<LowLevelMouseData>(data);
+                if (Contains(_targetBounds, mouse.Point))
+                    Interlocked.Exchange(ref _clicked, 1);
+            }
+            return CallNextHookEx(_hook, code, message, data);
+        }
+
+        public void Dispose()
+        {
+            if (_hook == IntPtr.Zero) return;
+            _ = UnhookWindowsHookEx(_hook);
+            _hook = IntPtr.Zero;
+        }
+    }
+
     internal const int VirtualKeyLeftButton = 0x01;
     private const int KeyPressedMask = 0x8000;
     private const int KeyClickedMask = 0x0001;
+    private const int LowLevelMouseHook = 14;
+    private const int LeftButtonDown = 0x0201;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct NativePoint
@@ -268,6 +318,18 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         public BitmapInfoHeader Header;
         public uint Colors;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelMouseData
+    {
+        public NativePoint Point;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    private delegate IntPtr LowLevelMouseProcedure(int code, IntPtr message, IntPtr data);
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int virtualKey);
@@ -324,4 +386,25 @@ public sealed class WindowsChangeMonitor : IWindowsChangeMonitor
         [Out] byte[] bits,
         ref BitmapInfo bitmapInfo,
         int usage);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(
+        int hookId,
+        LowLevelMouseProcedure procedure,
+        IntPtr module,
+        uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(
+        IntPtr hook,
+        int code,
+        IntPtr message,
+        IntPtr data);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetModuleHandle(string? moduleName);
 }
