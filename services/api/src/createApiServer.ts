@@ -140,7 +140,11 @@ export function createApiServer(
     const requestStartedAt = performance.now();
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (request.method === 'GET' && url.pathname === '/health') {
-      sendJson(response, 200, { status: 'ok', services: { guide: true, sync: true, pairing: true } });
+      sendJson(response, 200, {
+        status: 'ok',
+        revision: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 12) ?? 'local',
+        services: { guide: true, sync: true, pairing: true, stt: config.openai.sttModel },
+      });
       return;
     }
     if (request.method === 'GET' && (url.pathname === '/mobile' || url.pathname === '/mobile/')) {

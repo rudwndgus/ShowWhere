@@ -74,7 +74,11 @@ describe('GET /health', () => {
     const response = await fetch(guideEndpoint.replace('/api/guide', '/health'));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: 'ok', services: { guide: true, sync: true, pairing: true } });
+    expect(await response.json()).toEqual({
+      status: 'ok',
+      revision: 'local',
+      services: { guide: true, sync: true, pairing: true, stt: 'gpt-transcribe' },
+    });
     expect(providerCalls).toBe(0);
   });
 });
