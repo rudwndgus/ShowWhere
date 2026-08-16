@@ -9,39 +9,9 @@
 [![Download ShowWhere.exe](https://img.shields.io/badge/Download-ShowWhere.exe-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
 [![Open Mobile Web](https://img.shields.io/badge/Open-Mobile_Web-1677FF?style=for-the-badge&logo=safari&logoColor=white)](https://api-production-6901.up.railway.app/mobile/)
 
-[English](#english) · [한국어](#korean)
+**English** · [한국어](README.ko.md)
 
 </div>
-
----
-
-## See ShowWhere in action · 실제 실행 화면
-
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <img src="docs/images/showwhere-desktop.png" alt="ShowWhere Windows application" width="390" />
-      <br />
-      <sub><strong>Windows guide</strong> · 질문과 단계별 안내를 보여주는 PC 프로그램</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="docs/images/showwhere-mobile.png" alt="ShowWhere Mobile Web" width="390" />
-      <br />
-      <sub><strong>Mobile Web</strong> · 키보드가 없는 환경을 위한 휴대폰 입력 리모컨</sub>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="docs/images/showwhere-pairing.png" alt="ShowWhere QR phone pairing" width="488" />
-      <br />
-      <sub><strong>Secure QR pairing</strong> · QR과 자동 갱신되는 6자리 코드로 PC와 휴대폰 연결</sub>
-    </td>
-  </tr>
-</table>
-
-The screenshots above are captured from the real ShowWhere desktop application and the deployed Mobile Web—not design mockups.
-
-위 화면은 디자인 목업이 아니라 실제 ShowWhere 프로그램과 배포된 Mobile Web을 직접 실행해 촬영한 화면입니다.
 
 ---
 
@@ -60,6 +30,12 @@ Traditional help gives people a paragraph of instructions and leaves them to sea
 ShowWhere is not just an AI that explains software. It is a visual guide that stays beside the user while the task is being completed.
 
 Instead of reading instructions, translating them into menu names, and getting lost again, the user follows the highlighted location and completes the work with their own hands. After each interaction, ShowWhere observes the new screen and guides the next step until the goal is complete.
+
+<p align="center">
+  <img src="docs/images/showwhere-desktop.png" alt="ShowWhere Windows guide" width="260" />
+  <br />
+  <sub>The ShowWhere Windows guide, ready for a new request.</sub>
+</p>
 
 ## How it works
 
@@ -118,6 +94,23 @@ Open **Connect phone** in the PC app, scan the QR code, and confirm the six-digi
 
 The PC guidance remains on the kiosk while the phone acts as a private, convenient input remote. This is especially useful at counters, restaurants, stores, shared terminals, and other keyboardless environments.
 
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/showwhere-mobile.png" alt="ShowWhere Mobile Web" width="210" />
+      <br />
+      <sub>Mobile Web input remote</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/showwhere-pairing.png" alt="ShowWhere QR phone pairing" width="244" />
+      <br />
+      <sub>QR and six-digit PC verification</sub>
+    </td>
+  </tr>
+</table>
+
+These are real screens from the ShowWhere desktop application and deployed Mobile Web, not design mockups.
+
 **[Open Mobile Web](https://api-production-6901.up.railway.app/mobile/)**
 
 ## A guide that learns from verified experience
@@ -139,113 +132,5 @@ ShowWhere exists so that age, experience, unfamiliar terminology, or constantly 
 ### Ready to see where?
 
 [![Download ShowWhere.exe](https://img.shields.io/badge/Download_for_Windows-ShowWhere.exe-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
-
-</div>
-
----
-
-<a id="korean"></a>
-
-# ShowWhere 한국어
-
-### 하고 싶은 일을 말하면, ShowWhere가 눌러야 할 곳을 보여줍니다.
-
-**현재 사용 중인 화면을 살펴보고 다음에 선택할 위치를 화면 위에 직접 표시하는 AI 비주얼 가이드입니다.**
-
-[![ShowWhere.exe 다운로드](https://img.shields.io/badge/다운로드-ShowWhere.exe-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
-[![Mobile Web 열기](https://img.shields.io/badge/열기-Mobile_Web-1677FF?style=for-the-badge&logo=safari&logoColor=white)](https://api-production-6901.up.railway.app/mobile/)
-
-## 기능이 있어도 위치를 모르면 사용할 수 없습니다
-
-기술이 발전할수록 소프트웨어의 기능은 많아지지만 메뉴, 아이콘, 설정과 숨겨진 옵션도 함께 늘어납니다. 사용자는 자신이 무엇을 하고 싶은지 정확히 알고 있고 그 기능도 이미 존재하지만, 단지 **어디를 눌러야 하는지 몰라서** 사용하지 못합니다.
-
-기존 도움말은 설명을 읽은 사용자가 다시 화면에서 메뉴를 찾아다니게 합니다. ShowWhere는 이 간격을 없앱니다.
-
-## ShowWhere란?
-
-> **하고 싶은 일을 말하면 ShowWhere가 현재 컴퓨터 또는 웹 화면을 확인하고, 바로 다음에 선택해야 할 곳을 그 화면 위에 직접 표시합니다.**
-
-ShowWhere는 사용법을 글로 설명하고 끝나는 AI가 아닙니다. 사용자가 실제 작업을 완료할 때까지 옆에서 함께 움직이는 비주얼 가이드입니다.
-
-사용자는 설명을 메뉴 이름으로 다시 해석하며 헤맬 필요가 없습니다. 표시된 위치를 자기 손으로 누르면 ShowWhere가 바뀐 화면을 다시 확인하고, 목표가 완료될 때까지 다음 단계를 이어서 안내합니다.
-
-## 작동 방식
-
-| 단계 | 사용 경험 |
-|---|---|
-| **1. 질문** | 자연어로 하고 싶은 일을 말하거나 입력합니다. |
-| **2. 화면 확인** | ShowWhere가 현재 Windows 프로그램 또는 웹 화면을 살펴봅니다. |
-| **3. 위치 표시** | 다음에 선택할 관련 버튼을 화면 위에 직접 표시합니다. |
-| **4. 직접 수행** | 사용자가 표시된 위치를 직접 선택하며 작업의 주도권을 유지합니다. |
-| **5. 완료** | 화면 변화를 따라 단계별로 계속 안내하고 목표가 달성되면 멈춥니다. |
-
-## ShowWhere가 도울 수 있는 곳
-
-ShowWhere의 출발점은 단순합니다. 화면에서 하는 일이라면 안내도 바로 그 화면에서 이루어져야 합니다.
-
-### 일상적인 컴퓨터 사용
-
-- 프린터와 Windows 설정 찾기
-- 파일과 기본 시스템 도구 찾기
-- 프로그램 안에서 필요한 기능 찾기
-- 처음 보는 메뉴 구조를 외우지 않고 탐색하기
-
-### 웹
-
-- 로그인과 계정 메뉴 찾기
-- 주문 내역, 장바구니와 계정 설정 탐색
-- 복잡한 웹사이트 메뉴 이동
-- 다른 프로그램이 아니라 현재 사이트의 올바른 검색창과 기능 찾기
-
-### 업무
-
-- 처음 사용하는 사내 프로그램 익히기
-- 설정과 관리 메뉴 찾기
-- POS와 백오피스 작업 따라가기
-- 직원 온보딩, 교육과 기술 지원 보조
-
-### 식당·매장·키오스크
-
-- 주문 및 메뉴 작업 탐색
-- 옵션과 메뉴 관리 기능 찾기
-- 이미지, 상품과 키오스크 관리 메뉴 접근
-- 자주 사용하지 않아 익숙하지 않은 기능을 직원에게 안내
-
-ShowWhere는 현재 Windows 프로그램으로 제공되며, 프로그램이 확인할 수 있는 Windows UI, 브라우저 화면과 화면 기반 키오스크 흐름을 안내할 수 있습니다.
-
-## Mobile Sync: 휴대폰을 입력 리모컨으로
-
-키오스크에는 터치스크린만 있고 물리 키보드가 없는 경우가 많습니다. ShowWhere의 Mobile Sync는 별도의 키보드를 연결하지 않아도 이런 환경에서 질문할 수 있게 합니다.
-
-PC ShowWhere에서 **Connect phone**을 열고 QR 코드를 스캔한 뒤 6자리 연결 코드를 확인하면, 연결된 휴대폰에서 다음 작업을 할 수 있습니다.
-
-- 텍스트 명령을 PC의 ShowWhere로 바로 전송
-- STT를 이용한 음성 입력
-- ShowWhere의 응답을 휴대폰에서도 확인
-- 배포된 HTTPS 서비스를 통해 같은 안내 작업을 계속 진행
-
-안내와 위치 표시는 PC 또는 키오스크 화면에 유지되고, 휴대폰은 개인 입력 리모컨처럼 작동합니다. 카운터, 식당, 매장, 공용 단말기처럼 키보드가 없는 환경에서 특히 유용합니다.
-
-**[Mobile Web 열기](https://api-production-6901.up.railway.app/mobile/)**
-
-## 검증된 경험을 기억하며 성장하는 가이드
-
-반복되는 문제를 해결할 때마다 처음부터 다시 기다릴 필요는 없습니다.
-
-ShowWhere는 사람이 올바르다고 검증한 해결 방법을 기억하고, 같은 의도가 다시 나타나면 빠르게 재사용하는 방향으로 만들어지고 있습니다. 표현이 조금 달라도 의미와 화면 상황이 일치하면 기존 경험을 활용할 수 있습니다.
-
-사람의 피드백은 계속 중요합니다. 올바른 안내는 정답으로 확인하고, 잘못된 안내는 올바른 위치와 내용으로 수정하며, 목표를 모두 달성했다면 완료로 기록할 수 있습니다. 이렇게 실제 사용 경험은 다음 안내를 더 빠르고 정확하게 만드는 기반이 됩니다.
-
-## 우리가 만들고 싶은 미래
-
-기술은 모든 설정의 위치를 이미 알고 있는 사람만의 것이어서는 안 됩니다.
-
-ShowWhere는 나이, 경험, 낯선 용어와 계속 바뀌는 화면 때문에 이미 존재하는 기능을 사용하지 못하는 사람이 없도록 만들기 위해 시작되었습니다. 컴퓨터, 웹사이트, 업무 프로그램, POS, 백오피스와 키오스크에서 항상 곁에 있는 디지털 가이드가 되어, 누구나 **“무엇을 원하는지는 알아”**에서 **“내가 직접 해냈어”**까지 갈 수 있도록 돕는 것이 목표입니다.
-
-<div align="center">
-
-### 이제, 어디를 눌러야 할지 직접 확인해 보세요.
-
-[![Windows용 ShowWhere 다운로드](https://img.shields.io/badge/Windows용_다운로드-ShowWhere.exe-472323?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/rudwndgus/ShowWhere/releases/latest/download/ShowWhere.exe)
 
 </div>
