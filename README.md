@@ -15,6 +15,36 @@
 
 ---
 
+## See ShowWhere in action · 실제 실행 화면
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/showwhere-desktop.png" alt="ShowWhere Windows application" width="390" />
+      <br />
+      <sub><strong>Windows guide</strong> · 질문과 단계별 안내를 보여주는 PC 프로그램</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/showwhere-mobile.png" alt="ShowWhere Mobile Web" width="390" />
+      <br />
+      <sub><strong>Mobile Web</strong> · 키보드가 없는 환경을 위한 휴대폰 입력 리모컨</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="docs/images/showwhere-pairing.png" alt="ShowWhere QR phone pairing" width="488" />
+      <br />
+      <sub><strong>Secure QR pairing</strong> · QR과 자동 갱신되는 6자리 코드로 PC와 휴대폰 연결</sub>
+    </td>
+  </tr>
+</table>
+
+The screenshots above are captured from the real ShowWhere desktop application and the deployed Mobile Web—not design mockups.
+
+위 화면은 디자인 목업이 아니라 실제 ShowWhere 프로그램과 배포된 Mobile Web을 직접 실행해 촬영한 화면입니다.
+
+---
+
 <a id="english"></a>
 
 ## Technology should not become unusable just because its controls are hard to find
