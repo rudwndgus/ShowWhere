@@ -83,7 +83,9 @@ public static class ContractValidator
                 return new GuideDecision(
                     GuideStatuses.NeedsClarification,
                     GuideActions.AskUser,
-                    "어느 항목인지 확실하지 않아요. 화면에 보이는 이름을 조금 더 알려주세요.",
+                    UserLanguage.Select(request.Session.OriginalUserMessage,
+                        "어느 항목인지 확실하지 않아요. 화면에 보이는 이름을 조금 더 알려주세요.",
+                        "I am not sure which item you mean. Please tell me a little more about the name shown on the screen."),
                     0);
             }
         }
@@ -101,7 +103,9 @@ public static class ContractValidator
                 return new GuideDecision(
                     GuideStatuses.NeedsClarification,
                     GuideActions.AskUser,
-                    "화면에서 정확한 위치를 확신할 수 없어요. 원하는 항목의 이름을 조금 더 알려주세요.",
+                    UserLanguage.Select(request.Session.OriginalUserMessage,
+                        "화면에서 정확한 위치를 확신할 수 없어요. 원하는 항목의 이름을 조금 더 알려주세요.",
+                        "I cannot confirm the exact location on the screen. Please tell me a little more about the item name."),
                     0);
         }
         if (decision.Action == GuideActions.RequestSafeTool && string.IsNullOrWhiteSpace(decision.SafeToolId))

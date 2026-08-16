@@ -87,7 +87,10 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         base.OnSourceInitialized(eventArgs);
         var handle = new WindowInteropHelper(this).Handle;
         var style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
-        _ = SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExTransparent | WsExToolWindow | WsExNoActivate));
+        _ = SetWindowLongPtr(
+            handle,
+            GwlExStyle,
+            new IntPtr(style | WsExTransparent | WsExToolWindow | WsExNoActivate));
     }
 
     public void ShowTarget(UiBounds target, string message)
@@ -132,7 +135,7 @@ public sealed class HighlightOverlayWindow : Window, IHighlightOverlay
         var monitorArea = MonitorUtilities.GetMonitorArea(target);
         var down = target.Y + target.Height / 2 >= monitorArea.Y + monitorArea.Height / 2;
         var scale = MonitorUtilities.GetScale(target);
-        _message.Text = $"{(down ? "↓" : "↑")}  {(down ? "아래" : "위")}로 스크롤하세요\n{message}";
+        _message.Text = $"{(down ? "↓" : "↑")}  Scroll {(down ? "down" : "up")}\n{message}";
         var tooltipSize = MeasureTooltip(workingArea, scale);
         var left = workingArea.X + (workingArea.Width - tooltipSize.Width) / 2;
         var top = down

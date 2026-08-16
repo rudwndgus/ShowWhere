@@ -5,5 +5,10 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
+    <ShowWhereVersion Condition="'$(ShowWhereVersion)' == ''">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION').Trim())</ShowWhereVersion>
+    <Version>$(ShowWhereVersion)</Version>
+    <AssemblyVersion>$(ShowWhereVersion).0</AssemblyVersion>
+    <FileVersion>$(ShowWhereVersion).0</FileVersion>
+    <InformationalVersion>$(ShowWhereVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>

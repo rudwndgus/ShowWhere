@@ -72,6 +72,17 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
         if (!deferForegroundScan)
         {
             var foregroundRaw = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
+            for (var attempt = 0;
+                 attempt < 2 && ShouldRetrySettingsHydration(processName, windowTitle, foregroundRaw);
+                 attempt++)
+            {
+                // Windows Settings can expose only its legacy frame for a short time
+                // after navigation. Re-read UIA instead of falling back to a guessed
+                // screenshot coordinate while the live menu is still hydrating.
+                cancellationToken.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(200 * (attempt + 1)));
+                cancellationToken.ThrowIfCancellationRequested();
+                foregroundRaw = CollectRawCandidates(root, processName, elementsBySource, cancellationToken);
+            }
             var normalizedForeground = CandidateNormalizer.Normalize(foregroundRaw, MaximumTreeNodes);
             foregroundCandidates = CandidatePrioritizer.Prioritize(
                 normalizedForeground,
@@ -142,6 +153,27 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
             focusedElementKey,
             deferForegroundScan);
     }
+
+    internal static bool ShouldRetrySettingsHydration(
+        string processName,
+        string? windowTitle,
+        IReadOnlyList<RawAutomationCandidate> candidates)
+    {
+        if (!IsSettingsProcess(processName)
+            || (windowTitle?.Contains("Settings", StringComparison.OrdinalIgnoreCase) != true
+                && windowTitle?.Contains("설정", StringComparison.OrdinalIgnoreCase) != true)) return false;
+
+        return !candidates.Any(candidate =>
+            candidate.Role == "listitem"
+            && (candidate.ClassName?.Contains("NavigationViewItem", StringComparison.OrdinalIgnoreCase) == true
+                || string.Equals(candidate.Label, "System", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(candidate.Label, "시스템", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool IsSettingsProcess(string processName) =>
+        string.Equals(processName, "ApplicationFrameHost", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(processName, "SystemSettings", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(processName, "SystemSettings.exe", StringComparison.OrdinalIgnoreCase);
 
     private List<RawAutomationCandidate> CollectWindowOverview(
         IDictionary<string, AutomationElement> elementsBySource,
@@ -264,12 +296,18 @@ public sealed class WindowsUiObserver : IWindowsUiObserver
                 var visible = !rectangle.IsEmpty;
                 var clickable = IsActionable(target, role);
                 var candidateScope = ClassifyCandidateScope(target, walker, processName);
+                var label = ClickableParentResolver.PreferAccessibleText(
+                    Read(() => target.Current.Name),
+                    Read(() => element.Current.Name));
+                var description = ClickableParentResolver.PreferAccessibleText(
+                    Read(() => target.Current.HelpText),
+                    Read(() => element.Current.HelpText));
                 elementsBySource[sourceKey] = target;
                 result.Add(new RawAutomationCandidate(
                     sourceKey,
                     sourceKey,
-                    Read(() => target.Current.Name),
-                    Read(() => target.Current.HelpText),
+                    label,
+                    description,
                     role,
                     target.Current.IsEnabled,
                     visible,

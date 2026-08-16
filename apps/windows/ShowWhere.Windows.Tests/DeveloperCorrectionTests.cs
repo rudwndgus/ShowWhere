@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ShowWhere.Core;
 
 namespace ShowWhere.Windows.Tests;
@@ -16,6 +17,16 @@ public sealed class DeveloperCorrectionTests : IDisposable
             "live-candidate", snapshotMatches: false, liveTargetResolved: true));
         Assert.False(DeveloperReplayPolicy.CanReuseImmediately(
             targetId: null, snapshotMatches: false, liveTargetResolved: true));
+        Assert.True(DeveloperReplayPolicy.CanReuseImmediately(
+            "live-candidate", snapshotMatches: true, liveTargetResolved: true, developerVerified: false));
+        Assert.False(DeveloperReplayPolicy.CanReuseImmediately(
+            "live-candidate", snapshotMatches: false, liveTargetResolved: true, developerVerified: false));
+        Assert.True(DeveloperReplayPolicy.CanReuseSafeReply(
+            GuideActions.AskUser, GuideStatuses.NeedsClarification, snapshotMatches: true));
+        Assert.False(DeveloperReplayPolicy.CanReuseSafeReply(
+            GuideActions.AskUser, GuideStatuses.NeedsClarification, snapshotMatches: false));
+        Assert.False(DeveloperReplayPolicy.CanReuseSafeReply(
+            GuideActions.Explain, GuideStatuses.Completed, snapshotMatches: true));
     }
 
     [Fact]
@@ -287,7 +298,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
     public async Task Developer_completed_state_is_persisted_and_reused_for_the_same_intent()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
-        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
         var labels = DeveloperLabeling.CreateCorrectionLabels(
             "크롬에서 유튜브 뮤직 틀어줘", context, "open:youtube_music",
             "task.open.youtube_music", null, "completed.youtube_music", "YouTube Music", "task_completed");
@@ -312,7 +323,7 @@ public sealed class DeveloperCorrectionTests : IDisposable
     public async Task Revoked_completion_is_not_reused_after_restart_and_can_be_restored()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
-        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
         var feedback = Feedback("completed", "완료") with
         {
             OriginalGoal = "유튜브 뮤직 열어줘",
@@ -384,17 +395,43 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal("YouTube Music 검색", history.TargetLabel);
         Assert.True(reloaded.TryResolveTarget(
             history.Goal, feedback.Context!,
-            [Candidate("music-new", "검색", "ytmusic-search", "browser_content")], out _, out _));
+            [Candidate("music-new", "YouTube Music 검색", "new-search", "browser_content")], out _, out _));
 
         Assert.Single(File.ReadAllLines(Path.Combine(_directory, "learning-edits.jsonl")));
         Assert.Single(File.ReadAllLines(Path.Combine(_directory, "answer-feedback.jsonl")));
     }
 
     [Fact]
+    public async Task Editing_the_target_label_replaces_the_old_runtime_target_immediately()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var feedback = Feedback("correct", "기존 버튼을 누르세요");
+        await store.SaveFeedbackAsync(feedback);
+        var original = Candidate("old", "Old target", "old-automation", "settings");
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(
+            feedback,
+            DeveloperCorrectionMatcher.CreateSignature(original))!, null);
+
+        await store.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            feedback.Id, "correct", feedback.OriginalGoal!,
+            "새 버튼을 누르세요", "New target", "target corrected"));
+
+        Assert.True(store.TryResolveTarget(
+            feedback.OriginalGoal!, feedback.Context!,
+            [
+                Candidate("old-live", "Old target", "old-automation", "settings"),
+                Candidate("new-live", "New target", "new-automation", "settings"),
+            ],
+            out var resolved, out _));
+        Assert.Equal("new-live", resolved.Id);
+    }
+
+    [Fact]
     public async Task Changing_log_rating_from_completed_stops_completion_replay()
     {
         var store = new JsonlDeveloperCorrectionStore(_directory);
-        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome");
+        var context = new ApplicationContext(Platforms.Windows, "chrome", "YouTube Music - Chrome", "https://music.youtube.com/");
         var feedback = Feedback("completed", "완료") with
         {
             OriginalGoal = "유튜브 뮤직 열어줘",
@@ -451,6 +488,77 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.DoesNotContain("설정", evidence);
         Assert.DoesNotContain("닫기", evidence);
         Assert.Contains("프린터 및 스캐너", evidence);
+    }
+
+    [Fact]
+    public async Task Browser_homepage_completion_without_a_url_is_never_replayed()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var context = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com. Spend less. Smile more. - Chrome");
+        var goal = "Where do I sign in on Amazon?";
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            goal, context, "amazon login", null, null,
+            "completed.amazon", "Amazon.com", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            goal, goal, context, "homepage-snapshot", ["Amazon.com"], labels));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        Assert.False(reloaded.TryResolveCompletion(
+            goal, context,
+            [Candidate("signin", "Hello, sign in Account & Lists", "nav-link", "browser_content")],
+            out _));
+    }
+
+    [Fact]
+    public async Task Browser_completion_requires_the_same_concrete_url_path()
+    {
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var goal = "Where do I sign in on Amazon?";
+        var learnedContext = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon Sign-In - Chrome", "https://www.amazon.com/ap/signin");
+        var labels = DeveloperLabeling.CreateCorrectionLabels(
+            goal, learnedContext, "amazon login", null, null,
+            "completed.amazon.signin", "Email or mobile phone number", "task_completed");
+        await store.SaveCompletionAsync(new DeveloperCompletionRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            goal, goal, learnedContext, "signin-snapshot",
+            ["Email or mobile phone number"], labels));
+
+        var reloaded = new JsonlDeveloperCorrectionStore(_directory);
+        var evidence = new[] {
+            Candidate("email", "Email or mobile phone number", "email", "browser_content"),
+        };
+        Assert.True(reloaded.TryResolveCompletion(goal, learnedContext, evidence, out _));
+        Assert.False(reloaded.TryResolveCompletion(
+            goal,
+            learnedContext with { Url = "https://www.amazon.com/" },
+            evidence,
+            out _));
+    }
+
+    [Fact]
+    public async Task Stored_learning_data_redacts_personal_identifiers_and_url_parameters()
+    {
+        var evidence = DeveloperCompletionEvidence.Build(
+            new ApplicationContext(Platforms.Windows, "chrome", "Account for person@example.com"),
+            [Candidate("account", "person@example.com", "account", "browser_content")]);
+        Assert.DoesNotContain(evidence, item => item.Contains("person@example.com", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(evidence, item => item.Contains("[email]", StringComparison.Ordinal));
+
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var saved = await store.SaveFeedbackAsync(new AnswerFeedbackRecord(
+            1, Guid.NewGuid().ToString("D"), DateTimeOffset.UtcNow,
+            "correct", "answer", "Use person@example.com", "Open person@example.com", "Open person@example.com",
+            new ApplicationContext(Platforms.Windows, "chrome", "person@example.com",
+                "https://example.com/account?token=private#details"),
+            "snapshot", GuideActions.Highlight, "account", "person@example.com",
+            new UiBounds(0, 0, 10, 10)));
+
+        Assert.DoesNotContain("person@example.com", saved.AnswerText + saved.OriginalGoal + saved.TargetLabel);
+        Assert.Equal("[email]", saved.TargetLabel);
+        Assert.Equal("https://example.com/account", saved.Context?.Url?.TrimEnd('/'));
     }
 
     [Fact]
@@ -513,6 +621,256 @@ public sealed class DeveloperCorrectionTests : IDisposable
         Assert.Equal(0.25, target.Y, 3);
         Assert.Equal(0.25, target.Width, 3);
         Assert.Equal(0.5, target.Height, 3);
+    }
+
+    [Fact]
+    public async Task Amazon_cart_Human_Gold_is_semantic_persistent_and_deduplicated()
+    {
+        var context = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com", "https://www.amazon.com/");
+        var target = new UiCandidate(
+            "nav-cart-v1", "Cart", null, "button", true, true, true,
+            new UiBounds(1700, 10, 120, 60),
+            new Dictionary<string, object?>
+            {
+                ["automationId"] = "nav-cart",
+                ["controlType"] = "Button",
+                ["processName"] = "chrome",
+                ["sourceScope"] = "browser_content",
+                ["containerLabel"] = "Amazon",
+            });
+        var signature = DeveloperCorrectionMatcher.CreateSignature(target);
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+
+        for (var index = 0; index < 10; index++)
+        {
+            var feedback = Feedback("correct", "Cart를 누르세요") with
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                CreatedAtUtc = DateTimeOffset.UtcNow.AddMilliseconds(index),
+                OriginalGoal = "장바구니 어디서 확인해?",
+                EffectiveGoal = "장바구니 어디서 확인해?",
+                Context = context,
+                SnapshotHash = "same-screen",
+                TargetId = target.Id,
+                TargetLabel = target.Label,
+                TargetBounds = target.Bounds,
+            };
+            await store.SaveAsync(DeveloperPositiveFeedback.Create(feedback, signature)!, null);
+        }
+
+        var lines = await File.ReadAllLinesAsync(Path.Combine(_directory, "corrections.jsonl"));
+        Assert.Single(lines);
+        var persisted = new JsonlDeveloperCorrectionStore(_directory);
+        foreach (var paraphrase in new[]
+                 {
+                     "장바구니 어디서 확인해?", "내 카트 보여줘", "담아둔 상품 어디 있어?", "장바구니 열어줘",
+                 })
+        {
+            var refreshedTarget = target with { Id = $"nav-cart-{Guid.NewGuid():N}" };
+            Assert.True(persisted.TryResolveTarget(
+                paraphrase,
+                context,
+                [refreshedTarget],
+                out var resolved,
+                out var knowledge));
+            Assert.Equal(refreshedTarget.Id, resolved.Id);
+            Assert.Equal("commerce.cart", knowledge.HumanGold?.NormalizedIntent);
+            Assert.Equal(1, knowledge.HumanGold?.IndependentVerificationCount);
+            Assert.True(knowledge.HumanGold?.DeveloperVerified);
+        }
+    }
+
+    [Fact]
+    public async Task Central_Human_Gold_from_PC_A_is_reused_locally_on_PC_B()
+    {
+        var context = new ApplicationContext(
+            Platforms.Windows, "chrome", "Amazon.com", "https://www.amazon.com/");
+        var candidate = new UiCandidate(
+            "cart-a", "Cart", null, "button", true, true, true,
+            new UiBounds(1700, 10, 120, 60),
+            new Dictionary<string, object?>
+            {
+                ["automationId"] = "nav-cart",
+                ["controlType"] = "Button",
+                ["processName"] = "chrome",
+                ["sourceScope"] = "browser_content",
+                ["containerLabel"] = "Amazon",
+            });
+        var feedback = Feedback("correct", "Cart를 누르세요") with
+        {
+            OriginalGoal = "장바구니 어디서 확인해?",
+            EffectiveGoal = "장바구니 어디서 확인해?",
+            Context = context,
+            TargetId = candidate.Id,
+            TargetLabel = candidate.Label,
+            TargetBounds = candidate.Bounds,
+        };
+        var record = DeveloperPositiveFeedback.Create(
+            feedback, DeveloperCorrectionMatcher.CreateSignature(candidate))!;
+        var pcBDirectory = Path.Combine(_directory, "pc-b");
+        var pcB = new JsonlDeveloperCorrectionStore(pcBDirectory);
+
+        var imported = await pcB.ImportCentralRecordAsync(
+            "correction",
+            JsonSerializer.SerializeToElement(record, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+        Assert.True(imported);
+        Assert.True(pcB.TryResolveTarget(
+            "내 카트 보여줘", context, [candidate with { Id = "cart-b" }],
+            out var target, out var knowledge));
+        Assert.Equal("cart-b", target.Id);
+        Assert.Equal(record.HumanGold?.Identity, knowledge.HumanGold?.Identity);
+    }
+
+    [Fact]
+    public async Task Wrong_target_without_correct_next_step_is_negative_only_and_never_runtime_gold()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var bad = Record() with
+        {
+            OriginalGoal = "Where are printer settings?",
+            EffectiveGoal = "Where are printer settings?",
+            Context = context,
+            PreviousTargetId = "start",
+            PreviousTargetLabel = "Start",
+            IssueTags = ["wrong_target"],
+            LearningLabels = DeveloperLabeling.CreateCorrectionLabels(
+                "Where are printer settings?", context, "Start", null, null, null, null, "wrong_target"),
+        };
+        bad = bad with
+        {
+            HumanGold = DeveloperSemanticKnowledge.Create(
+                bad.EffectiveGoal, context, "Start", null, GuideActions.Highlight, bad.SnapshotHash, bad.CreatedAtUtc),
+        };
+
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        var saved = await store.SaveAsync(bad, null);
+
+        Assert.Null(saved.HumanGold);
+        Assert.Equal(DeveloperKnowledgePolicy.Invalid, saved.KnowledgeStatus);
+        Assert.Equal("wrong_target_without_correct_next_step", saved.InvalidReason);
+        var remaining = store.FilterRejectedCandidates(
+            "printer settings", context,
+            [Candidate("start-new", "Start", "start", "foreground_application"),
+             Candidate("printers", "Printers & scanners", "printers", "foreground_application")]);
+        Assert.DoesNotContain(remaining, item => item.Label == "Start");
+        Assert.Contains(remaining, item => item.Label == "Printers & scanners");
+    }
+
+    [Fact]
+    public async Task X_with_an_explicit_correct_next_step_learns_only_the_correct_target()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var correct = Candidate("printers", "Printers & scanners", "printers", "foreground_application");
+        var signature = DeveloperCorrectionMatcher.CreateSignature(correct);
+        var correction = RecordForGoal("Where are printer settings?", signature) with
+        {
+            Context = context,
+            PreviousTargetId = "start",
+            PreviousTargetLabel = "Start",
+            IssueTags = ["wrong_target", "wrong_function"],
+            LearningLabels = DeveloperLabeling.CreateCorrectionLabels(
+                "Where are printer settings?", context, "Printers & scanners", null, null, null, null, "wrong_target"),
+        };
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+
+        var saved = await store.SaveAsync(correction, null);
+
+        Assert.NotNull(saved.HumanGold);
+        Assert.Contains("Printers & scanners", saved.HumanGold!.TargetAliases);
+        Assert.NotEqual("start", saved.HumanGold.TargetConcept);
+        Assert.True(store.TryResolveTarget(
+            "printer settings", context, [correct with { Id = "printers-live" }], out var target, out _));
+        Assert.Equal("printers-live", target.Id);
+    }
+
+    [Fact]
+    public async Task Generic_or_unknown_targets_cannot_become_runtime_gold()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var target = Candidate("settings", "Settings", "settings", "foreground_application");
+        var feedback = Feedback("correct", "Open settings") with
+        {
+            OriginalGoal = "Where are printer settings?",
+            EffectiveGoal = "Where are printer settings?",
+            Context = context,
+            TargetId = target.Id,
+            TargetLabel = target.Label,
+        };
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+
+        var saved = await store.SaveAsync(
+            DeveloperPositiveFeedback.Create(feedback, DeveloperCorrectionMatcher.CreateSignature(target))!, null);
+
+        Assert.Null(saved.HumanGold);
+        Assert.Equal(DeveloperKnowledgePolicy.Invalid, saved.KnowledgeStatus);
+    }
+
+    [Fact]
+    public void Legacy_bad_gold_migration_is_idempotent_and_preserves_raw_correction()
+    {
+        Directory.CreateDirectory(_directory);
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var bad = Record() with
+        {
+            Id = "legacy-bad",
+            OriginalGoal = "Where are printer settings?",
+            EffectiveGoal = "Where are printer settings?",
+            Context = context,
+            PreviousTargetLabel = "unknown target",
+            IssueTags = ["wrong_target"],
+            LearningLabels = DeveloperLabeling.CreateCorrectionLabels(
+                "Where are printer settings?", context, "unknown target", null, null, null, null, "wrong_target"),
+        };
+        bad = bad with
+        {
+            HumanGold = DeveloperSemanticKnowledge.Create(
+                bad.EffectiveGoal, context, "unknown target", null, GuideActions.Explain, bad.SnapshotHash, bad.CreatedAtUtc),
+        };
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        File.WriteAllText(Path.Combine(_directory, "corrections.jsonl"), JsonSerializer.Serialize(bad, options) + Environment.NewLine);
+
+        _ = new JsonlDeveloperCorrectionStore(_directory);
+        var first = File.ReadAllText(Path.Combine(_directory, "corrections.jsonl"));
+        _ = new JsonlDeveloperCorrectionStore(_directory);
+        var second = File.ReadAllText(Path.Combine(_directory, "corrections.jsonl"));
+
+        Assert.Equal(first, second);
+        Assert.Contains("legacy-bad", second);
+        Assert.Contains("\"knowledgeStatus\":\"invalid\"", second);
+        Assert.DoesNotContain("\"humanGold\"", second);
+    }
+
+    [Fact]
+    public async Task Newer_gold_on_the_same_screen_revokes_a_conflicting_old_target()
+    {
+        var context = new ApplicationContext(Platforms.Windows, "ApplicationFrameHost", "Settings");
+        var oldTarget = Candidate("old", "Start", "start-button", "foreground_application");
+        var newTarget = Candidate("new", "Printers & scanners", "printers", "foreground_application");
+        var oldFeedback = Feedback("correct", "Start") with
+        {
+            Id = "old-feedback", OriginalGoal = "printer settings", EffectiveGoal = "printer settings",
+            Context = context, SnapshotHash = "same-screen", TargetId = oldTarget.Id, TargetLabel = oldTarget.Label,
+        };
+        var newFeedback = oldFeedback with
+        {
+            Id = "new-feedback", CreatedAtUtc = oldFeedback.CreatedAtUtc.AddSeconds(1),
+            AnswerText = "Printers & scanners", TargetId = newTarget.Id, TargetLabel = newTarget.Label,
+        };
+        var store = new JsonlDeveloperCorrectionStore(_directory);
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(
+            oldFeedback, DeveloperCorrectionMatcher.CreateSignature(oldTarget))!, null);
+        await store.SaveAsync(DeveloperPositiveFeedback.Create(
+            newFeedback, DeveloperCorrectionMatcher.CreateSignature(newTarget))!, null);
+
+        var persisted = File.ReadAllLines(Path.Combine(_directory, "corrections.jsonl"))
+            .Select(line => JsonDocument.Parse(line).RootElement.Clone()).ToArray();
+        Assert.Contains(persisted, item => item.TryGetProperty("knowledgeStatus", out var status)
+            && status.GetString() == DeveloperKnowledgePolicy.Revoked);
+        Assert.True(store.TryResolveTarget(
+            "printer settings", context, [oldTarget, newTarget], out var resolved, out _));
+        Assert.Equal("new", resolved.Id);
     }
 
     public void Dispose()

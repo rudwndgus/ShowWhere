@@ -1,4 +1,5 @@
 import type { GuideDecision, GuideRequest, UiCandidate } from '../../../../src/contracts';
+import { inRequestLanguage } from '../providers/responseLanguage';
 import { eligibleCandidates, meaningfulTokens, normalizeText } from '../providers/LocalGuideResolver';
 import { windowsKnowledgeCatalog, type WindowsKnowledgeEntry } from './WindowsKnowledgeCatalog';
 
@@ -128,18 +129,19 @@ export function resolveWindowsKnowledgeEntry(
   const label = displayLabel(candidate.label ?? candidate.description ?? candidate.role);
   const diagnostic = entry.kind === 'troubleshooting'
     && entry.route.slice(entry.navigationDepth).some((step) => step.includes(label));
+  const original = request.session.originalUserMessage;
   return {
     status: 'in_progress',
     action: 'highlight',
     targetId: candidate.id,
     message: diagnostic
-      ? `원인을 확인하려면 '${label}' 항목을 눌러주세요.`
+      ? inRequestLanguage(original, `원인을 확인하려면 '${label}' 항목을 눌러주세요.`, `Select '${label}' to check the cause.`)
       : /검색|search/iu.test(label)
-        ? `'${label}'을 누른 다음 찾을 설정 이름을 입력해 주세요.`
-      : `Windows에서 '${label}' 항목을 눌러주세요.`,
+        ? inRequestLanguage(original, `'${label}'을 누른 다음 찾을 설정 이름을 입력해 주세요.`, `Select '${label}', then enter the setting name.`)
+        : inRequestLanguage(original, `Windows에서 '${label}' 항목을 눌러주세요.`, `Select '${label}' in Windows.`),
     expectedChange: diagnostic
-      ? `${entry.id} 문제 해결을 위한 다음 상태를 확인합니다.`
-      : `${entry.id} 설정 화면으로 이동합니다.`,
+      ? inRequestLanguage(original, `${entry.id} 문제 해결을 위한 다음 상태를 확인합니다.`, `The next ${entry.id} troubleshooting state opens.`)
+      : inRequestLanguage(original, `${entry.id} 설정 화면으로 이동합니다.`, `The ${entry.id} settings screen opens.`),
     confidence,
   };
 }

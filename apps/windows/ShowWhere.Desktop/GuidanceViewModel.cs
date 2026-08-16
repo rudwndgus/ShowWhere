@@ -18,7 +18,13 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         string TargetLabel,
         string Message,
         string? SnapshotHash,
-        UiBounds? TargetBounds);
+        UiBounds? TargetBounds,
+        bool DeveloperVerified);
+
+    private sealed record RecentSafeReply(
+        string Goal,
+        string SnapshotHash,
+        GuideDecision Decision);
 
     private readonly IWindowsUiObserver _observer;
     private readonly IWindowsChangeMonitor _changeMonitor;
@@ -28,11 +34,13 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private readonly ICorrectionSelectionService _correctionSelection;
     private readonly IDeveloperCorrectionStore _correctionStore;
     private readonly Action _exit;
+    private readonly MobileRemoteCoordinator? _mobileRemote;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private CancellationTokenSource? _taskCancellation;
     private TaskSession? _session;
     private string _goalText = string.Empty;
-    private string _currentApplication = "관찰 대기 중";
-    private string _statusText = "준비됨";
+    private string _currentApplication = "Waiting to observe";
+    private string _statusText = "Ready";
     private string _errorMessage = string.Empty;
     private bool _isLoading;
     private bool _isPaused;
@@ -45,8 +53,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private string _submittedGoal = string.Empty;
     private string _correctionIntentText = string.Empty;
     private string _correctionCommentText = string.Empty;
-    private string _correctionSelectionSummary = "정답 영역을 아직 선택하지 않았습니다.";
+    private string _correctionErrorReason = "wrong_function";
+    private string _correctionSelectionSummary = "No correct area has been selected yet.";
     private bool _isCorrectionEditorVisible;
+    private bool _isPositiveConfirmationVisible;
+    private string _positiveCommentText = string.Empty;
     private bool _saveCorrectionScreenshot = true;
     private bool _isDeveloperMode;
     private bool _isLearningHistoryVisible;
@@ -57,7 +68,11 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private string _correctionExpectedEvidence = string.Empty;
     private string _correctionOutcomeLabel = "wrong_target";
     private readonly Dictionary<string, ApprovedReplay> _approvedReplays = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ApprovedReplay> _recentReplays = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RecentSafeReply> _recentSafeReplies = new(StringComparer.Ordinal);
+    private readonly BluuDeliDemoFlow _bluuDeliDemoFlow = new();
     private ChatMessageItem? _correctionAnswer;
+    private ChatMessageItem? _positiveAnswer;
     private AnswerFeedbackRecord? _correctionFeedback;
     private UiBounds? _pendingCorrectionSelection;
     private UiCandidate? _pendingCorrectionCandidate;
@@ -71,7 +86,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         IHighlightOverlay overlay,
         ICorrectionSelectionService correctionSelection,
         IDeveloperCorrectionStore correctionStore,
-        Action exit)
+        Action exit,
+        MobileRemoteCoordinator? mobileRemote = null,
+        Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
     {
         _observer = observer;
         _changeMonitor = changeMonitor;
@@ -81,6 +98,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _correctionSelection = correctionSelection;
         _correctionStore = correctionStore;
         _exit = exit;
+        _mobileRemote = mobileRemote;
+        _delayAsync = delayAsync ?? Task.Delay;
         SubmitCommand = new AsyncRelayCommand(SubmitAsync, CanSubmit);
         SelectClarificationCommand = new AsyncParameterRelayCommand(SelectClarificationAsync);
         RecoveryCommand = new AsyncRelayCommand(
@@ -91,6 +110,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         SaveCorrectionCommand = new AsyncRelayCommand(SaveCorrectionAsync, CanSaveCorrection);
         CancelCorrectionEditCommand = new RelayCommand(CloseCorrectionEditor);
         MarkAnswerCorrectCommand = new AsyncParameterRelayCommand(MarkAnswerCorrectAsync, CanEvaluateAnswer);
+        ConfirmPositiveAnswerCommand = new AsyncRelayCommand(ConfirmPositiveAnswerAsync);
+        CancelPositiveAnswerCommand = new RelayCommand(CancelPositiveAnswer);
         MarkAnswerIncorrectCommand = new AsyncParameterRelayCommand(MarkAnswerIncorrectAsync, CanEvaluateAnswer);
         MarkAnswerCompletedCommand = new AsyncParameterRelayCommand(MarkAnswerCompletedAsync, CanEvaluateAnswer);
         TogglePauseCommand = new RelayCommand(TogglePause);
@@ -99,15 +120,31 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ToggleLearningRecordCommand = new AsyncParameterRelayCommand(ToggleLearningRecordAsync);
         SaveLearningRecordCommand = new AsyncParameterRelayCommand(SaveLearningRecordAsync);
         ExitCommand = new RelayCommand(_exit);
+        MobileConnectCommand = new AsyncRelayCommand(
+            () => _mobileRemote is null
+                ? Task.CompletedTask
+                : _mobileRemote.ShowPairingAsync());
+        MobileDisconnectCommand = new AsyncRelayCommand(
+            () => _mobileRemote?.DisconnectAsync() ?? Task.CompletedTask);
+        if (_mobileRemote is not null)
+            _mobileRemote.PropertyChanged += (_, eventArgs) =>
+            {
+                if (eventArgs.PropertyName == nameof(MobileRemoteCoordinator.IsConnected))
+                {
+                    OnPropertyChanged(nameof(IsMobileConnected));
+                    OnPropertyChanged(nameof(MobileConnectionText));
+                }
+            };
         Messages.Add(CreateAssistantMessage(
             "assistant",
-            "하고 싶은 일을 입력해 주세요. 현재 앱과 Windows 작업표시줄에서 다음에 누를 위치를 찾아드릴게요."));
+            "Tell me what you want to do. I will find the next place to select in the current app or Windows taskbar."));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action<UiBounds>? TargetHighlighted;
     public event Action? CorrectionSelectionStarted;
     public event Action? CorrectionSelectionCompleted;
+    public event Action? RemoteResponseRequested;
     public ICommand SubmitCommand { get; }
     public ICommand SelectClarificationCommand { get; }
     public ICommand RecoveryCommand { get; }
@@ -116,6 +153,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand SaveCorrectionCommand { get; }
     public ICommand CancelCorrectionEditCommand { get; }
     public ICommand MarkAnswerCorrectCommand { get; }
+    public ICommand ConfirmPositiveAnswerCommand { get; }
+    public ICommand CancelPositiveAnswerCommand { get; }
     public ICommand MarkAnswerIncorrectCommand { get; }
     public ICommand MarkAnswerCompletedCommand { get; }
     public ICommand TogglePauseCommand { get; }
@@ -124,14 +163,16 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     public ICommand ToggleLearningRecordCommand { get; }
     public ICommand SaveLearningRecordCommand { get; }
     public ICommand ExitCommand { get; }
+    public ICommand MobileConnectCommand { get; }
+    public ICommand MobileDisconnectCommand { get; }
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
     public ObservableCollection<ClarificationChoiceItem> ClarificationChoices { get; } = [];
     public ObservableCollection<DeveloperLearningHistoryItem> LearningHistory { get; } = [];
     public IReadOnlyList<DeveloperRatingOption> LearningRatingOptions { get; } =
     [
-        new("correct", "O 정답"),
-        new("incorrect", "X 수정"),
-        new("completed", "끝"),
+        new("correct", "O Correct"),
+        new("incorrect", "X Correct"),
+        new("completed", "Done"),
     ];
 
     public string GoalText
@@ -139,6 +180,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _goalText;
         set { if (Set(ref _goalText, value)) RaiseCommandStates(); }
     }
+    public bool IsMobileConnected => _mobileRemote?.IsConnected == true;
+    public string MobileConnectionText => _mobileRemote?.ConnectionText ?? "Connect phone";
     public string CurrentApplication { get => _currentApplication; private set => Set(ref _currentApplication, value); }
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
     public string ErrorMessage { get => _errorMessage; private set => Set(ref _errorMessage, value); }
@@ -154,6 +197,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             if (!value)
             {
                 ResetCorrectionDraft();
+                CancelPositiveAnswer();
                 IsLearningHistoryVisible = false;
             }
         }
@@ -168,6 +212,31 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _isCorrectionEditorVisible;
         private set { if (Set(ref _isCorrectionEditorVisible, value)) RaiseCommandStates(); }
     }
+    public bool IsPositiveConfirmationVisible
+    {
+        get => _isPositiveConfirmationVisible;
+        private set => Set(ref _isPositiveConfirmationVisible, value);
+    }
+    public string PositiveCommentText
+    {
+        get => _positiveCommentText;
+        set => Set(ref _positiveCommentText, value);
+    }
+    public string PositiveQuestion => _positiveAnswer?.OriginalGoal ?? string.Empty;
+    public string PositiveSituation
+    {
+        get
+        {
+            var context = _positiveAnswer?.Context;
+            if (context is null) return "Current screen information is unavailable.";
+            return string.IsNullOrWhiteSpace(context.WindowTitle)
+                ? context.ApplicationName
+                : $"{context.ApplicationName} > {context.WindowTitle}";
+        }
+    }
+    public string PositiveTarget => _positiveAnswer?.TargetLabel
+        ?? _positiveAnswer?.Decision?.VisualTarget?.Label
+        ?? "Text-only answer";
     public string CorrectionIntentText
     {
         get => _correctionIntentText;
@@ -178,6 +247,37 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         get => _correctionCommentText;
         set { if (Set(ref _correctionCommentText, value)) RaiseCommandStates(); }
     }
+    public string CorrectionErrorReason
+    {
+        get => _correctionErrorReason;
+        set => Set(ref _correctionErrorReason, value);
+    }
+    public IReadOnlyList<DeveloperCorrectionReasonOption> CorrectionErrorReasons { get; } =
+    [
+        new("wrong_function", "Wrong function selected"),
+        new("wrong_target", "Wrong button or target selected"),
+        new("skipped_step", "Current step was skipped"),
+        new("stale_step", "Guidance repeated a completed step"),
+        new("other", "Other"),
+    ];
+    public string CorrectionQuestion => _correctionAnswer?.OriginalGoal
+        ?? _session?.OriginalUserMessage
+        ?? string.Empty;
+    public string CorrectionCurrentSituation
+    {
+        get
+        {
+            var context = _correctionAnswer?.Context ?? _lastObservation?.Context;
+            if (context is null) return "Current screen information is unavailable.";
+            return string.IsNullOrWhiteSpace(context.WindowTitle)
+                ? context.ApplicationName
+                : $"{context.ApplicationName} > {context.WindowTitle}";
+        }
+    }
+    public string CorrectionWrongTarget => _correctionAnswer?.TargetLabel
+        ?? _lastHighlightedCandidate?.Label
+        ?? _lastDecision?.VisualTarget?.Label
+        ?? "No target";
     public string CorrectionTaskId { get => _correctionTaskId; set { if (Set(ref _correctionTaskId, value)) RaiseCommandStates(); } }
     public string CorrectionStateId { get => _correctionStateId; set { if (Set(ref _correctionStateId, value)) RaiseCommandStates(); } }
     public string CorrectionTargetConcept { get => _correctionTargetConcept; set { if (Set(ref _correctionTargetConcept, value)) RaiseCommandStates(); } }
@@ -196,8 +296,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         set => Set(ref _saveCorrectionScreenshot, value);
     }
     public string CorrectionDataDirectory => _correctionStore.DataDirectory;
-    public string PauseMenuText => IsPaused ? "다시 시작" : "일시 정지";
-    public string DeveloperModeText => IsDeveloperMode ? "개발자 모드 ON" : "개발자 모드 OFF";
+    public string PauseMenuText => IsPaused ? "Resume" : "Pause";
+    public string DeveloperModeText => IsDeveloperMode ? "Developer Mode ON" : "Developer Mode OFF";
 
     private void ToggleLearningHistory()
     {
@@ -224,12 +324,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 item.Active ? "Developer revoked this learning record in history." : "Developer restored this learning record in history.");
             item.Active = !item.Active;
             _approvedReplays.Clear();
-            StatusText = item.Active ? "학습 기록 다시 적용됨" : "학습 기록 취소됨";
+            _recentReplays.Clear();
+            _recentSafeReplies.Clear();
+            StatusText = item.Active ? "Learning record reapplied" : "Learning record disabled";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            StatusText = "학습 기록 변경 오류";
+            StatusText = "Could not update learning record";
         }
     }
 
@@ -250,12 +352,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 item.Comment));
             item.MarkSaved();
             _approvedReplays.Clear();
-            StatusText = "LOG 수정 내용 저장됨 · 다음 판단부터 즉시 적용";
+            _recentReplays.Clear();
+            _recentSafeReplies.Clear();
+            StatusText = "LOG changes saved · applied to the next decision";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            StatusText = "LOG 수정 저장 오류";
+            StatusText = "Could not save LOG changes";
         }
     }
 
@@ -265,8 +369,45 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     {
         var query = GoalText.Trim();
         if (string.IsNullOrWhiteSpace(query)) return;
+        await SubmitGoalAsync(query);
+    }
+
+    public async Task SubmitRemoteAsync(string query, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return;
+        RemoteResponseRequested?.Invoke();
+        while (IsLoading) await Task.Delay(100, cancellationToken);
+        if (IsPaused)
+        {
+            Messages.Add(new ChatMessageItem("user", query.Trim()));
+            Messages.Add(CreateAssistantMessage("assistant", UserLanguage.Select(query,
+                "지금은 안내가 일시 정지되어 있어요. PC에서 계속 버튼을 누른 뒤 다시 말씀해 주세요.",
+                "Guidance is paused. Select Resume on the PC, then try again.")));
+            return;
+        }
+        await SubmitGoalAsync(query.Trim());
+    }
+
+    private async Task SubmitGoalAsync(string query)
+    {
+        var demoContinuation = _bluuDeliDemoFlow.IsAwaitingReply
+            && _bluuDeliDemoFlow.TryAcceptReply(query);
+        var demoStarted = !demoContinuation && _bluuDeliDemoFlow.TryStart(query);
+        if (_bluuDeliDemoFlow.IsAwaitingReply && !demoContinuation && !demoStarted)
+        {
+            Messages.Add(new ChatMessageItem("user", query));
+            GoalText = string.Empty;
+            var prompt = _bluuDeliDemoFlow.Resolve([]).Message;
+            Messages.Add(CreateAssistantMessage("assistant", prompt));
+            StatusText = "Waiting for your choice";
+            return;
+        }
+        var useBluuDeliDemo = demoContinuation || demoStarted;
+        if (!useBluuDeliDemo && _bluuDeliDemoFlow.IsActive) _bluuDeliDemoFlow.Reset();
+
         var replayObservation = _lastObservation;
-        var immediateReplay = TryResolveImmediateReplay(query, replayObservation);
+        var immediateReplay = useBluuDeliDemo ? null : TryResolveImmediateReplay(query, replayObservation);
+        var immediateSafeReply = useBluuDeliDemo ? null : TryResolveRecentSafeReply(query, replayObservation);
         Messages.Add(new ChatMessageItem("user", query));
         GoalText = string.Empty;
         ResetCorrectionDraft();
@@ -279,13 +420,19 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         ClearClarificationChoices();
         if (immediateReplay is not null && replayObservation is not null)
         {
+            DesktopDiagnostics.WriteEvent(
+                "CACHE_HIT",
+                ("kind", "approved_replay"),
+                ("targetId", immediateReplay.TargetId));
             _session = TaskSessionStateMachine.Create(query);
-            StatusText = "검증된 정답 즉시 적용";
+            StatusText = "Fast answer applied";
             if (immediateReplay.TargetId is null && immediateReplay.TargetBounds is not null)
             {
                 var message = CreateAssistantMessage(
                     "assistant",
-                    $"검증된 정답입니다. '{immediateReplay.TargetLabel}' 위치를 바로 표시할게요.");
+                    UserLanguage.Select(query,
+                        $"'{immediateReplay.TargetLabel}' 위치를 바로 표시할게요.",
+                        $"I will highlight '{immediateReplay.TargetLabel}' now."));
                 Messages.Add(message);
                 _overlay.ShowTarget(immediateReplay.TargetBounds, message.Text);
                 TargetHighlighted?.Invoke(immediateReplay.TargetBounds);
@@ -295,18 +442,38 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _forcedDecision = new GuideDecision(
                 GuideStatuses.InProgress,
                 GuideActions.Highlight,
-                $"검증된 정답입니다. '{immediateReplay.TargetLabel}' 위치를 바로 표시할게요.",
+                UserLanguage.Select(query,
+                    $"'{immediateReplay.TargetLabel}' 위치를 바로 표시할게요.",
+                    $"I will highlight '{immediateReplay.TargetLabel}' now."),
                 1,
                 immediateReplay.TargetId,
-                "검증된 항목이 열립니다.");
+                UserLanguage.Select(query, "선택한 항목이 열립니다.", "The selected item opens."));
             _taskCancellation = new CancellationTokenSource();
             await RunGuidanceLoopAsync(replayObservation, _taskCancellation.Token);
             return;
         }
-        var effectiveGoal = _correctionStore.ResolveIntent(query);
-        _session = TaskSessionStateMachine.Create(effectiveGoal);
-        if (!string.Equals(effectiveGoal, query, StringComparison.Ordinal))
-            Messages.Add(CreateAssistantMessage("assistant", $"저장된 개발자 교정을 적용했어요: {effectiveGoal}"));
+        if (immediateSafeReply is not null)
+        {
+            _session = TaskSessionStateMachine.Create(query);
+            _lastObservation = replayObservation;
+            var message = CreateAssistantMessage("assistant", immediateSafeReply.Message);
+            AttachTrainingContext(message, immediateSafeReply);
+            Messages.Add(message);
+            _lastDecision = immediateSafeReply;
+            _session = TaskSessionStateMachine.WaitingForUser(_session, immediateSafeReply.Message);
+            StatusText = "Saved answer applied instantly on the same screen";
+            DesktopDiagnostics.WriteEvent(
+                "CACHE_HIT",
+                ("kind", "safe_reply"),
+                ("action", immediateSafeReply.Action));
+            return;
+        }
+        var effectiveGoal = useBluuDeliDemo ? query : _correctionStore.ResolveIntent(query);
+        _session = TaskSessionStateMachine.Create(query) with
+        {
+            Goal = effectiveGoal,
+            Mode = TaskSessionStateMachine.InferMode(effectiveGoal),
+        };
         _taskCancellation = new CancellationTokenSource();
         await RunGuidanceLoopAsync(null, _taskCancellation.Token);
     }
@@ -323,10 +490,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _forcedDecision = new GuideDecision(
                 GuideStatuses.InProgress,
                 GuideActions.Highlight,
-                $"좋아요. '{choice.Label}' 위치를 표시할게요.",
+                Reply($"좋아요. '{choice.Label}' 위치를 표시할게요.", $"I will highlight '{choice.Label}'."),
                 1,
                 choice.TargetId,
-                "선택한 항목이 열립니다.");
+                Reply("선택한 항목이 열립니다.", "The selected item opens."));
         }
         else if (choice.ResolvedGoal is not null)
         {
@@ -344,9 +511,9 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private async Task RecoverAsync()
     {
         if (_session is null) return;
-        Messages.Add(new ChatMessageItem("user", "다른 위치를 찾아줘"));
+        Messages.Add(new ChatMessageItem("user", Reply("다른 위치를 찾아줘", "Find another location")));
         CancelRunningWork(markCancelled: false);
-        _session = TaskSessionStateMachine.Failed(_session, "사용자가 다른 후보를 요청함");
+        _session = TaskSessionStateMachine.Failed(_session, "The user requested another candidate.");
         _taskCancellation = new CancellationTokenSource();
         await RunGuidanceLoopAsync(null, _taskCancellation.Token);
     }
@@ -361,10 +528,12 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             for (var step = 0; step < 20 && !cancellationToken.IsCancellationRequested; step++)
             {
                 IsLoading = true;
-                StatusText = step == 0 ? "현재 화면 확인 중" : "다음 화면 확인 중";
+                StatusText = step == 0 ? "Inspecting current screen" : "Inspecting next screen";
                 pendingMessage = CreateAssistantMessage(
                     "assistant",
-                    step == 0 ? "현재 화면에서 누를 위치를 찾고 있어요…" : "화면이 바뀌었어요. 다음 위치를 찾고 있어요…",
+                    step == 0
+                        ? Reply("현재 화면에서 누를 위치를 찾고 있어요…", "Finding the next place to select on the current screen…")
+                        : Reply("화면이 바뀌었어요. 다음 위치를 찾고 있어요…", "The screen changed. Finding the next place…"),
                     isPending: true);
                 Messages.Add(pendingMessage);
                 _session = TaskSessionStateMachine.ObservationStarted(_session);
@@ -375,14 +544,21 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 CurrentApplication = string.IsNullOrWhiteSpace(currentObservation.Context.WindowTitle)
                     ? currentObservation.Context.ApplicationName
                     : $"{currentObservation.Context.ApplicationName} — {currentObservation.Context.WindowTitle}";
-                var storedCompletion = _correctionStore.TryResolveCompletion(
+                var storedCompletion = !_bluuDeliDemoFlow.IsActive && _correctionStore.TryResolveCompletion(
                         _session.OriginalUserMessage,
                         currentObservation.Context,
                         currentObservation.Candidates,
                         out _);
                 if (storedCompletion)
                 {
-                    const string completionMessage = "완료됐어요. 개발자가 검증한 최종 상태에 도착했습니다.";
+                    DesktopDiagnostics.WriteEvent(
+                        "stored_completion_replay_hit",
+                        ("goal", _session.OriginalUserMessage),
+                        ("application", currentObservation.Context.ApplicationName),
+                        ("url", currentObservation.Context.Url));
+                    var completionMessage = Reply(
+                        "완료됐어요. 원하는 화면에 도착했습니다.",
+                        "Done. You have reached the requested screen.");
                     var completionDecision = new GuideDecision(
                         GuideStatuses.Completed,
                         GuideActions.Explain,
@@ -395,80 +571,165 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     pendingMessage = null;
                     _overlay.Clear();
                     _session = TaskSessionStateMachine.Completed(_session, completionMessage);
-                    StatusText = "작업 완료";
+                    StatusText = "Task complete";
                     IsLoading = false;
                     return;
                 }
-                var prioritizedCandidates = _correctionStore.FilterRejectedCandidates(
-                    _session.OriginalUserMessage,
-                    currentObservation.Context,
-                    currentObservation.Candidates);
-                StatusText = $"후보 {prioritizedCandidates.Count}개 분석 중";
+                var prioritizedCandidates = _bluuDeliDemoFlow.IsActive
+                    ? currentObservation.Candidates
+                    : _correctionStore.FilterRejectedCandidates(
+                        _session.OriginalUserMessage,
+                        currentObservation.Context,
+                        currentObservation.Candidates);
+                DesktopDiagnostics.WriteEvent(
+                    "INTENT_NORMALIZED",
+                    ("intent", DeveloperIntentMatcher.CreateIntentKey(_session.OriginalUserMessage)),
+                    ("application", currentObservation.Context.ApplicationName));
+                if (prioritizedCandidates.Count != currentObservation.Candidates.Count)
+                    DesktopDiagnostics.WriteEvent(
+                        "NEGATIVE_EVIDENCE",
+                        ("rejected", currentObservation.Candidates.Count - prioritizedCandidates.Count));
+                StatusText = $"Analyzing {prioritizedCandidates.Count} candidates";
                 _session = TaskSessionStateMachine.AiRequested(_session);
                 var request = new GuideRequest(_session, currentObservation.Context, prioritizedCandidates);
                 GuideDecision decision;
-                if (_forcedDecision is not null)
+                if (_bluuDeliDemoFlow.IsActive)
+                {
+                    decision = _bluuDeliDemoFlow.Resolve(prioritizedCandidates);
+                    if (decision.Action == GuideActions.HighlightVisual)
+                    {
+                        request = request with
+                        {
+                            Screenshot = "bluu-deli-fixed-demo-layout",
+                            ScreenshotBounds = WindowsScreenGeometry.GetVirtualScreenBounds(),
+                        };
+                    }
+                    StatusText = "BLUU DELI demo guidance";
+                }
+                else if (_forcedDecision is not null)
                 {
                     decision = ContractValidator.ValidateDecision(_forcedDecision, request);
                     _forcedDecision = null;
-                    StatusText = "선택한 위치 안내";
+                    StatusText = "Guiding to selected target";
                 }
                 else if (_correctionStore.TryResolveTarget(
                     _session.OriginalUserMessage,
                     currentObservation.Context,
                     prioritizedCandidates,
                     out var correctedTarget,
-                    out _))
+                    out var matchedKnowledge))
                 {
                     DesktopDiagnostics.WriteEvent(
-                        "persisted_gold_replay_hit",
+                        "HUMAN_GOLD_CANDIDATE",
+                        ("knowledgeId", matchedKnowledge.Id),
+                        ("intent", matchedKnowledge.HumanGold?.NormalizedIntent));
+                    DesktopDiagnostics.WriteEvent("INTENT_MATCH", ("knowledgeId", matchedKnowledge.Id));
+                    DesktopDiagnostics.WriteEvent("STATE_MATCH", ("knowledgeId", matchedKnowledge.Id));
+                    DesktopDiagnostics.WriteEvent("TARGET_MATCH", ("targetId", correctedTarget.Id));
+                    DesktopDiagnostics.WriteEvent(
+                        "GOLD_SCORE",
+                        ("knowledgeId", matchedKnowledge.Id),
+                        ("confidence", matchedKnowledge.HumanGold?.Confidence ?? 0));
+                    DesktopDiagnostics.WriteEvent(
+                        matchedKnowledge.HumanGold is null ? "KNOWLEDGE_HIT" : "HUMAN_GOLD_HIT",
+                        ("knowledgeId", matchedKnowledge.Id),
                         ("targetId", correctedTarget.Id),
-                        ("label", correctedTarget.Label));
+                        ("label", correctedTarget.Label),
+                        ("intent", matchedKnowledge.HumanGold?.NormalizedIntent),
+                        ("confidence", matchedKnowledge.HumanGold?.Confidence));
                     decision = new GuideDecision(
                         GuideStatuses.InProgress,
                         GuideActions.Highlight,
-                        $"저장된 개발자 교정에 따라 '{correctedTarget.Label ?? correctedTarget.Role}' 위치를 표시할게요.",
+                        Reply(
+                            $"다음으로 '{correctedTarget.Label ?? correctedTarget.Role}'를 눌러주세요. 위치를 표시할게요.",
+                            $"Next, select '{correctedTarget.Label ?? correctedTarget.Role}'. I will highlight it."),
                         1,
                         correctedTarget.Id,
-                        "교정된 항목이 열립니다.");
-                    StatusText = "개발자 교정 적용";
+                        Reply("선택한 항목이 열립니다.", "The selected item opens."));
+                    StatusText = "Fast answer applied";
+                }
+                else if (WindowsSettingsSemanticRouter.TryResolve(
+                    _session.OriginalUserMessage,
+                    currentObservation.Context,
+                    prioritizedCandidates,
+                    out var settingsTarget))
+                {
+                    DesktopDiagnostics.WriteEvent(
+                        "WINDOWS_SETTINGS_SEMANTIC_HIT",
+                        ("targetId", settingsTarget.Id),
+                        ("label", settingsTarget.Label));
+                    decision = new GuideDecision(
+                        GuideStatuses.InProgress,
+                        GuideActions.Highlight,
+                        Reply(
+                            $"좋아요. 현재 화면에서 다음 단계인 '{settingsTarget.Label ?? settingsTarget.Role}' 위치를 표시할게요.",
+                            $"The next step is '{settingsTarget.Label ?? settingsTarget.Role}'. I will highlight it."),
+                        1,
+                        settingsTarget.Id,
+                        Reply("현재 화면에서 다시 찾은 메뉴입니다.", "This menu was resolved from the current screen."));
+                    StatusText = "Fast Windows Settings guidance";
                 }
                 else if (_correctionStore.TryResolveVisualTarget(
                     _session.OriginalUserMessage,
                     currentObservation.Context,
                     currentObservation.SnapshotHash,
                     out var correctedVisualTarget,
-                    out _))
+                    out var visualKnowledge))
                 {
+                    DesktopDiagnostics.WriteEvent(
+                        visualKnowledge.HumanGold is null ? "KNOWLEDGE_HIT" : "HUMAN_GOLD_HIT",
+                        ("kind", "visual_evidence"),
+                        ("label", correctedVisualTarget.Label));
+                    // Persisted visual feedback is normalized to the physical desktop
+                    // screenshot. Re-read the current Win32 bounds instead of using WPF
+                    // DIPs, which differ on 125%/150% mixed-DPI monitor layouts.
                     request = request with
                     {
                         Screenshot = "verified-replay",
-                        ScreenshotBounds = new UiBounds(
-                            SystemParameters.VirtualScreenLeft,
-                            SystemParameters.VirtualScreenTop,
-                            SystemParameters.VirtualScreenWidth,
-                            SystemParameters.VirtualScreenHeight),
+                        ScreenshotBounds = WindowsScreenGeometry.GetVirtualScreenBounds(),
                     };
                     decision = new GuideDecision(
                         GuideStatuses.InProgress,
                         GuideActions.HighlightVisual,
-                        $"저장된 검증 정답에 따라 '{correctedVisualTarget.Label}' 위치를 표시할게요.",
+                        Reply(
+                            $"다음으로 '{correctedVisualTarget.Label}'를 눌러주세요. 위치를 표시할게요.",
+                            $"Next, select '{correctedVisualTarget.Label}'. I will highlight it."),
                         1,
                         VisualTarget: correctedVisualTarget);
-                    StatusText = "검증된 화면 정답 적용";
+                    StatusText = "Fast visual guidance";
                 }
                 else
                 {
-                    StatusText = $"현재 화면과 후보 {prioritizedCandidates.Count}개를 GPT가 분석 중";
+                    DesktopDiagnostics.WriteEvent(
+                        "GOLD_REJECTED",
+                        ("intent", DeveloperIntentMatcher.CreateIntentKey(_session.OriginalUserMessage)),
+                        ("reason", "no_valid_intent_state_target_match"));
+                    DesktopDiagnostics.WriteEvent(
+                        "GPT_FALLBACK",
+                        ("goal", _session.OriginalUserMessage),
+                        ("application", currentObservation.Context.ApplicationName));
+                    StatusText = $"GPT is analyzing the screen and {prioritizedCandidates.Count} candidates";
                     (decision, request) = await RequestVisionDecisionAsync(request, cancellationToken);
+                }
+                if (_bluuDeliDemoFlow.IsActive)
+                {
+                    StatusText = "Preparing the next kiosk step";
+                    await _delayAsync(TimeSpan.FromMilliseconds(1500), cancellationToken);
                 }
                 _lastObservation = currentObservation;
                 _lastDecision = decision;
+                DesktopDiagnostics.WriteEvent(
+                    "guide_decision",
+                    ("status", decision.Status),
+                    ("action", decision.Action),
+                    ("targetId", decision.TargetId),
+                    ("confidence", decision.Confidence));
                 pendingMessage.Text = decision.Message;
                 AttachTrainingContext(pendingMessage, decision);
                 pendingMessage.IsPending = false;
                 var answerMessage = pendingMessage;
                 pendingMessage = null;
+                RememberRecentSafeReply(answerMessage);
 
                 if (decision.Action == GuideActions.AskUser
                     && decision.AlternativeTargetIds is { Count: >= 2 })
@@ -485,7 +746,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         _clarificationObservation = currentObservation;
                         foreach (var choice in choices) ClarificationChoices.Add(choice);
                         _session = TaskSessionStateMachine.WaitingForUser(_session, decision.Message);
-                        StatusText = "선택이 필요해요";
+                        StatusText = "A choice is required";
                         IsLoading = false;
                         RaiseCommandStates();
                         return;
@@ -496,7 +757,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 {
                     _overlay.Clear();
                     _session = TaskSessionStateMachine.Completed(_session, decision.Message);
-                    StatusText = "작업 완료";
+                    StatusText = "Task complete";
                     IsLoading = false;
                     return;
                 }
@@ -511,12 +772,27 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     UiCandidate? selectedCandidate = null;
                     UiBounds bounds;
                     var isOffscreen = false;
-                    var selectedLabel = decision.VisualTarget?.Label ?? decision.TargetId ?? "화면 항목";
+                    var selectedLabel = decision.VisualTarget?.Label ?? decision.TargetId ?? "screen item";
                     if (decision.Action == GuideActions.HighlightVisual)
                     {
                         if (request.ScreenshotBounds is null || decision.VisualTarget is null)
                             throw new ContractValidationException("The visual target has no screenshot bounds.");
-                        bounds = MapVisualTarget(request.ScreenshotBounds, decision.VisualTarget);
+                        bounds = ScreenCoordinateMapper.MapVisualTarget(request.ScreenshotBounds, decision.VisualTarget);
+                        if (!WindowsScreenGeometry.ContainsCenter(bounds))
+                        {
+                            DesktopDiagnostics.WriteEvent(
+                                "visual_target_outside_connected_monitor",
+                                ("x", Math.Round(bounds.X)),
+                                ("y", Math.Round(bounds.Y)));
+                            answerMessage.Text = Reply(
+                                "표시할 위치가 실제 연결된 모니터 안에 있는지 확인하지 못했어요. 화면을 확인한 뒤 다시 질문해 주세요.",
+                                "I could not confirm that the target is inside a connected monitor. Check the screen, then ask again.");
+                            _overlay.Clear();
+                            _session = TaskSessionStateMachine.WaitingForUser(_session, answerMessage.Text);
+                            StatusText = "Target location needs review";
+                            IsLoading = false;
+                            return;
+                        }
                         DesktopDiagnostics.WriteEvent(
                             "visual_target_mapped",
                             ("x", Math.Round(bounds.X)),
@@ -558,13 +834,15 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     _lastHighlightedCandidate = selectedCandidate;
                     _lastHighlightedBounds = bounds;
                     AttachTrainingContext(answerMessage, decision, selectedLabel, bounds, selectedCandidate);
+                    RememberRecentReplay(answerMessage);
                     _session = TaskSessionStateMachine.GuidanceReady(_session, decision.Message, decision.ExpectedChange);
                     if (isOffscreen)
                     {
                         _overlay.ShowScrollHint(bounds, decision.Message);
-                        StatusText = bounds.Y >= SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight
-                            ? "아래로 스크롤해 주세요"
-                            : "위로 스크롤해 주세요";
+                        var virtualScreen = WindowsScreenGeometry.GetVirtualScreenBounds();
+                        StatusText = bounds.Y >= virtualScreen.Y + virtualScreen.Height
+                            ? "Scroll down"
+                            : "Scroll up";
                         var visibleBounds = await currentObservation.Registry.WaitForVisibleBoundsAsync(
                             decision.TargetId!,
                             TimeSpan.FromSeconds(60),
@@ -572,7 +850,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                         if (visibleBounds is null)
                         {
                             _session = TaskSessionStateMachine.WaitingForUser(_session);
-                            StatusText = "스크롤을 기다리는 중";
+                            StatusText = "Waiting for scrolling";
                             return;
                         }
                         bounds = visibleBounds;
@@ -590,23 +868,26 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                             ("height", Math.Round(bounds.Height)));
                         TargetHighlighted?.Invoke(bounds);
                     }
-                    StatusText = "표시된 위치에서 직접 작업해 주세요";
+                    StatusText = "Select the highlighted location yourself";
                     IsLoading = false;
                     var changed = await _changeMonitor.WaitForTargetInteractionAsync(
                         bounds,
                         _session.OriginalUserMessage,
+                        currentObservation.SnapshotHash,
                         TimeSpan.FromSeconds(60),
+                        _bluuDeliDemoFlow.IsActive,
                         cancellationToken);
                     if (changed is null)
                     {
                         _session = TaskSessionStateMachine.WaitingForUser(_session);
-                        StatusText = "변화를 기다리는 중 — 필요하면 ‘찾을 수 없어요’를 눌러주세요";
+                        StatusText = "Waiting for a change — use Find another if needed";
                         return;
                     }
                     _overlay.Clear();
+                    if (_bluuDeliDemoFlow.IsActive) _bluuDeliDemoFlow.TargetInteracted();
                     _session = TaskSessionStateMachine.StepCompleted(
                         _session,
-                        $"사용자가 '{selectedLabel}' 컨트롤을 클릭함. 이전 안내: {decision.Message}");
+                        $"The user selected '{selectedLabel}'. Previous guidance: {decision.Message}");
                     currentObservation = changed;
                     continue;
                 }
@@ -619,40 +900,50 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     continue;
                 }
                 _session = TaskSessionStateMachine.WaitingForUser(_session, decision.Message);
-                StatusText = decision.Action == GuideActions.AskUser ? "추가 설명 필요" : "안내 확인";
+                StatusText = decision.Action == GuideActions.AskUser ? "More information required" : "Review guidance";
                 return;
             }
-            StatusText = "안전을 위해 안내를 멈췄어요";
+            StatusText = "Guidance stopped for safety";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            StatusText = IsPaused ? "일시 정지됨" : "작업 취소됨";
+            StatusText = IsPaused ? "Paused" : "Task cancelled";
             if (pendingMessage is not null) Messages.Remove(pendingMessage);
         }
         catch (WindowsObservationException exception)
         {
-            ErrorMessage = exception.Message;
-            StatusText = "관찰 오류";
+            DesktopDiagnostics.Write(exception);
+            ErrorMessage = Reply(
+                "현재 활성 Windows 화면을 확인할 수 없어요.",
+                "The active Windows screen could not be inspected.");
+            StatusText = "Observation error";
             CompletePendingOrAddError(pendingMessage, ErrorMessage);
         }
         catch (ContractValidationException exception)
         {
             DesktopDiagnostics.Write(exception);
-            ErrorMessage = "안전하게 표시할 대상을 확인하지 못했어요. 다시 시도해 주세요.";
-            StatusText = "안내 검증 오류";
+            ErrorMessage = Reply(
+                "안전하게 표시할 대상을 확인하지 못했어요. 다시 시도해 주세요.",
+                "A safe target could not be confirmed. Please try again.");
+            StatusText = "Guidance validation error";
             CompletePendingOrAddError(pendingMessage, ErrorMessage);
         }
         catch (GuideApiException exception)
         {
-            ErrorMessage = exception.Message;
-            StatusText = "서버 연결 오류";
+            DesktopDiagnostics.Write(exception);
+            ErrorMessage = Reply(
+                "지금은 안내 서비스에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.",
+                "The guidance service is unavailable. Try again shortly.");
+            StatusText = "Server connection error";
             CompletePendingOrAddError(pendingMessage, ErrorMessage);
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            ErrorMessage = "현재 화면을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.";
-            StatusText = "오류";
+            ErrorMessage = Reply(
+                "현재 화면을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
+                "The current screen could not be inspected. Please try again shortly.");
+            StatusText = "Error";
             CompletePendingOrAddError(pendingMessage, ErrorMessage);
         }
         finally
@@ -667,7 +958,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         CancellationToken cancellationToken)
     {
         _overlay.Clear();
-        StatusText = "화면을 보고 정확한 위치를 찾는 중";
+        StatusText = "Inspecting the screen for the exact location";
         var capture = await _screenCapture.CaptureAsync(cancellationToken);
         var visionRequest = request with
         {
@@ -678,21 +969,6 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         return (decision, visionRequest);
     }
 
-    private static UiBounds MapVisualTarget(UiBounds screenshotBounds, VisualTarget target)
-    {
-        var width = Math.Min(screenshotBounds.Width, Math.Max(8, target.Width * screenshotBounds.Width));
-        var height = Math.Min(screenshotBounds.Height, Math.Max(8, target.Height * screenshotBounds.Height));
-        var x = Math.Clamp(
-            screenshotBounds.X + target.X * screenshotBounds.Width,
-            screenshotBounds.X,
-            screenshotBounds.X + screenshotBounds.Width - width);
-        var y = Math.Clamp(
-            screenshotBounds.Y + target.Y * screenshotBounds.Height,
-            screenshotBounds.Y,
-            screenshotBounds.Y + screenshotBounds.Height - height);
-        return new UiBounds(x, y, width, height);
-    }
-
     private static string DescribeClarificationChoice(UiCandidate candidate)
     {
         var label = candidate.Label ?? candidate.Description ?? candidate.Role;
@@ -700,8 +976,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             return label;
         return Convert.ToString(scopeValue) switch
         {
-            "browser_content" => $"웹사이트 안의 {label}",
-            "browser_chrome" => $"브라우저 주소창의 {label}",
+            "browser_content" => $"Website: {label}",
+            "browser_chrome" => $"Browser address bar: {label}",
             _ => label,
         };
     }
@@ -714,10 +990,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _session is not null && _correctionAnswer is not null
         && IsCorrectionEditorVisible
         && (_pendingCorrectionSelection is not null
-            || !string.IsNullOrWhiteSpace(CorrectionIntentText)
-            || !string.IsNullOrWhiteSpace(CorrectionCommentText)
-            || !string.IsNullOrWhiteSpace(CorrectionTaskId)
-            || !string.IsNullOrWhiteSpace(CorrectionTargetConcept));
+            || !string.IsNullOrWhiteSpace(CorrectionIntentText));
 
     private static bool CanEvaluateAnswer(object? parameter) =>
         parameter is ChatMessageItem { CanEvaluate: true };
@@ -725,6 +998,20 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private async Task MarkAnswerCorrectAsync(object? parameter)
     {
         if (parameter is not ChatMessageItem message || !message.CanEvaluate) return;
+        _positiveAnswer = message;
+        PositiveCommentText = string.Empty;
+        OnPropertyChanged(nameof(PositiveQuestion));
+        OnPropertyChanged(nameof(PositiveSituation));
+        OnPropertyChanged(nameof(PositiveTarget));
+        IsPositiveConfirmationVisible = true;
+        StatusText = "Waiting to confirm correct answer";
+        await Task.CompletedTask;
+    }
+
+    private async Task ConfirmPositiveAnswerAsync()
+    {
+        var message = _positiveAnswer;
+        if (message is null || !message.CanEvaluate) return;
         try
         {
             var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "correct"));
@@ -732,7 +1019,33 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                     feedback,
                     message.TargetSignature,
                     message.Decision?.VisualTarget) is { } positiveCorrection)
+            {
+                if (!string.IsNullOrWhiteSpace(PositiveCommentText))
+                {
+                    var refined = DeveloperCommentRefiner.Refine(PositiveCommentText);
+                    positiveCorrection = positiveCorrection with
+                    {
+                        DeveloperComment = refined.Raw,
+                        RefinedComment = refined.Normalized,
+                        IssueTags = positiveCorrection.IssueTags?
+                            .Concat(refined.IssueTags).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    };
+                }
                 await _correctionStore.SaveAsync(positiveCorrection, null);
+            }
+            if (!string.IsNullOrWhiteSpace(PositiveCommentText))
+            {
+                await _correctionStore.SaveHistoryEditAsync(new DeveloperLearningEditRecord(
+                    1,
+                    Guid.NewGuid().ToString("D"),
+                    DateTimeOffset.UtcNow,
+                    feedback.Id,
+                    "correct",
+                    message.OriginalGoal ?? message.EffectiveGoal ?? "unknown",
+                    message.Text,
+                    message.TargetLabel ?? message.Decision?.VisualTarget?.Label,
+                    DeveloperLearningPrivacy.Redact(PositiveCommentText.Trim())));
+            }
             RememberApprovedReplay(message);
             DesktopDiagnostics.WriteEvent(
                 "approved_replay_saved",
@@ -740,15 +1053,23 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
                 ("label", message.TargetLabel),
                 ("snapshotHash", message.SnapshotHash));
             message.MarkEvaluated("correct");
+            CancelPositiveAnswer();
             StatusText = message.TargetSignature is null
-                ? "정답으로 영구 저장됨"
-                : "정답으로 영구 저장됨 · 같은 의도의 질문은 AI 없이 즉시 안내";
+                ? "Saved permanently as correct"
+                : "Saved as correct · same intent will replay instantly without AI";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            StatusText = "평가 저장 오류";
+            StatusText = "Could not save evaluation";
         }
+    }
+
+    private void CancelPositiveAnswer()
+    {
+        IsPositiveConfirmationVisible = false;
+        PositiveCommentText = string.Empty;
+        _positiveAnswer = null;
     }
 
     private async Task MarkAnswerIncorrectAsync(object? parameter)
@@ -757,14 +1078,21 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         try
         {
             var feedback = await _correctionStore.SaveFeedbackAsync(CreateFeedbackRecord(message, "incorrect"));
+            if (!string.IsNullOrWhiteSpace(message.OriginalGoal))
+            {
+                var key = NormalizeGoal(message.OriginalGoal);
+                _approvedReplays.Remove(key);
+                _recentReplays.Remove(key);
+                _recentSafeReplies.Remove(key);
+            }
             message.MarkEvaluated("incorrect");
             BeginCorrectionDraft(message, feedback);
-            StatusText = "X 저장됨 · 수정 내용을 작성해 주세요";
+            StatusText = "Marked incorrect · enter the correction";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            StatusText = "평가 저장 오류";
+            StatusText = "Could not save evaluation";
         }
     }
 
@@ -774,7 +1102,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         try
         {
             CancelRunningWork(markCancelled: false);
-            StatusText = "완료 상태 확인 및 저장 중";
+            StatusText = "Verifying and saving completion";
             var goal = message.OriginalGoal
                 ?? (string.IsNullOrWhiteSpace(_submittedGoal) ? _session?.OriginalUserMessage : _submittedGoal);
             if (string.IsNullOrWhiteSpace(goal)) return;
@@ -820,16 +1148,18 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             message.MarkEvaluated("completed");
             _overlay.Clear();
             if (_session is not null)
-                _session = TaskSessionStateMachine.Completed(_session, "개발자가 완료 상태로 검증했습니다.");
+                _session = TaskSessionStateMachine.Completed(_session, "The developer verified task completion.");
             Messages.Add(CreateAssistantMessage(
                 "assistant",
-                "여기서 작업이 끝난 것으로 저장했습니다. 같은 의도와 완료 화면에서는 더 이상 다음 단계를 찾지 않습니다."));
-            StatusText = "완료 상태가 human_gold로 저장됨";
+                Reply(
+                    "여기서 작업이 끝난 것으로 저장했습니다. 같은 의도와 완료 화면에서는 더 이상 다음 단계를 찾지 않습니다.",
+                    "I saved this screen as the end of the task. On the same intent and completion screen, I will stop instead of searching for another step.")));
+            StatusText = "Completion saved as human_gold";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            StatusText = "완료 상태 저장 오류";
+            StatusText = "Could not save completion";
         }
     }
 
@@ -837,7 +1167,7 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     {
         ResetCorrectionDraft();
         _overlay.Clear();
-        StatusText = "교정 취소됨";
+        StatusText = "Correction cancelled";
     }
 
     private void BeginCorrectionDraft(ChatMessageItem answer, AnswerFeedbackRecord? feedback)
@@ -850,14 +1180,17 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         CorrectionCommentText = string.Empty;
         CorrectionTaskId = string.Empty;
         CorrectionStateId = string.Empty;
-        CorrectionTargetConcept = answer.TargetLabel ?? answer.Decision?.VisualTarget?.Label ?? string.Empty;
+        CorrectionTargetConcept = string.Empty;
         CorrectionExpectedNextState = answer.Decision?.ExpectedChange ?? string.Empty;
         CorrectionExpectedEvidence = CorrectionTargetConcept;
         CorrectionOutcomeLabel = "wrong_target";
-        CorrectionSelectionSummary = "정답 영역을 아직 선택하지 않았습니다.";
+        CorrectionSelectionSummary = "No correct target selected yet.";
         _pendingCorrectionSelection = null;
         _pendingCorrectionCandidate = null;
         _pendingCorrectionCapture = null;
+        OnPropertyChanged(nameof(CorrectionQuestion));
+        OnPropertyChanged(nameof(CorrectionCurrentSituation));
+        OnPropertyChanged(nameof(CorrectionWrongTarget));
         IsCorrectionEditorVisible = true;
     }
 
@@ -883,37 +1216,39 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         if (selection is null)
         {
             IsCorrectionEditorVisible = true;
-            StatusText = "정답 영역 선택 취소됨";
+            StatusText = "Target selection cancelled";
             return;
         }
 
         try
         {
-            StatusText = "선택 영역 미리보기 준비 중";
+            StatusText = "Preparing target preview";
             var capture = await _screenCapture.CaptureAsync(CancellationToken.None);
             var matchedCandidate = DeveloperCorrectionMatcher.FindSelectedCandidate(
                 selection,
                 observation.Candidates);
             var targetLabel = matchedCandidate?.Label
                 ?? matchedCandidate?.Description
-                ?? "사용자가 선택한 정답 영역";
+                ?? "Developer-selected target";
             _pendingCorrectionSelection = selection;
             _pendingCorrectionCandidate = matchedCandidate;
             _pendingCorrectionCapture = capture;
+            CorrectionIntentText = targetLabel;
+            CorrectionTargetConcept = targetLabel;
             CorrectionSelectionSummary = matchedCandidate is null
-                ? $"선택됨: 화면 영역 {Math.Round(selection.X)}, {Math.Round(selection.Y)} · 저장 전"
-                : $"선택됨: {targetLabel} · 저장 전";
+                ? $"Selected screen region: {Math.Round(selection.X)}, {Math.Round(selection.Y)} · not saved"
+                : $"Selected: {targetLabel} · not saved";
             var displayBounds = matchedCandidate?.Bounds ?? selection;
-            _overlay.ShowTarget(displayBounds, "교정 미리보기입니다. 확인 후 저장을 눌러 주세요.");
+            _overlay.ShowTarget(displayBounds, "Correction preview. Verify the target, then select Save.");
             TargetHighlighted?.Invoke(displayBounds);
             IsCorrectionEditorVisible = true;
-            StatusText = "선택 영역 확인 중 · 아직 저장되지 않음";
+            StatusText = "Reviewing selection · not saved yet";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            ErrorMessage = "선택한 정답 영역을 저장하지 못했어요.";
-            StatusText = "교정 저장 오류";
+            ErrorMessage = "The selected target could not be saved.";
+            StatusText = "Could not save correction";
             IsCorrectionEditorVisible = true;
         }
     }
@@ -924,16 +1259,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         try
         {
             var refined = DeveloperCommentRefiner.Refine(CorrectionCommentText);
-            var correctedIntent = string.IsNullOrWhiteSpace(CorrectionIntentText)
-                ? null
-                : CorrectionIntentText.Trim();
+            string? correctedIntent = null;
             VisualTarget? normalizedTarget = null;
             CorrectionTargetSignature? signature = null;
             if (_pendingCorrectionSelection is not null && _pendingCorrectionCapture is not null)
             {
                 var label = _pendingCorrectionCandidate?.Label
                     ?? _pendingCorrectionCandidate?.Description
-                    ?? "사용자가 선택한 정답 영역";
+                    ?? "Developer-selected target";
                 normalizedTarget = DeveloperCorrectionMatcher.NormalizeSelection(
                     _pendingCorrectionCapture.Bounds,
                     _pendingCorrectionSelection,
@@ -951,18 +1284,67 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             var saved = await _correctionStore.SaveAsync(
                 record,
                 SaveCorrectionScreenshot ? _pendingCorrectionCapture?.DataUrl : null);
-            var selectedLabel = _pendingCorrectionCandidate?.Label ?? "정답 정보";
+            var selectedLabel = _pendingCorrectionCandidate?.Label ?? "correct target";
+            var selectedCandidate = _pendingCorrectionCandidate;
+            var selectedBounds = _pendingCorrectionCandidate?.Bounds ?? _pendingCorrectionSelection;
+            var normalizedVisualTarget = normalizedTarget;
+            var correctionDecision = selectedCandidate is not null
+                ? new GuideDecision(
+                    GuideStatuses.InProgress,
+                    GuideActions.Highlight,
+                    Reply($"수정한 내용을 바로 적용했어요. '{selectedLabel}'을(를) 눌러보세요.", $"The correction is active now. Select '{selectedLabel}'."),
+                    1,
+                    selectedCandidate.Id,
+                    Reply($"'{selectedLabel}'을(를) 누른 다음 화면을 확인합니다.", $"The screen is checked after selecting '{selectedLabel}'."))
+                : normalizedVisualTarget is not null
+                    ? new GuideDecision(
+                        GuideStatuses.InProgress,
+                        GuideActions.HighlightVisual,
+                        Reply("수정한 위치를 바로 표시했어요. 표시된 곳을 눌러보세요.", "The corrected target is highlighted now. Select it."),
+                        1,
+                        VisualTarget: normalizedVisualTarget)
+                    : null;
+            ChatMessageItem? appliedMessage = null;
+            if (correctionDecision is not null && selectedBounds is not null)
+            {
+                var liveBounds = selectedBounds;
+                var canApplyNow = selectedCandidate is null;
+                if (selectedCandidate is not null)
+                    canApplyNow = _lastObservation?.Registry.TryResolveState(
+                            selectedCandidate.Id, out liveBounds, out var isOffscreen) == true
+                        && !isOffscreen;
+                if (canApplyNow && WindowsScreenGeometry.ContainsCenter(liveBounds))
+                {
+                    appliedMessage = CreateAssistantMessage("assistant", correctionDecision.Message);
+                    AttachTrainingContext(
+                        appliedMessage,
+                        correctionDecision,
+                        selectedLabel,
+                        liveBounds,
+                        selectedCandidate);
+                    _lastDecision = correctionDecision;
+                    _lastHighlightedCandidate = selectedCandidate;
+                    _lastHighlightedBounds = liveBounds;
+                    RememberApprovedReplay(appliedMessage);
+                    _overlay.ShowTarget(liveBounds, correctionDecision.Message);
+                    TargetHighlighted?.Invoke(liveBounds);
+                }
+            }
             ResetCorrectionDraft(clearOverlay: false);
-            Messages.Add(CreateAssistantMessage(
+            Messages.Add(appliedMessage ?? CreateAssistantMessage(
                 "assistant",
-                $"교정 내용을 확인하고 저장했어요. 다음 같은 질문에서는 '{selectedLabel}' 기준을 우선 적용합니다."));
-            StatusText = $"교정 저장됨 · {saved.Id[..8]}";
+                Reply(
+                    $"교정 내용을 확인하고 저장했어요. 다음 같은 질문에서는 '{selectedLabel}' 기준을 우선 적용합니다.",
+                    $"The correction was reviewed and saved. Future matching questions will prioritize '{selectedLabel}'.")));
+            StatusText = appliedMessage is null
+                ? $"Correction saved · {saved.Id[..8]}"
+                : $"Correction saved and applied · {saved.Id[..8]}";
         }
         catch (Exception exception)
         {
             DesktopDiagnostics.Write(exception);
-            ErrorMessage = "교정 데이터를 저장하지 못했어요.";
-            StatusText = "교정 저장 오류";
+            ErrorMessage = "The correction data could not be saved.";
+            StatusText = "Could not save correction";
         }
     }
 
@@ -999,12 +1381,15 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             _correctionFeedback?.Id,
             string.IsNullOrWhiteSpace(refinedComment.Raw) ? null : refinedComment.Raw,
             string.IsNullOrWhiteSpace(refinedComment.Normalized) ? null : refinedComment.Normalized,
-            refinedComment.IssueTags.Count == 0 ? null : refinedComment.IssueTags,
+            refinedComment.IssueTags
+                .Concat(["wrong_target", CorrectionErrorReason])
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
             DeveloperLabeling.CreateCorrectionLabels(
                 _correctionAnswer?.OriginalGoal ?? _session!.OriginalUserMessage,
                 context,
                 string.IsNullOrWhiteSpace(CorrectionTargetConcept)
-                    ? (_pendingCorrectionCandidate?.Label ?? _correctionAnswer?.TargetLabel ?? "unknown target")
+                    ? (_pendingCorrectionCandidate?.Label ?? CorrectionIntentText.Trim())
                     : CorrectionTargetConcept,
                 CorrectionTaskId,
                 CorrectionStateId,
@@ -1034,13 +1419,14 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         IsCorrectionEditorVisible = false;
         CorrectionIntentText = string.Empty;
         CorrectionCommentText = string.Empty;
+        CorrectionErrorReason = "wrong_function";
         CorrectionTaskId = string.Empty;
         CorrectionStateId = string.Empty;
         CorrectionTargetConcept = string.Empty;
         CorrectionExpectedNextState = string.Empty;
         CorrectionExpectedEvidence = string.Empty;
         CorrectionOutcomeLabel = "wrong_target";
-        CorrectionSelectionSummary = "정답 영역을 아직 선택하지 않았습니다.";
+        CorrectionSelectionSummary = "No correct target selected yet.";
         _correctionAnswer = null;
         _correctionFeedback = null;
         _pendingCorrectionSelection = null;
@@ -1052,9 +1438,10 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     private void CancelCurrentTask()
     {
         CancelRunningWork(markCancelled: true);
+        _bluuDeliDemoFlow.Reset();
         ClearClarificationChoices();
-        StatusText = "작업 취소됨";
-        Messages.Add(CreateAssistantMessage("assistant", "안내를 취소했어요. 새로운 목표를 입력해 주세요."));
+        StatusText = "Task cancelled";
+        Messages.Add(CreateAssistantMessage("assistant", Reply("안내를 취소했어요. 새로운 목표를 입력해 주세요.", "Guidance was cancelled. Enter a new goal.")));
     }
 
     private void TogglePause()
@@ -1064,13 +1451,13 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         {
             CancelRunningWork(markCancelled: false);
             ClearClarificationChoices();
-            StatusText = "일시 정지됨";
-            Messages.Add(CreateAssistantMessage("assistant", "화면 관찰을 일시 정지했어요."));
+            StatusText = "Paused";
+            Messages.Add(CreateAssistantMessage("assistant", Reply("화면 관찰을 일시 정지했어요.", "Screen observation is paused.")));
         }
         else
         {
-            StatusText = "준비됨";
-            Messages.Add(CreateAssistantMessage("assistant", "다시 시작할 목표를 입력해 주세요."));
+            StatusText = "Ready";
+            Messages.Add(CreateAssistantMessage("assistant", Reply("다시 시작할 목표를 입력해 주세요.", "Enter a goal to resume.")));
         }
         RaiseCommandStates();
     }
@@ -1079,8 +1466,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
     {
         IsDeveloperMode = !IsDeveloperMode;
         StatusText = IsDeveloperMode
-            ? "개발자 모드 켜짐 · O/X 평가와 GPT 피드백 라벨링 사용 가능"
-            : "일반 모드";
+            ? "Developer mode on · O/X/Done evaluation and GPT feedback labeling available"
+            : "Standard mode";
         RaiseCommandStates();
     }
 
@@ -1096,10 +1483,30 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _approvedReplays[NormalizeGoal(message.OriginalGoal)] = new ApprovedReplay(
             message.OriginalGoal,
             approvedDecision.TargetId,
-            message.TargetLabel ?? approvedDecision.VisualTarget?.Label ?? approvedDecision.TargetId ?? "검증 대상",
+            message.TargetLabel ?? approvedDecision.VisualTarget?.Label ?? approvedDecision.TargetId ?? "verified target",
             message.Text,
             message.SnapshotHash,
-            message.TargetBounds);
+            message.TargetBounds,
+            true);
+    }
+
+    private void RememberRecentReplay(ChatMessageItem message)
+    {
+        var decision = message.Decision;
+        if (decision?.Action != GuideActions.Highlight
+            || string.IsNullOrWhiteSpace(decision.TargetId)
+            || string.IsNullOrWhiteSpace(message.OriginalGoal)
+            || message.TargetBounds is null) return;
+        _recentReplays[NormalizeGoal(message.OriginalGoal)] = new ApprovedReplay(
+            message.OriginalGoal,
+            decision.TargetId,
+            message.TargetLabel ?? decision.TargetId,
+            message.Text,
+            message.SnapshotHash,
+            message.TargetBounds,
+            false);
+        while (_recentReplays.Count > 32)
+            _recentReplays.Remove(_recentReplays.Keys.First());
     }
 
     private ApprovedReplay? TryResolveImmediateReplay(
@@ -1109,6 +1516,8 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
         _approvedReplays.TryGetValue(NormalizeGoal(goal), out var replay);
         replay ??= _approvedReplays.Values.LastOrDefault(item =>
             DeveloperIntentMatcher.IsSameIntent(goal, item.Goal));
+        if (replay is null)
+            _recentReplays.TryGetValue(NormalizeGoal(goal), out replay);
         if (observation is null || replay is null) return null;
         var snapshotMatches = string.Equals(
             replay.SnapshotHash,
@@ -1130,17 +1539,58 @@ public sealed class GuidanceViewModel : INotifyPropertyChanged
             && observation.Candidates.Any(candidate =>
                 string.Equals(candidate.Id, replay.TargetId, StringComparison.Ordinal)
                 && candidate.Visible && candidate.Enabled && candidate.Clickable);
-        if (!DeveloperReplayPolicy.CanReuseImmediately(replay.TargetId, snapshotMatches, liveTargetResolved))
+        if (!DeveloperReplayPolicy.CanReuseImmediately(
+                replay.TargetId, snapshotMatches, liveTargetResolved, replay.DeveloperVerified))
             return null;
         DesktopDiagnostics.WriteEvent(
-            "approved_replay_hit",
+            "verified_replay_hit",
             ("targetId", replay.TargetId),
+            ("source", replay.DeveloperVerified ? "developer" : "exact_screen_cache"),
             ("snapshotChanged", !snapshotMatches));
         return replay with { TargetBounds = liveBounds };
     }
 
+    private void RememberRecentSafeReply(ChatMessageItem message)
+    {
+        var decision = message.Decision;
+        if (decision is null
+            || string.IsNullOrWhiteSpace(message.OriginalGoal)
+            || string.IsNullOrWhiteSpace(message.SnapshotHash)
+            || !DeveloperReplayPolicy.CanReuseSafeReply(
+                decision.Action, decision.Status, snapshotMatches: true)) return;
+        _recentSafeReplies[NormalizeGoal(message.OriginalGoal)] = new RecentSafeReply(
+            message.OriginalGoal,
+            message.SnapshotHash,
+            decision);
+        while (_recentSafeReplies.Count > 32)
+            _recentSafeReplies.Remove(_recentSafeReplies.Keys.First());
+    }
+
+    private GuideDecision? TryResolveRecentSafeReply(
+        string goal,
+        WindowsObservation? observation)
+    {
+        if (observation is null
+            || !_recentSafeReplies.TryGetValue(NormalizeGoal(goal), out var reply)) return null;
+        var snapshotMatches = string.Equals(
+            reply.SnapshotHash,
+            observation.SnapshotHash,
+            StringComparison.Ordinal);
+        return DeveloperReplayPolicy.CanReuseSafeReply(
+            reply.Decision.Action,
+            reply.Decision.Status,
+            snapshotMatches)
+            ? reply.Decision
+            : null;
+    }
+
     private static string NormalizeGoal(string value) => string.Concat(
         value.Trim().ToLowerInvariant().Where(character => !char.IsWhiteSpace(character)));
+
+    private string Reply(string korean, string english) => UserLanguage.Select(
+        string.IsNullOrWhiteSpace(_submittedGoal) ? _session?.OriginalUserMessage : _submittedGoal,
+        korean,
+        english);
 
     private void CancelRunningWork(bool markCancelled)
     {

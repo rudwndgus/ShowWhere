@@ -6,8 +6,13 @@ using ShowWhere.Core;
 
 namespace ShowWhere.WindowsAutomation;
 
-internal static class WindowsScreenGeometry
+public static class WindowsScreenGeometry
 {
+    private const int SmXVirtualScreen = 76;
+    private const int SmYVirtualScreen = 77;
+    private const int SmCxVirtualScreen = 78;
+    private const int SmCyVirtualScreen = 79;
+
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct NativePoint(int x, int y)
     {
@@ -24,8 +29,17 @@ internal static class WindowsScreenGeometry
         return MonitorFromPoint(center, 0) != IntPtr.Zero;
     }
 
+    public static UiBounds GetVirtualScreenBounds() => new(
+        GetSystemMetrics(SmXVirtualScreen),
+        GetSystemMetrics(SmYVirtualScreen),
+        GetSystemMetrics(SmCxVirtualScreen),
+        GetSystemMetrics(SmCyVirtualScreen));
+
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromPoint(NativePoint point, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
 }
 
 public sealed class CandidateRegistry
@@ -157,7 +171,7 @@ public sealed class WindowsObservation
 
 public sealed class WindowsObservationException : Exception
 {
-    public WindowsObservationException() : base("현재 활성 Windows 화면을 확인할 수 없어요.") { }
+    public WindowsObservationException() : base("The active Windows screen could not be inspected.") { }
 }
 
 public interface IWindowsUiObserver

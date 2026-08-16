@@ -1,0 +1,19 @@
+<Window x:Class="ShowWhere.Desktop.AssistantSpeechBubbleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="290" Height="170" Icon="Assets/ShowWhere.ico" WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="True" Background="Transparent" Topmost="True"
+        ShowInTaskbar="False" ShowActivated="False" Focusable="False"
+        IsHitTestVisible="False">
+  <Window.Resources>
+    <SolidColorBrush x:Key="BubbleAccentBrush" Color="#FF472323" />
+  </Window.Resources>
+  <Grid Margin="8" SnapsToDevicePixels="True" UseLayoutRounding="True">
+    <Path Margin="2" Fill="White" Stroke="#FF202329" StrokeThickness="4"
+          StrokeLineJoin="Miter" Stretch="Fill"
+          Data="M 12,0 H 258 V 4 H 266 V 12 H 270 V 134 H 266 V 142 H 258 V 146 H 12 V 142 H 4 V 134 H 0 V 12 H 4 V 4 H 12 Z" />
+    <TextBlock Text="{Binding BubbleText, RelativeSource={RelativeSource AncestorType=Window}}"
+               Margin="21,17" Foreground="#FF202329" FontSize="14" TextWrapping="Wrap"
+               TextTrimming="CharacterEllipsis" LineHeight="20" VerticalAlignment="Center" />
+  </Grid>
+</Window>

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -6,21 +7,31 @@ using ShowWhere.Core;
 
 namespace ShowWhere.ApiClient;
 
-public sealed record GuideApiClientOptions(Uri Endpoint, TimeSpan Timeout, int MaxRetries = 1)
+public sealed record GuideApiClientOptions(Uri Endpoint, TimeSpan Timeout, int MaxRetries = 1, string? ClientToken = null)
 {
     public static GuideApiClientOptions FromEnvironment()
     {
         var endpoint = Environment.GetEnvironmentVariable("SHOWWHERE_BACKEND_URL")
-            ?? "http://127.0.0.1:8787/api/guide";
+            ?? ReadDeploymentSetting("ShowWhereBackendUrl")
+            ?? "https://api-production-6901.up.railway.app/api/guide";
         var timeoutText = Environment.GetEnvironmentVariable("SHOWWHERE_BACKEND_TIMEOUT_SECONDS");
         var seconds = int.TryParse(timeoutText, out var parsed) ? Math.Clamp(parsed, 5, 180) : 75;
-        return new GuideApiClientOptions(new Uri(endpoint, UriKind.Absolute), TimeSpan.FromSeconds(seconds));
+        var clientToken = Environment.GetEnvironmentVariable("SHOWWHERE_CLIENT_TOKEN")
+            ?? ReadDeploymentSetting("ShowWhereClientToken");
+        return new GuideApiClientOptions(
+            new Uri(endpoint, UriKind.Absolute),
+            TimeSpan.FromSeconds(seconds),
+            ClientToken: string.IsNullOrWhiteSpace(clientToken) ? null : clientToken.Trim());
     }
+
+    private static string? ReadDeploymentSetting(string key) => Assembly.GetEntryAssembly()?
+        .GetCustomAttributes<AssemblyMetadataAttribute>()
+        .LastOrDefault(item => string.Equals(item.Key, key, StringComparison.Ordinal))?.Value;
 }
 
 public sealed class GuideApiException : Exception
 {
-    public GuideApiException() : base("지금은 안내 서비스에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.") { }
+    public GuideApiException() : base("The guidance service is unavailable right now. Please try again shortly.") { }
 }
 
 public interface IGuideApiClient
@@ -58,8 +69,13 @@ public sealed class GuideApiClient : IGuideApiClient
         {
             try
             {
-                using var content = new StringContent(serializedRequest, Encoding.UTF8, "application/json");
-                using var response = await _httpClient.PostAsync(_options.Endpoint, content, timeout.Token).ConfigureAwait(false);
+                using var message = new HttpRequestMessage(HttpMethod.Post, _options.Endpoint)
+                {
+                    Content = new StringContent(serializedRequest, Encoding.UTF8, "application/json"),
+                };
+                if (!string.IsNullOrWhiteSpace(_options.ClientToken))
+                    message.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ClientToken);
+                using var response = await _httpClient.SendAsync(message, timeout.Token).ConfigureAwait(false);
                 if (IsTransient(response.StatusCode) && attempt < _options.MaxRetries)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(300 * (attempt + 1)), timeout.Token).ConfigureAwait(false);
@@ -71,7 +87,9 @@ public sealed class GuideApiClient : IGuideApiClient
                     .ConfigureAwait(false);
                 if (decision is null) throw new GuideApiException();
                 var validated = ContractValidator.ValidateDecision(decision, request);
-                if (!response.IsSuccessStatusCode && validated.Action != GuideActions.AskUser)
+                if (!response.IsSuccessStatusCode
+                    && validated.Action != GuideActions.AskUser
+                    && validated.Status != GuideStatuses.Blocked)
                     throw new GuideApiException();
                 return validated;
             }

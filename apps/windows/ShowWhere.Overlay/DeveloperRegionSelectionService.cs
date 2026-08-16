@@ -66,7 +66,7 @@ internal sealed class RegionSelectionWindow : Window
             Padding = new Thickness(16, 11, 16, 11),
             Child = new TextBlock
             {
-                Text = "정답 버튼 영역을 드래그하세요 · Esc 또는 오른쪽 클릭으로 취소",
+                Text = "Drag over the correct button · Press Esc or right-click to cancel",
                 Foreground = Brushes.White,
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,

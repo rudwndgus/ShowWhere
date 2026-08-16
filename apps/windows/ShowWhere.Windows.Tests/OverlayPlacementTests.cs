@@ -96,6 +96,49 @@ public sealed class OverlayPlacementTests
     }
 
     [Fact]
+    public void Overlay_native_window_covers_a_physical_target_on_every_connected_monitor()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            HighlightOverlayWindow? overlay = null;
+            try
+            {
+                var monitors = GetMonitorAreas();
+                Assert.NotEmpty(monitors);
+                overlay = new HighlightOverlayWindow();
+                foreach (var monitor in monitors)
+                {
+                    var target = new UiBounds(
+                        monitor.Left + (monitor.Right - monitor.Left) / 2d - 35,
+                        monitor.Top + (monitor.Bottom - monitor.Top) / 2d - 22,
+                        70,
+                        44);
+                    overlay.ShowTarget(target, "모니터별 물리 좌표 테스트");
+                    PumpDispatcher(TimeSpan.FromMilliseconds(120));
+                    var handle = new WindowInteropHelper(overlay).Handle;
+                    Assert.True(GetWindowRect(handle, out var overlayRect));
+                    Assert.InRange(target.X + target.Width / 2, overlayRect.Left, overlayRect.Right);
+                    Assert.InRange(target.Y + target.Height / 2, overlayRect.Top, overlayRect.Bottom);
+                }
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+            finally
+            {
+                overlay?.Clear();
+                overlay?.Close();
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(15)), "Per-monitor overlay test timed out.");
+        if (failure is not null) throw failure;
+    }
+
+    [Fact]
     public void Tooltip_stays_inside_negative_coordinate_monitor_bounds()
     {
         var workingArea = new PhysicalRectangle(-1920, 0, 1920, 1040);
@@ -144,6 +187,44 @@ public sealed class OverlayPlacementTests
         };
 
         Assert.Equal(new PhysicalRectangle(target.X, target.Y, target.Width, target.Height), absoluteHighlight);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1366, 768, 4, 4, 28, 28)]
+    [InlineData(0, 0, 3840, 2160, 3740, 2060, 96, 72)]
+    [InlineData(-1920, 0, 1920, 1080, -1915, 1000, 44, 44)]
+    [InlineData(1920, -1440, 2560, 1440, 4300, -1435, 120, 48)]
+    [InlineData(-2560, -1440, 2560, 1440, -1400, -740, 12, 12)]
+    public void Placement_remains_exact_and_visible_for_common_monitor_topologies(
+        double monitorX,
+        double monitorY,
+        double monitorWidth,
+        double monitorHeight,
+        double targetX,
+        double targetY,
+        double targetWidth,
+        double targetHeight)
+    {
+        var monitor = new PhysicalRectangle(monitorX, monitorY, monitorWidth, monitorHeight);
+        var target = new UiBounds(targetX, targetY, targetWidth, targetHeight);
+
+        var placement = OverlayPlacementCalculator.Calculate(target, monitor);
+        var highlight = placement.Highlight with
+        {
+            X = placement.Window.X + placement.Highlight.X,
+            Y = placement.Window.Y + placement.Highlight.Y,
+        };
+        var tooltip = placement.Tooltip with
+        {
+            X = placement.Window.X + placement.Tooltip.X,
+            Y = placement.Window.Y + placement.Tooltip.Y,
+        };
+
+        Assert.Equal(new PhysicalRectangle(target.X, target.Y, target.Width, target.Height), highlight);
+        Assert.True(tooltip.X >= monitor.X);
+        Assert.True(tooltip.Y >= monitor.Y);
+        Assert.True(tooltip.Right <= monitor.Right);
+        Assert.True(tooltip.Bottom <= monitor.Bottom);
     }
 
     [Theory]
@@ -205,6 +286,29 @@ public sealed class OverlayPlacementTests
         public int Bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public NativeRect Monitor;
+        public NativeRect Work;
+        public uint Flags;
+    }
+
+    private delegate bool MonitorEnumCallback(IntPtr monitor, IntPtr deviceContext, IntPtr rectangle, IntPtr data);
+
+    private static IReadOnlyList<NativeRect> GetMonitorAreas()
+    {
+        var result = new List<NativeRect>();
+        _ = EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (monitor, _, _, _) =>
+        {
+            var information = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (GetMonitorInfo(monitor, ref information)) result.Add(information.Monitor);
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(IntPtr windowHandle);
@@ -212,6 +316,18 @@ public sealed class OverlayPlacementTests
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(IntPtr windowHandle, out NativeRect rectangle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumDisplayMonitors(
+        IntPtr deviceContext,
+        IntPtr clipRectangle,
+        MonitorEnumCallback callback,
+        IntPtr data);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo information);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetTopWindow(IntPtr windowHandle);

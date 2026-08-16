@@ -61,6 +61,7 @@ Rules:
 - Never repeat a control recorded in completedSteps unless the screen proves the previous click did not take effect.
 - First decide whether the user's goal is already complete from visible evidence. If complete: status=completed, action=explain, no target.
 - Understand the destination and scope. A website search belongs inside that website, never in the browser address bar unless the user explicitly asks for web/navigation search.
+- The application named in context is the active work scope. Never point to pixels in another visible app, window, or monitor. Leave the active app only for an explicit taskbar, Start, Search, or app-switching step.
 - Separate the user's FINAL INTENT from controls that merely contain related words. For a generic website login request, choose the site's canonical account/sign-in control (for example Amazon's "Hello, sign in Account & Lists"). Never choose delivery-location, address, shipping, or other contextual "sign in to ..." shortcuts unless the user explicitly asked about that context.
 - For Windows settings tasks, navigation priority is mandatory: (1) the final settings control if visible, (2) a visible/running Settings app or Settings icon, (3) Start, and only then (4) Windows Search. Never choose or instruct typing into Search while a direct Settings control/icon is visible anywhere in the screenshot.
 - When a direct Windows Settings icon/control is clearly visible in pixels but absent from candidates, use highlight_visual around that icon instead of choosing a Search candidate.
@@ -69,11 +70,27 @@ Rules:
 - If the right control is represented by a candidate, always return highlight with its targetId so ShowWhere can use the live clickable rectangle. Use highlight_visual only when no matching candidate exists.
 - If the right control is visible in pixels but absent/unsafe in candidates, use highlight_visual with one tight normalized box around only that clickable control.
 - Coordinates are fractions of the entire supplied screenshot. Never use a whole window, panel, card, or guessed off-screen location.
-- If intent has multiple materially different meanings, ask one concise Korean clarification question. Do not guess.
+- screenshotBounds is the physical Windows virtual-desktop rectangle. Candidate bounds are absolute physical screen coordinates; compare them to the image by subtracting screenshotBounds.x/y. This is mandatory when a monitor is left of or above the primary display and coordinates are negative.
+- If intent has multiple materially different meanings, ask one concise clarification question in the same language as the user's original message. Do not guess.
 - If the goal cannot yet be completed, give only the immediate next click. Do not keep guiding after completion.
-- Write the user-facing message in natural, concise Korean and name the visible target.
+- Write the user-facing message in the same language as the user's original message and name the visible target. Korean input receives Korean; English input receives English.
 - Confidence must reflect visual evidence. Below 0.65, ask for clarification or a new observation instead of pointing.
 - ShowWhere's own panel, bubble, tooltip, and existing overlay are never valid targets.`;
+
+const kioskPrompt = `BLUU DELI kiosk reference (use only when the visible screen agrees): the native capture is 538x956.
+- Menu category rail is x=0..95, starts y=163, with 57px rows: COFFEE, BREAKFAST, SANDWICHES, PASTRY, SALAD, SOUP, FOOD TO GO.
+- Product cards form 3 columns x=103..246, 247..389, 392..537 and 4 rows y=165..306, 309..450, 453..593, 596..738.
+- Modifier cards form 4 columns x=8..135, 140..268, 271..399, 402..530 and 3 rows y=432..568, 572..708, 712..850.
+- Modifier footer has Cancel at x=359..448 and Add to Cart at x=449..537, y=886..955.
+- Menu footer has Home x=357..417, Credit x=418..477, Others x=478..537, y=898..955.
+- Home screen has EAT IN x=83..259 and TAKE OUT x=270..439, y=800..880.
+For a modifier, visualTarget.label MUST be the exact printed modifier name (for example OAT MILK), never a description such as "bottom middle option".
+Return the full clickable card/button box, including its icon, surcharge and name, never its text or image alone. The server will snap known labels to these measured bounds.`;
+
+function promptFor(request: GuideRequest): string {
+  const context = `${request.context.applicationName} ${request.context.windowTitle ?? ''} ${request.session.originalUserMessage} ${request.session.goal ?? ''}`;
+  return /kiosk|bluu|upr|up solution|키오스크/iu.test(context) ? `${systemPrompt}\n\n${kioskPrompt}` : systemPrompt;
+}
 
 function candidateScore(request: GuideRequest, index: number): number {
   const candidate = request.candidates[index];
@@ -141,6 +158,10 @@ function compactRequest(request: GuideRequest) {
   return {
     session: request.session,
     context: request.context,
+    screenshotBounds: request.screenshotBounds
+      ? Object.fromEntries(Object.entries(request.screenshotBounds)
+        .map(([key, value]) => [key, Math.round(value)]))
+      : null,
     candidates: selectCandidates(request).map((candidate) => ({
       id: candidate.id,
       label: candidate.label?.slice(0, 160) ?? null,
@@ -210,7 +231,7 @@ export class OpenAiGuideProvider implements AiProvider {
             reasoning: { effort: route.reasoningEffort },
             max_output_tokens: 300,
             input: [
-              { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
+              { role: 'system', content: [{ type: 'input_text', text: promptFor(request) }] },
               { role: 'user', content: [
                 { type: 'input_text', text: JSON.stringify(compactRequest(request)) },
                 // Auto preserves enough source detail for small controls. Whenever UIA exposes

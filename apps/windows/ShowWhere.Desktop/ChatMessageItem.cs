@@ -45,9 +45,9 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     public bool IsEvaluated => Evaluation is not null;
     public string EvaluationLabel => Evaluation switch
     {
-        "correct" => "O · 좋은 답변으로 저장됨",
-        "incorrect" => "X · 수정 필요로 저장됨",
-        "completed" => "끝 · 최종 완료 상태로 저장됨",
+        "correct" => "O · Saved as a good answer",
+        "incorrect" => "X · Saved for correction",
+        "completed" => "Done · Saved as the final completed state",
         _ => string.Empty,
     };
     public string? OriginalGoal { get; private set; }

@@ -5,7 +5,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>ShowWhere</AssemblyName>
     <RootNamespace>ShowWhere.Desktop</RootNamespace>
+    <ApplicationIcon>Assets\ShowWhere.ico</ApplicationIcon>
+    <ShowWhereBackendUrl Condition="'$(ShowWhereBackendUrl)' == ''">https://api-production-6901.up.railway.app/api/guide</ShowWhereBackendUrl>
+    <ShowWhereClientToken Condition="'$(ShowWhereClientToken)' == ''"></ShowWhereClientToken>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="ShowWhereBackendUrl" Value="$(ShowWhereBackendUrl)" />
+    <AssemblyMetadata Include="ShowWhereClientToken" Value="$(ShowWhereClientToken)" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShowWhere.Core\ShowWhere.Core.csproj" />
     <ProjectReference Include="..\ShowWhere.ApiClient\ShowWhere.ApiClient.csproj" />
@@ -13,6 +20,12 @@
     <ProjectReference Include="..\ShowWhere.Overlay\ShowWhere.Overlay.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Resource Include="Assets\ShowWhere.ico" />
     <Resource Include="Assets\Assistant\*.png" />
+    <EmbeddedResource Include="..\..\..\training\answer-feedback.jsonl" LogicalName="ShowWhere.Training.answer-feedback.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\completions.jsonl" LogicalName="ShowWhere.Training.completions.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\corrections.jsonl" LogicalName="ShowWhere.Training.corrections.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\learning-edits.jsonl" LogicalName="ShowWhere.Training.learning-edits.jsonl" />
+    <EmbeddedResource Include="..\..\..\training\learning-status.jsonl" LogicalName="ShowWhere.Training.learning-status.jsonl" />
   </ItemGroup>
 </Project>

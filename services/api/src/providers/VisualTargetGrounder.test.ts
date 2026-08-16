@@ -44,4 +44,122 @@ describe('VisualTargetGrounder', () => {
 
     expect(groundVisualDecision(request, decision)).toEqual(decision);
   });
+
+  it('snaps a translated visual label to one uniquely overlapping live control', () => {
+    const candidate = {
+      ...guideRequestFixture.candidates[0],
+      id: 'account-menu', label: 'Account & Lists', role: 'link',
+      bounds: { x: 1570, y: 22, width: 150, height: 48 },
+      attributes: { sourceScope: 'browser_content', processName: 'chrome' },
+    };
+    const request = { ...guideRequestFixture, screenshotBounds, candidates: [candidate] };
+
+    expect(matchVisualTargetToCandidate(request, {
+      x: 1565 / 1920, y: 18 / 1080, width: 160 / 1920, height: 56 / 1080,
+      label: '계정 메뉴',
+    })?.id).toBe('account-menu');
+  });
+
+  it('does not geometry-snap when nested overlapping controls are ambiguous', () => {
+    const candidates = [
+      { ...guideRequestFixture.candidates[0], id: 'outer', label: 'Unknown outer', bounds: { x: 600, y: 300, width: 180, height: 70 } },
+      { ...guideRequestFixture.candidates[0], id: 'inner', label: 'Unknown inner', bounds: { x: 610, y: 310, width: 160, height: 50 } },
+    ];
+    const request = { ...guideRequestFixture, screenshotBounds, candidates };
+
+    expect(matchVisualTargetToCandidate(request, {
+      x: 610 / 1920, y: 310 / 1080, width: 160 / 1920, height: 50 / 1080,
+      label: '전혀 다른 이름',
+    })).toBeUndefined();
+  });
+
+  it('maps normalized vision coordinates through a negative virtual-screen origin', () => {
+    const negativeScreen = { x: -1920, y: -240, width: 4480, height: 1680 };
+    const candidate = {
+      ...guideRequestFixture.candidates[0],
+      id: 'left-monitor-button', label: 'Advanced display',
+      bounds: { x: -1710, y: 120, width: 210, height: 52 },
+    };
+    const request = { ...guideRequestFixture, screenshotBounds: negativeScreen, candidates: [candidate] };
+
+    expect(matchVisualTargetToCandidate(request, {
+      x: (-1710 - negativeScreen.x) / negativeScreen.width,
+      y: (120 - negativeScreen.y) / negativeScreen.height,
+      width: 210 / negativeScreen.width,
+      height: 52 / negativeScreen.height,
+      label: 'Advanced display',
+    })?.id).toBe('left-monitor-button');
+  });
+
+  it('snaps a BLUU DELI product to its measured kiosk card', () => {
+    const request = {
+      ...guideRequestFixture,
+      context: { ...guideRequestFixture.context, applicationName: 'UPR KIOSK', windowTitle: 'BLUU DELI' },
+      screenshotBounds: { x: 0, y: 0, width: 538, height: 956 },
+      candidates: [],
+    };
+    const grounded = groundVisualDecision(request, {
+      status: 'in_progress', action: 'highlight_visual', message: '라떼를 누르세요.', confidence: 0.95,
+      visualTarget: { x: 0.7, y: 0.2, width: 0.2, height: 0.1, label: 'LATTE' },
+    });
+
+    expect(grounded.visualTarget).toEqual({
+      x: 395 / 538, y: 312 / 956, width: 143 / 538, height: 142 / 956, label: 'LATTE',
+    });
+  });
+
+  it('uses the requested menu name when vision confuses TEA with LATTE', () => {
+    const request = {
+      ...guideRequestFixture,
+      session: {
+        ...guideRequestFixture.session,
+        originalUserMessage: 'TEA를 찾아줘',
+        goal: 'TEA 메뉴 위치 안내',
+      },
+      context: { ...guideRequestFixture.context, applicationName: 'UPR KIOSK', windowTitle: 'BLUU DELI' },
+      screenshotBounds: { x: 0, y: 0, width: 538, height: 956 },
+      candidates: [],
+    };
+    const grounded = groundVisualDecision(request, {
+      status: 'in_progress', action: 'highlight_visual', message: 'TEA를 누르세요.', confidence: 0.9,
+      visualTarget: { x: 0.74, y: 0.33, width: 0.25, height: 0.15, label: 'LATTE' },
+    });
+
+    expect(grounded.visualTarget).toEqual({
+      x: 251 / 538, y: 600 / 956, width: 143 / 538, height: 143 / 956, label: 'TEA',
+    });
+  });
+
+  it('uses a Korean modifier name to highlight the full OAT MILK card', () => {
+    const request = {
+      ...guideRequestFixture,
+      session: {
+        ...guideRequestFixture.session,
+        originalUserMessage: '차이 라떼에 오트밀크를 선택하고 싶어',
+        goal: '오트 밀크 modifier 선택',
+      },
+      context: { ...guideRequestFixture.context, applicationName: 'UPR KIOSK', windowTitle: 'BLUU DELI' },
+      screenshotBounds: { x: 0, y: 0, width: 538, height: 956 },
+      candidates: [],
+    };
+    const grounded = groundVisualDecision(request, {
+      status: 'in_progress', action: 'highlight_visual', message: '오트 밀크를 누르세요.', confidence: 0.9,
+      visualTarget: { x: 0.15, y: 0.44, width: 0.14, height: 0.09, label: '아래쪽 가운데 옵션' },
+    });
+
+    expect(grounded.visualTarget).toEqual({
+      x: 140 / 538, y: 712 / 956, width: 129 / 538, height: 139 / 956, label: 'OAT MILK',
+    });
+  });
+
+  it('does not apply kiosk geometry to an unrelated landscape screen', () => {
+    const request = { ...guideRequestFixture, screenshotBounds, candidates: [] };
+    const decision = {
+      status: 'in_progress' as const, action: 'highlight_visual' as const,
+      message: '라떼를 누르세요.', confidence: 0.9,
+      visualTarget: { x: 0.7, y: 0.2, width: 0.2, height: 0.1, label: 'LATTE' },
+    };
+
+    expect(groundVisualDecision(request, decision)).toEqual(decision);
+  });
 });

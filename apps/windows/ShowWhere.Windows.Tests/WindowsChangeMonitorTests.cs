@@ -19,4 +19,108 @@ public sealed class WindowsChangeMonitorTests
 
         Assert.Equal(expected, actual);
     }
+
+    [Theory]
+    [InlineData("menu", "latte-detail", true)]
+    [InlineData("menu", "menu", false)]
+    [InlineData("", "latte-detail", false)]
+    public void Screen_transition_is_detected_even_when_the_mouse_click_event_was_missed(
+        string baseline,
+        string current,
+        bool expected)
+    {
+        Assert.Equal(expected, WindowsChangeMonitor.HasMeaningfulScreenChange(baseline, current));
+    }
+
+    [Fact]
+    public void Large_visual_change_inside_the_highlighted_control_advances_the_kiosk()
+    {
+        var baseline = Enumerable.Repeat((byte)240, 24 * 24 * 3).ToArray();
+        var current = baseline.ToArray();
+        for (var pixel = 0; pixel < 120; pixel++)
+        {
+            current[pixel * 3] = 30;
+            current[pixel * 3 + 1] = 70;
+            current[pixel * 3 + 2] = 110;
+        }
+
+        Assert.True(WindowsChangeMonitor.HasMeaningfulVisualChange(baseline, current));
+    }
+
+    [Fact]
+    public void Tiny_rendering_noise_does_not_advance_the_kiosk()
+    {
+        var baseline = Enumerable.Repeat((byte)120, 24 * 24 * 3).ToArray();
+        var current = baseline.Select((value, index) =>
+            (byte)(index % 7 == 0 ? value + 2 : value)).ToArray();
+
+        Assert.False(WindowsChangeMonitor.HasMeaningfulVisualChange(baseline, current));
+    }
+
+    [Fact]
+    public void Kiosk_touch_requires_a_persistent_change_inside_the_selected_button()
+    {
+        var baseline = Enumerable.Repeat((byte)240, 24 * 24 * 3).ToArray();
+        var changed = baseline.ToArray();
+        for (var pixel = 0; pixel < 120; pixel++)
+        {
+            changed[pixel * 3] = 30;
+            changed[pixel * 3 + 1] = 70;
+            changed[pixel * 3 + 2] = 110;
+        }
+        var detector = new WindowsChangeMonitor.PersistentTargetVisualChangeDetector(baseline, 3);
+
+        Assert.False(detector.Observe(changed));
+        Assert.False(detector.Observe(changed));
+        Assert.True(detector.Observe(changed));
+    }
+
+    [Fact]
+    public void Kiosk_visual_confirmation_resets_when_the_target_returns_to_baseline()
+    {
+        var baseline = Enumerable.Repeat((byte)240, 24 * 24 * 3).ToArray();
+        var changed = Enumerable.Repeat((byte)20, 24 * 24 * 3).ToArray();
+        var detector = new WindowsChangeMonitor.PersistentTargetVisualChangeDetector(baseline, 3);
+
+        Assert.False(detector.Observe(changed));
+        Assert.False(detector.Observe(baseline));
+        Assert.False(detector.Observe(changed));
+        Assert.False(detector.Observe(changed));
+        Assert.True(detector.Observe(changed));
+    }
+
+    [Fact]
+    public void Kiosk_visual_change_cannot_advance_without_new_user_input()
+    {
+        Assert.False(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: true,
+            baselineInputTick: 1_000,
+            lastInputTick: 1_000,
+            currentTick: 1_400));
+    }
+
+    [Fact]
+    public void Kiosk_visual_change_is_accepted_only_immediately_after_new_user_input()
+    {
+        Assert.True(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: true,
+            baselineInputTick: 1_000,
+            lastInputTick: 1_200,
+            currentTick: 1_400));
+        Assert.False(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: true,
+            baselineInputTick: 1_000,
+            lastInputTick: 1_200,
+            currentTick: 2_701));
+    }
+
+    [Fact]
+    public void Ordinary_guidance_keeps_visual_fallback_without_input_correlation()
+    {
+        Assert.True(WindowsChangeMonitor.CanConfirmVisualInteraction(
+            requireExplicitTargetClick: false,
+            baselineInputTick: null,
+            lastInputTick: null,
+            currentTick: 10_000));
+    }
 }

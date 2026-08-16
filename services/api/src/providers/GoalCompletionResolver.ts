@@ -1,6 +1,7 @@
 import type { GuideDecision, GuideRequest } from '../../../../src/contracts';
 import { normalizeUiName, semanticAliases, semanticLabelFromRules } from '../../../../src/web-knowledge';
 import { findWindowsKnowledge } from '../windows-knowledge/WindowsKnowledgeResolver';
+import { inRequestLanguage } from './responseLanguage';
 
 function visibleState(request: GuideRequest): string {
   return normalizeUiName([
@@ -26,6 +27,7 @@ function containsAlias(value: string, aliases: string[]): boolean {
 export function resolveGoalCompletion(request: GuideRequest): GuideDecision | undefined {
   if (request.session.completedSteps.length === 0) return undefined;
   const goal = request.session.goal ?? request.session.originalUserMessage;
+  const original = request.session.originalUserMessage;
   const completed = completedState(request);
   const visible = visibleState(request);
 
@@ -35,8 +37,8 @@ export function resolveGoalCompletion(request: GuideRequest): GuideDecision | un
     if (containsAlias(completed, finalAliases) && containsAlias(visible, finalAliases)) {
       return {
         status: 'completed', action: 'explain',
-        message: '원하는 Windows 화면 또는 설정에 도착했습니다.',
-        expectedChange: `${windows.id} 목표가 완료되었습니다.`, confidence: 0.99,
+        message: inRequestLanguage(original, '원하는 Windows 화면 또는 설정에 도착했습니다.', 'You have reached the requested Windows screen or setting.'),
+        expectedChange: inRequestLanguage(original, `${windows.id} 목표가 완료되었습니다.`, `The ${windows.id} goal is complete.`), confidence: 0.99,
       };
     }
     return undefined;
@@ -58,7 +60,7 @@ export function resolveGoalCompletion(request: GuideRequest): GuideDecision | un
 
   return {
     status: 'completed', action: 'explain',
-    message: '요청한 화면에 도착했습니다. 안내를 종료합니다.',
-    expectedChange: `${intent} 목표가 완료되었습니다.`, confidence: 0.97,
+    message: inRequestLanguage(original, '요청한 화면에 도착했습니다. 안내를 종료합니다.', 'You have reached the requested screen. Guidance is complete.'),
+    expectedChange: inRequestLanguage(original, `${intent} 목표가 완료되었습니다.`, `The ${intent} goal is complete.`), confidence: 0.97,
   };
 }

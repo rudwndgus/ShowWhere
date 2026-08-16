@@ -21,6 +21,7 @@ public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute
         _executing = true;
         RaiseCanExecuteChanged();
         try { await execute(); }
+        catch (Exception exception) { DesktopDiagnostics.Write(exception); }
         finally { _executing = false; RaiseCanExecuteChanged(); }
     }
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
@@ -39,6 +40,7 @@ public sealed class AsyncParameterRelayCommand(
         _executing = true;
         RaiseCanExecuteChanged();
         try { await execute(parameter); }
+        catch (Exception exception) { DesktopDiagnostics.Write(exception); }
         finally { _executing = false; RaiseCanExecuteChanged(); }
     }
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);

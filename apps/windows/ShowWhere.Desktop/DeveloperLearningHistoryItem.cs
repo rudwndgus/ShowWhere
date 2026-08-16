@@ -61,14 +61,14 @@ public sealed class DeveloperLearningHistoryItem : INotifyPropertyChanged
     }
     public string RatingText => Rating switch
     {
-        "correct" => "O 정답",
-        "incorrect" => "X 수정",
-        "completed" => "끝",
+        "correct" => "O Correct",
+        "incorrect" => "X Correct",
+        "completed" => "Done",
         _ => Rating,
     };
-    public string StatusText => Active ? "적용 중" : "취소됨";
-    public string ToggleText => Active ? "이 기록 취소" : "다시 적용";
-    public string SaveText => IsDirty ? "수정 저장 *" : "수정 저장";
+    public string StatusText => Active ? "Active" : "Disabled";
+    public string ToggleText => Active ? "Disable record" : "Reapply";
+    public string SaveText => IsDirty ? "Save changes *" : "Save changes";
     public string TimeText => CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     public void MarkSaved()
@@ -92,3 +92,5 @@ public sealed class DeveloperLearningHistoryItem : INotifyPropertyChanged
 }
 
 public sealed record DeveloperRatingOption(string Value, string Label);
+
+public sealed record DeveloperCorrectionReasonOption(string Value, string Label);

@@ -1,0 +1,706 @@
+{
+  "schemaVersion": 1,
+  "siteId": "uprwbq-upsolutioncloud-com",
+  "displayName": "Uprwbq Upsolutioncloud Com",
+  "domains": [
+    "uprwbq.upsolutioncloud.com"
+  ],
+  "generatedAt": "2026-08-14T20:07:39.302Z",
+  "sourceRunIds": [
+    "20260814200720-40a2db48",
+    "official-upcloud-manual-v1",
+    "official-upr-kiosk-manual-v2.3",
+    "bluu-deli-kiosk-photo-20260814"
+  ],
+  "semanticModel": {
+    "provider": "rules",
+    "model": "showwhere-web-taxonomy-v1",
+    "comparedModels": [
+      {
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "compatible": false,
+        "qualityScore": 0,
+        "latencyMs": 119,
+        "error": "Failed to perform inference: Invalid username or password."
+      },
+      {
+        "model": "Qwen/Qwen3-Embedding-8B",
+        "compatible": false,
+        "qualityScore": 0,
+        "latencyMs": 115,
+        "error": "Failed to perform inference: Invalid username or password."
+      },
+      {
+        "model": "microsoft/harrier-oss-v1-0.6b",
+        "compatible": false,
+        "qualityScore": 0,
+        "latencyMs": 113,
+        "error": "Failed to perform inference: Invalid username or password."
+      },
+      {
+        "model": "ibm-granite/granite-embedding-97m-multilingual-r2",
+        "compatible": false,
+        "qualityScore": 0,
+        "latencyMs": 109,
+        "error": "Failed to perform inference: Invalid username or password."
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "state-34187e998c151c8c628c",
+      "urlPatterns": [
+        "/Account/Login"
+      ],
+      "titlePatterns": [
+        "bluu Web backoffice"
+      ],
+      "evidence": [
+        "bluu Web backoffice",
+        "Store ID",
+        "User ID",
+        "Password",
+        "Login",
+        "Save User Info",
+        "EnglishEnglishKoreanJapaneseChineseSpanishThaiArabicGerman"
+      ],
+      "elements": [
+        {
+          "id": "web-element-3cc75a43de7ca91634a2",
+          "names": [
+            "Store ID"
+          ],
+          "normalizedNames": [
+            "store id"
+          ],
+          "role": "textbox",
+          "areas": [
+            "document"
+          ],
+          "regions": [
+            "center"
+          ],
+          "semanticLabel": "site.store_id",
+          "semanticConfidence": 0.35,
+          "semanticSource": "generated",
+          "locatorHints": [
+            {
+              "role": "textbox",
+              "name": "Store ID",
+              "placeholder": "Store ID",
+              "css": "#CompanyCode"
+            }
+          ],
+          "risk": "blocked"
+        },
+        {
+          "id": "web-element-4f13fe8d550f34ed78d5",
+          "names": [
+            "User ID"
+          ],
+          "normalizedNames": [
+            "user id"
+          ],
+          "role": "textbox",
+          "areas": [
+            "document"
+          ],
+          "regions": [
+            "center"
+          ],
+          "semanticLabel": "site.user_id",
+          "semanticConfidence": 0.35,
+          "semanticSource": "generated",
+          "locatorHints": [
+            {
+              "role": "textbox",
+              "name": "User ID",
+              "placeholder": "User ID",
+              "css": "#loginID"
+            }
+          ],
+          "risk": "blocked"
+        },
+        {
+          "id": "web-element-c43278319d24e1e1b2e2",
+          "names": [
+            "Password"
+          ],
+          "normalizedNames": [
+            "password"
+          ],
+          "role": "textbox",
+          "areas": [
+            "document"
+          ],
+          "regions": [
+            "center"
+          ],
+          "semanticLabel": "security",
+          "semanticConfidence": 0.96,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "textbox",
+              "name": "Password",
+              "placeholder": "Password",
+              "css": "#passWord"
+            }
+          ],
+          "risk": "blocked"
+        },
+        {
+          "id": "web-element-103914d3a6f05b71798b",
+          "names": [
+            "Login"
+          ],
+          "normalizedNames": [
+            "login"
+          ],
+          "role": "button",
+          "areas": [
+            "document"
+          ],
+          "regions": [
+            "center"
+          ],
+          "semanticLabel": "login",
+          "semanticConfidence": 0.96,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "button",
+              "name": "Login",
+              "css": "#btnLogin"
+            }
+          ],
+          "risk": "unknown"
+        },
+        {
+          "id": "web-element-6cbcef13747dfcba5c51",
+          "names": [
+            "Save User Info"
+          ],
+          "normalizedNames": [
+            "save user info"
+          ],
+          "role": "checkbox",
+          "areas": [
+            "document"
+          ],
+          "regions": [
+            "center"
+          ],
+          "semanticLabel": "site.save_user_info",
+          "semanticConfidence": 0.35,
+          "semanticSource": "generated",
+          "locatorHints": [
+            {
+              "role": "checkbox",
+              "name": "Save User Info",
+              "css": "#rememberMe"
+            }
+          ],
+          "risk": "blocked"
+        },
+        {
+          "id": "web-element-afedf4fb43765dcae103",
+          "names": [
+            "EnglishEnglishKoreanJapaneseChineseSpanishThaiArabicGerman"
+          ],
+          "normalizedNames": [
+            "englishenglishkoreanjapanesechinesespanishthaiarabicgerman"
+          ],
+          "role": "listbox",
+          "areas": [
+            "document"
+          ],
+          "regions": [
+            "center"
+          ],
+          "semanticLabel": "site.englishenglishkoreanjapanesechinesespanishthaiarabicgerman",
+          "semanticConfidence": 0.35,
+          "semanticSource": "generated",
+          "locatorHints": [
+            {
+              "role": "listbox",
+              "name": "EnglishEnglishKoreanJapaneseChineseSpanishThaiArabicGerman"
+            }
+          ],
+          "risk": "blocked"
+        }
+      ]
+    },
+    {
+      "id": "state-bluu-kiosk-management",
+      "urlPatterns": [
+        "/BasicSetting/Management_Kiosk_HD/100842"
+      ],
+      "titlePatterns": [
+        "bluu Web backoffice"
+      ],
+      "evidence": [
+        "Master Management",
+        "Menu Management",
+        "POS Screen Configuration",
+        "Kiosk Image Settings",
+        "Menu Screen Configuration",
+        "Upload",
+        "BLUU DELI",
+        "COFFEE",
+        "BREAKFAST",
+        "SANDWICHES",
+        "PASTRY",
+        "SALAD",
+        "SOUP",
+        "FOOD TO GO",
+        "DRIP COFFEE",
+        "AMERICANO",
+        "CAFE MOCHA",
+        "CAPPUCCINO",
+        "ESPRESSO",
+        "LATTE",
+        "CHAI LATTE",
+        "MATCHA LATTE",
+        "MACCHIATO",
+        "HOT CHOCOLATE",
+        "TEA"
+      ],
+      "elements": [
+        {
+          "id": "curated-master-management",
+          "names": [
+            "Master Management",
+            "마스터관리"
+          ],
+          "normalizedNames": [
+            "master management",
+            "마스터관리"
+          ],
+          "role": "menuitem",
+          "areas": [
+            "navigation"
+          ],
+          "regions": [
+            "left",
+            "top"
+          ],
+          "semanticLabel": "kiosk.master_management",
+          "semanticConfidence": 0.9,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "menuitem",
+              "name": "마스터관리"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-menu-management",
+          "names": [
+            "Menu Management",
+            "메뉴관리"
+          ],
+          "normalizedNames": [
+            "menu management",
+            "메뉴관리"
+          ],
+          "role": "menuitem",
+          "areas": [
+            "navigation"
+          ],
+          "regions": [
+            "left"
+          ],
+          "semanticLabel": "kiosk.menu_management",
+          "semanticConfidence": 0.9,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "menuitem",
+              "name": "메뉴관리"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-pos-screen-configuration",
+          "names": [
+            "POS Screen Configuration",
+            "POS화면구성"
+          ],
+          "normalizedNames": [
+            "pos screen configuration",
+            "pos화면구성"
+          ],
+          "role": "menuitem",
+          "areas": [
+            "navigation"
+          ],
+          "regions": [
+            "left"
+          ],
+          "semanticLabel": "kiosk.pos_screen_configuration",
+          "semanticConfidence": 0.9,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "menuitem",
+              "name": "POS화면구성"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-kiosk-image-settings",
+          "names": [
+            "Kiosk Image Settings",
+            "키오스크이미지 설정"
+          ],
+          "normalizedNames": [
+            "kiosk image settings",
+            "키오스크이미지 설정"
+          ],
+          "role": "menuitem",
+          "areas": [
+            "navigation",
+            "content"
+          ],
+          "regions": [
+            "left",
+            "center"
+          ],
+          "semanticLabel": "kiosk.image_settings",
+          "semanticConfidence": 0.95,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "menuitem",
+              "name": "키오스크이미지 설정"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-menu-screen-configuration",
+          "names": [
+            "Menu Screen Configuration",
+            "메뉴화면 구성"
+          ],
+          "normalizedNames": [
+            "menu screen configuration",
+            "메뉴화면 구성"
+          ],
+          "role": "menuitem",
+          "areas": [
+            "navigation",
+            "content"
+          ],
+          "regions": [
+            "left",
+            "center"
+          ],
+          "semanticLabel": "kiosk.menu_screen_configuration",
+          "semanticConfidence": 0.95,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "menuitem",
+              "name": "메뉴화면 구성"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-new-menu",
+          "names": [
+            "New",
+            "신규"
+          ],
+          "normalizedNames": [
+            "new",
+            "신규"
+          ],
+          "role": "button",
+          "areas": [
+            "content"
+          ],
+          "regions": [
+            "top",
+            "center"
+          ],
+          "semanticLabel": "kiosk.create_menu_item",
+          "semanticConfidence": 0.9,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "button",
+              "name": "신규"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-edit-menu-image",
+          "names": [
+            "Edit",
+            "편집",
+            "편집아이콘"
+          ],
+          "normalizedNames": [
+            "edit",
+            "편집",
+            "편집아이콘"
+          ],
+          "role": "button",
+          "areas": [
+            "content"
+          ],
+          "regions": [
+            "center",
+            "right"
+          ],
+          "semanticLabel": "kiosk.edit_menu_image",
+          "semanticConfidence": 0.85,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "button",
+              "name": "편집"
+            }
+          ],
+          "risk": "safe"
+        },
+        {
+          "id": "curated-upload-image",
+          "names": [
+            "Upload",
+            "이미지 업로드",
+            "파일 선택"
+          ],
+          "normalizedNames": [
+            "upload",
+            "이미지 업로드",
+            "파일 선택"
+          ],
+          "role": "button",
+          "areas": [
+            "content"
+          ],
+          "regions": [
+            "center",
+            "right"
+          ],
+          "semanticLabel": "kiosk.upload_image",
+          "semanticConfidence": 0.95,
+          "semanticSource": "rule",
+          "locatorHints": [
+            {
+              "role": "button",
+              "name": "Upload"
+            }
+          ],
+          "risk": "safe"
+        }
+      ]
+    }
+  ],
+  "transitions": [],
+  "routes": [
+    {
+      "id": "route-kiosk-menu-item-create",
+      "intentLabel": "kiosk.create_menu_item",
+      "aliases": [
+        "키오스크 메뉴 추가",
+        "새 메뉴 등록",
+        "상품 등록",
+        "메뉴 가격 등록",
+        "add kiosk menu item"
+      ],
+      "steps": [
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.master_management",
+          "names": [
+            "Master Management",
+            "마스터관리"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.menu_management",
+          "names": [
+            "Menu Management",
+            "메뉴관리"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.create_menu_item",
+          "names": [
+            "New",
+            "신규"
+          ],
+          "roles": [
+            "button",
+            "link"
+          ]
+        }
+      ],
+      "successRate": 0.9
+    },
+    {
+      "id": "route-kiosk-menu-image",
+      "intentLabel": "kiosk.upload_menu_image",
+      "aliases": [
+        "키오스크 메뉴 사진 등록",
+        "상품 사진 변경",
+        "메뉴 이미지 업로드",
+        "메뉴사진 추가",
+        "upload kiosk menu photo"
+      ],
+      "steps": [
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.master_management",
+          "names": [
+            "Master Management",
+            "마스터관리"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.pos_screen_configuration",
+          "names": [
+            "POS Screen Configuration",
+            "POS화면구성"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.menu_screen_configuration",
+          "names": [
+            "Menu Screen Configuration",
+            "메뉴화면 구성"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.edit_menu_image",
+          "names": [
+            "Edit",
+            "편집",
+            "편집아이콘"
+          ],
+          "roles": [
+            "button",
+            "link"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.upload_image",
+          "names": [
+            "Upload",
+            "이미지 업로드",
+            "파일 선택"
+          ],
+          "roles": [
+            "button"
+          ]
+        }
+      ],
+      "successRate": 0.9
+    },
+    {
+      "id": "route-kiosk-banner-image",
+      "intentLabel": "kiosk.upload_banner_image",
+      "aliases": [
+        "키오스크 메인 이미지 변경",
+        "키오스크 배너 변경",
+        "주문화면 이미지 등록",
+        "change kiosk banner"
+      ],
+      "steps": [
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.master_management",
+          "names": [
+            "Master Management",
+            "마스터관리"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.pos_screen_configuration",
+          "names": [
+            "POS Screen Configuration",
+            "POS화면구성"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.image_settings",
+          "names": [
+            "Kiosk Image Settings",
+            "키오스크이미지 설정"
+          ],
+          "roles": [
+            "menuitem",
+            "link",
+            "button"
+          ]
+        },
+        {
+          "fromStateId": "state-bluu-kiosk-management",
+          "semanticLabel": "kiosk.upload_image",
+          "names": [
+            "Upload",
+            "이미지 업로드",
+            "파일 선택"
+          ],
+          "roles": [
+            "button"
+          ]
+        }
+      ],
+      "successRate": 0.9
+    }
+  ]
+}

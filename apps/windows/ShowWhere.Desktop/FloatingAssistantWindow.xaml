@@ -2,19 +2,20 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ShowWhere.Desktop"
-        Width="52" Height="52" WindowStyle="None" ResizeMode="NoResize"
+        Width="52" Height="52" Icon="Assets/ShowWhere.ico" WindowStyle="None" ResizeMode="NoResize"
         AllowsTransparency="True" Background="Transparent" Topmost="True"
         ShowInTaskbar="False" ShowActivated="False" Focusable="False"
         MouseLeftButtonDown="OnMouseLeftButtonDown"
         MouseLeftButtonUp="OnMouseLeftButtonUp"
+        MouseRightButtonUp="OnMouseRightButtonUp"
         MouseMove="OnMouseMove">
-  <Grid ToolTip="ShowWhere — 하고 싶은 일을 말해보세요">
+  <Grid Background="Transparent" ToolTip="ShowWhere — tell me what you want to do">
     <local:AssistantGlyph />
     <Grid.ContextMenu>
       <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
         <MenuItem Header="{Binding PauseMenuText}" Command="{Binding TogglePauseCommand}" />
         <Separator />
-        <MenuItem Header="종료" Command="{Binding ExitCommand}" />
+        <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
       </ContextMenu>
     </Grid.ContextMenu>
   </Grid>

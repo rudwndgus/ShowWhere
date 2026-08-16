@@ -65,7 +65,7 @@
       </Border.Style>
       <Border.Background>
         <ImageBrush ImageSource="Assets/Assistant/robot.png"
-                    Viewbox="335,170,870,640" ViewboxUnits="Absolute"
+                    Viewbox="110,90,1010,1030" ViewboxUnits="Absolute"
                     Stretch="Uniform" AlignmentX="Center" AlignmentY="Bottom"
                     RenderOptions.BitmapScalingMode="HighQuality" />
       </Border.Background>

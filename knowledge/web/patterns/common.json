@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-13T04:51:39.583Z",
+  "generatedAt": "2026-08-14T20:09:44.011Z",
   "patterns": [
     {
       "id": "common.product_detail.product.detail",
@@ -1453,6 +1453,62 @@
       ],
       "siteCount": 1,
       "confidence": 0.55
+    },
+    {
+      "id": "common.kiosk.create_menu_item.kiosk.master.management.kiosk.menu.management.kiosk.create.menu.item",
+      "intentLabel": "kiosk.create_menu_item",
+      "aliases": [
+        "add kiosk menu item",
+        "메뉴 가격 등록",
+        "상품 등록",
+        "새 메뉴 등록",
+        "키오스크 메뉴 추가"
+      ],
+      "sequence": [
+        "kiosk.master_management",
+        "kiosk.menu_management",
+        "kiosk.create_menu_item"
+      ],
+      "siteCount": 1,
+      "confidence": 0.49500000000000005
+    },
+    {
+      "id": "common.kiosk.upload_menu_image.kiosk.master.management.kiosk.pos.screen.configuration.kiosk.menu.screen.configuration.kiosk.edit.menu.image.kiosk.upload.image",
+      "intentLabel": "kiosk.upload_menu_image",
+      "aliases": [
+        "upload kiosk menu photo",
+        "메뉴 이미지 업로드",
+        "메뉴사진 추가",
+        "상품 사진 변경",
+        "키오스크 메뉴 사진 등록"
+      ],
+      "sequence": [
+        "kiosk.master_management",
+        "kiosk.pos_screen_configuration",
+        "kiosk.menu_screen_configuration",
+        "kiosk.edit_menu_image",
+        "kiosk.upload_image"
+      ],
+      "siteCount": 1,
+      "confidence": 0.49500000000000005
+    },
+    {
+      "id": "common.kiosk.upload_banner_image.kiosk.master.management.kiosk.pos.screen.configuration.kiosk.image.settings.kiosk.upload.image",
+      "intentLabel": "kiosk.upload_banner_image",
+      "aliases": [
+        "change kiosk banner",
+        "주문화면 이미지 등록",
+        "키오스크 메인 이미지 변경",
+        "키오스크 배너 변경"
+      ],
+      "sequence": [
+        "kiosk.master_management",
+        "kiosk.pos_screen_configuration",
+        "kiosk.image_settings",
+        "kiosk.upload_image"
+      ],
+      "siteCount": 1,
+      "confidence": 0.49500000000000005
     }
   ]
 }

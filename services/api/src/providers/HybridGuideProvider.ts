@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import type { AiProvider } from '../../../../src/guide-api/AiProvider';
-import type { GuideDecision, GuideRequest } from '../../../../src/contracts';
+import { GuideDecisionSchema, type GuideDecision, type GuideRequest } from '../../../../src/contracts';
 import type { TextEmbeddingProvider } from './HuggingFaceEmbeddingClient';
 import { resolveLocally } from './LocalGuideResolver';
 import { resolveWindowsKnowledge, resolveWindowsKnowledgeEntry } from '../windows-knowledge/WindowsKnowledgeResolver';
@@ -18,6 +19,8 @@ export interface HybridGuideProviderOptions {
 
 export class HybridGuideProvider implements AiProvider {
   private readonly intentClassifier?: HuggingFaceIntentClassifier;
+  private readonly remoteDecisionCache = new Map<string, { expiresAt: number; decision: GuideDecision }>();
+  private readonly inFlightRemoteDecisions = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly fallback: AiProvider,
@@ -76,6 +79,37 @@ export class HybridGuideProvider implements AiProvider {
   }
 
   private async resolveRemotely(request: GuideRequest): Promise<unknown> {
+    const cacheKey = remoteDecisionCacheKey(request);
+    const cached = this.remoteDecisionCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      this.log('verified_decision_cache', cached.decision.targetId ?? cached.decision.action);
+      return cached.decision;
+    }
+    if (cached) this.remoteDecisionCache.delete(cacheKey);
+
+    const existing = this.inFlightRemoteDecisions.get(cacheKey);
+    if (existing) {
+      this.log('verified_decision_inflight', 'joined');
+      return existing;
+    }
+
+    const pending = this.resolveRemotelyUncached(request).then((value) => {
+      const parsed = GuideDecisionSchema.safeParse(value);
+      if (parsed.success && canReuseDecision(parsed.data, request)) {
+        if (this.remoteDecisionCache.size >= 128)
+          this.remoteDecisionCache.delete(this.remoteDecisionCache.keys().next().value!);
+        this.remoteDecisionCache.set(cacheKey, {
+          expiresAt: Date.now() + 120_000,
+          decision: parsed.data,
+        });
+      }
+      return value;
+    }).finally(() => this.inFlightRemoteDecisions.delete(cacheKey));
+    this.inFlightRemoteDecisions.set(cacheKey, pending);
+    return pending;
+  }
+
+  private async resolveRemotelyUncached(request: GuideRequest): Promise<unknown> {
     if (!this.intentClassifier) {
       this.log('openai', 'reasoning');
       return this.fallback.decideNextAction(request);
@@ -165,4 +199,34 @@ export class HybridGuideProvider implements AiProvider {
     if (this.options.debug)
       console.log(`[showwhere:router] route=${route} detail=${String(detail).slice(0, 160)}`);
   }
+}
+
+function remoteDecisionCacheKey(request: GuideRequest): string {
+  const hash = createHash('sha256');
+  hash.update(JSON.stringify({
+    session: {
+      originalUserMessage: request.session.originalUserMessage,
+      goal: request.session.goal,
+      mode: request.session.mode,
+      currentStep: request.session.currentStep,
+      completedSteps: request.session.completedSteps,
+      knownFacts: request.session.knownFacts,
+      expectedChange: request.session.expectedChange,
+      failureCount: request.session.failureCount,
+    },
+    context: request.context,
+    candidates: request.candidates,
+    screenshotBounds: request.screenshotBounds,
+  }));
+  hash.update('|screenshot|');
+  hash.update(request.screenshot ?? '');
+  return hash.digest('hex');
+}
+
+function canReuseDecision(decision: GuideDecision, request: GuideRequest): boolean {
+  const candidateIds = new Set(request.candidates.map((candidate) => candidate.id));
+  if (decision.action === 'highlight' && (!decision.targetId || !candidateIds.has(decision.targetId)))
+    return false;
+  if (decision.alternativeTargetIds?.some((id) => !candidateIds.has(id))) return false;
+  return true;
 }
